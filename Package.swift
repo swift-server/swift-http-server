@@ -1,47 +1,81 @@
-// swift-tools-version:5.10
+// swift-tools-version: 6.1
 
 import PackageDescription
 
+let extraSettings: [SwiftSetting] = [
+    .enableExperimentalFeature("SuppressedAssociatedTypes"),
+    .enableExperimentalFeature("LifetimeDependence"),
+    .enableUpcomingFeature("LifetimeDependence"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+    .enableUpcomingFeature("ExistentialAny"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("InternalImportsByDefault"),
+    .unsafeFlags([
+        "-Xfrontend",
+        "-disable-availability-checking",
+    ]),
+]
+
 let package = Package(
-    name: "swift-http-server",
-    platforms: [
-        .macOS("14.0")
-    ],
-//    products: [
-//        .library(
-//            name: "HTTPServer",
-//            targets: ["HTTPServer"]
-//        ),
-//    ],
+    name: "HTTPServer",
+    platforms: [.macOS("16")],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.58.0"),
-        .package(url: "https://github.com/apple/swift-http-types.git", revision: "0.1.1"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", revision: "2.25.0"),
-        .package(url: "https://github.com/apple/swift-nio-http2.git", branch: "main"),
-        .package(url: "https://github.com/apple/swift-certificates.git", branch: "main"),
-        .package(url: "https://github.com/guoye-zhang/swift-nio-extras.git", branch: "http-types"),
+        .package(url: "https://github.com/apple/swift-collections.git", from: "1.0.4"),
+        .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.4"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.0.0"),
     ],
     targets: [
         .executableTarget(
+            name: "Example",
+            dependencies: [
+                .product(name: "DequeModule", package: "swift-collections"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "Tracing", package: "swift-distributed-tracing"),
+                .product(name: "Instrumentation", package: "swift-distributed-tracing"),
+                .product(name: "Logging", package: "swift-log"),
+                "HTTPServer",
+                "Middleware",
+            ],
+            swiftSettings: extraSettings
+        ),
+        .target(
             name: "HTTPServer",
             dependencies: [
+                .product(name: "DequeModule", package: "swift-collections"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
-                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOHTTPTypesHTTP1", package: "swift-nio-extras"),
                 .product(name: "NIOHTTPTypesHTTP2", package: "swift-nio-extras"),
-                .product(name: "X509", package: "swift-certificates"),
             ],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency=complete"),
-            ]
+            swiftSettings: extraSettings
+        ),
+        .target(
+            name: "Middleware",
+            dependencies: [
+                .product(name: "DequeModule", package: "swift-collections"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            swiftSettings: extraSettings
         ),
         .testTarget(
             name: "HTTPServerTests",
-            dependencies: []
+            dependencies: [
+                .product(name: "Logging", package: "swift-log"),
+                "HTTPServer",
+            ]
         ),
     ]
 )

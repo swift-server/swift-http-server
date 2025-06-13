@@ -1,0 +1,43 @@
+/// A middleware implementation that links two middleware chains together.
+///
+/// ``ChainedMiddleware`` is responsible for properly composing two middleware chains
+/// so that the output from the first middleware becomes the input to the second.
+/// This allows for building complex processing pipelines through composition.
+///
+/// This type is primarily used internally by the ``MiddlewareChainBuilder`` to combine
+/// middleware components in a type-safe way.
+struct ChainedMiddleware<Input, MiddleInput, NextInput>: Middleware {
+    /// The first middleware in the chain.
+    private let first: MiddlewareChain<Input, MiddleInput>
+
+    /// The second middleware in the chain, which receives output from the first middleware.
+    private let second: MiddlewareChain<MiddleInput, NextInput>
+
+    init(
+        first: MiddlewareChain<Input, MiddleInput>,
+        second: MiddlewareChain<MiddleInput, NextInput>
+    ) {
+        self.first = first
+        self.second = second
+    }
+
+    /// Processes input through both middlewares in sequence.
+    ///
+    /// This method implements the core chaining behavior by passing the input through
+    /// the first middleware, then using the output of that operation as the input to
+    /// the second middleware.
+    ///
+    /// - Parameters:
+    ///   - input: The initial input value to pass to the first middleware.
+    ///   - next: The next handler function to call after both middlewares have processed the input.
+    ///
+    /// - Throws: Any error that occurs during processing in either middleware.
+    func intercept(
+        input: Input,
+        next: (NextInput) async throws -> Void
+    ) async throws {
+        try await first.intercept(input: input) { middleInput in
+            try await second.intercept(input: middleInput, next: next)
+        }
+    }
+}

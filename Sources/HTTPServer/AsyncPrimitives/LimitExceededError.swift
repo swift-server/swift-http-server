@@ -1,0 +1,3 @@
+struct LimitExceeded: Error {
+    init() {}
+}

@@ -1,0 +1,81 @@
+public import HTTPTypes
+
+/// A protocol that defines the contract for handling HTTP server requests.
+///
+/// ``HTTPServerRequestHandler`` provides a structured way to process incoming HTTP requests and generate appropriate responses.
+/// Conforming types implement the ``handle(request:requestConcludingAsyncReader:sendResponse:)`` method which is called by the HTTP server
+/// for each incoming request. The handler is responsible for:
+///
+/// - Processing the request headers.
+/// - Reading the request body data using the provided ``HTTPRequestConcludingAsyncReader``
+/// - Generating and sending an appropriate response using the response callback
+///
+/// This protocol supports fully bi-directional streaming HTTP request handling including the optional request
+/// and response trailers
+///
+/// - Example:
+/// ```swift
+/// struct EchoHandler: HTTPServerRequestHandler {
+///     func handle(
+///         request: HTTPRequest,
+///         requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
+///         sendResponse: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+///     ) async throws {
+///         // Read the entire request body
+///         let (bodyData, trailers) = try await requestConcludingAsyncReader.consumeAndConclude { reader in
+///             var data = [UInt8]()
+///             var shouldContinue = true
+///             while shouldContinue {
+///                 try await reader.read { span in
+///                     guard let span else {
+///                         shouldContinue = false
+///                         return
+///                     }
+///                     data.reserveCapacity(data.count + span.count)
+///                     for index in span.indices {
+///                         data.append(span[index])
+///                     }
+///                 }
+///             }
+///             return data
+///         }
+///
+///         // Create a response
+///         var response = HTTPResponse(status: .ok)
+///         response.headerFields[.contentType] = "text/plain"
+///
+///         // Send the response and write the echo data back
+///         let responseWriter = try await sendResponse(response)
+///         try await responseWriter.produceAndConclude { writer in
+///             try await writer.write(bodyData.span)
+///             return ((), nil) // No trailers
+///         }
+///     }
+/// }
+/// ```
+public protocol HTTPServerRequestHandler: Sendable {
+    /// Handles an incoming HTTP request and generates a response.
+    ///
+    /// This method is called by the HTTP server for each incoming client request. Implementations should:
+    /// 1. Examine the request headers in the `request` parameter
+    /// 2. Read the request body data from `requestConcludingAsyncReader` as needed
+    /// 3. Process the request and prepare a response
+    /// 4. Call the `sendResponse` function with an appropriate HTTP response
+    /// 5. Write the response body data to the returned `HTTPResponseConcludingAsyncWriter`
+    ///
+    /// - Parameters:
+    ///   - request: The HTTP request headers and metadata.
+    ///   - requestConcludingAsyncReader: A reader for accessing the request body data and trailing headers.
+    ///     This follows the `ConcludingAsyncReader` pattern, allowing for incremental reading of request body data
+    ///     and concluding with any trailer fields sent at the end of the request.
+    ///   - sendResponse: A callback function that takes an HTTP response and returns a writer for the response body.
+    ///     This function should be called exactly once to initiate the response. The returned writer allows for
+    ///     incremental writing of response body data and concluding with optional trailer fields.
+    ///
+    /// - Throws: Any error encountered during request processing or response generation.
+    func handle(
+        request: HTTPRequest,
+        requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
+        sendResponse: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+    ) async throws
+}
