@@ -6,7 +6,7 @@
 ///
 /// This type is primarily used internally by the ``MiddlewareChainBuilder`` to combine
 /// middleware components in a type-safe way.
-struct ChainedMiddleware<Input, MiddleInput, NextInput>: Middleware {
+struct ChainedMiddleware<Input: ~Copyable, MiddleInput: ~Copyable, NextInput: ~Copyable>: Middleware {
     /// The first middleware in the chain.
     private let first: MiddlewareChain<Input, MiddleInput>
 
@@ -33,8 +33,8 @@ struct ChainedMiddleware<Input, MiddleInput, NextInput>: Middleware {
     ///
     /// - Throws: Any error that occurs during processing in either middleware.
     func intercept(
-        input: Input,
-        next: (NextInput) async throws -> Void
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Void
     ) async throws {
         try await first.intercept(input: input) { middleInput in
             try await second.intercept(input: middleInput, next: next)

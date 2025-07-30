@@ -72,7 +72,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     ///   - handler: An async closure that processes HTTP requests. The closure receives:
     ///     - `HTTPRequest`: The incoming HTTP request with headers and metadata
     ///     - `HTTPRequestConcludingAsyncReader`: An async reader for consuming the request body and trailers
-    ///     - A response sender function that accepts an `HTTPResponse` and provides access to an `HTTPResponseConcludingAsyncWriter`
+    ///     - A non-copyable response sender function that accepts an `HTTPResponse` and provides access to an `HTTPResponseConcludingAsyncWriter`
     ///
     /// ## Example
     ///
@@ -98,12 +98,10 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     public static func serve(
         logger: Logger,
         configuration: HTTPServerConfiguration,
-        handler: @escaping @Sendable (
+        handler: @Sendable @escaping (
             HTTPRequest,
-            HTTPRequestConcludingAsyncReader,
-            @escaping (
-                HTTPResponse
-            ) async throws -> HTTPResponseConcludingAsyncWriter
+            consuming HTTPRequestConcludingAsyncReader,
+            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
         try await self.serve(
@@ -350,7 +348,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                         requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader(
                             iterator: iterator
                         ),
-                        sendResponse: { response in
+                        sendResponse: HTTPResponseSender { response in
                             try await outbound.write(.head(response))
                             return HTTPResponseConcludingAsyncWriter(writer: outbound)
                         }
@@ -363,3 +361,54 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         }
     }
 }
+
+public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyable>: ~Copyable {
+    private let _sendResponse: (HTTPResponse) async throws -> ResponseWriter
+
+    package init(
+        _ sendResponse: @escaping (HTTPResponse) async throws -> ResponseWriter
+    ) {
+        self._sendResponse = sendResponse
+    }
+
+    consuming public func sendResponse(_ response: HTTPResponse) async throws -> ResponseWriter {
+        try await self._sendResponse(response)
+    }
+}
+
+@available(*, unavailable)
+extension HTTPResponseSender: Sendable {}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@frozen
+public struct RequestResponseContext<
+    RequestReader: ConcludingAsyncReader & ~Copyable,
+    ResponseWriter: ConcludingAsyncWriter & ~Copyable
+>: ~Copyable {
+    package let request: HTTPRequest
+    package let requestReader: RequestReader
+    package let responseSender: HTTPResponseSender<ResponseWriter>
+
+    public init(
+        request: HTTPRequest,
+        requestReader: consuming RequestReader,
+        responseSender: consuming HTTPResponseSender<ResponseWriter>
+    ) {
+        self.request = request
+        self.requestReader = requestReader
+        self.responseSender = responseSender
+    }
+
+    public consuming func withContext<T>(
+        _ handler: nonisolated(nonsending) @Sendable @escaping (
+            HTTPRequest,
+            consuming RequestReader,
+            consuming HTTPResponseSender<ResponseWriter>
+        ) async throws -> T
+    ) async throws -> T {
+        try await handler(self.request, self.requestReader, self.responseSender)
+    }
+}
+
+@available(*, unavailable)
+extension RequestResponseContext: Sendable {}

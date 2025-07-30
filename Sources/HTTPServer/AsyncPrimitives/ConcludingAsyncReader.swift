@@ -5,7 +5,7 @@
 /// for streams that have meaningful completion states beyond just terminating, such as
 /// HTTP responses that include headers after the body is fully read.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public protocol ConcludingAsyncReader<Underlying, FinalElement> {
+public protocol ConcludingAsyncReader<Underlying, FinalElement>: ~Copyable, SendableMetatype {
     /// The underlying asynchronous reader type that produces elements.
     associatedtype Underlying: AsyncReader, ~Copyable, ~Escapable
 
@@ -34,12 +34,12 @@ public protocol ConcludingAsyncReader<Underlying, FinalElement> {
     /// }
     /// ```
     consuming func consumeAndConclude<Return>(
-        body: (inout Underlying) async throws -> Return
+        body: (consuming Underlying) async throws -> Return
     ) async throws -> (Return, FinalElement)
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension ConcludingAsyncReader {
+extension ConcludingAsyncReader where Self: ~Copyable {
     /// Processes the underlying async reader until completion and returns only the final element.
     ///
     /// This is a convenience method when the body's return value is `Void` and only returns the final element.
@@ -62,11 +62,10 @@ extension ConcludingAsyncReader {
     /// }
     /// ```
     public consuming func consumeAndConclude(
-        body: (inout Underlying) async throws -> Void
+        body: (consuming Underlying) async throws -> Void
     ) async throws -> FinalElement {
         let (_, finalElement) = try await self.consumeAndConclude { reader in
-            try await body(&reader)
-            return ()
+            try await body(reader)
         }
         return finalElement
     }
@@ -100,7 +99,8 @@ extension ConcludingAsyncReader {
         body: (Span<Underlying.ReadElement>) async throws -> Result
     ) async throws -> (Result, FinalElement) where Underlying.ReadElement: Copyable {
         try await self.consumeAndConclude { reader in
-            try await reader.collect(upTo: limit) { span in
+            var reader = reader
+            return try await reader.collect(upTo: limit) { span in
                 try await body(span)
             }
         }
@@ -135,7 +135,8 @@ extension ConcludingAsyncReader {
         body: (Span<Element>) async throws -> Result
     ) async throws -> (Result, FinalElement) where Underlying.ReadElement == Span<Element> {
         try await self.consumeAndConclude { reader in
-            try await reader.collect(upTo: limit) { span in
+            var reader = reader
+            return try await reader.collect(upTo: limit) { span in
                 try await body(span)
             }
         }

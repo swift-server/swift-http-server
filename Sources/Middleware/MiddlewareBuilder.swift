@@ -43,7 +43,7 @@ public struct MiddlewareChainBuilder {
     ///   - accumulated: The first middleware in the chain.
     ///   - next: The second middleware in the chain, which accepts the output of the first.
     /// - Returns: A new middleware chain that represents the composition of both middlewares.
-    public static func buildPartialBlock<Input, MiddleInput, NextInput>(
+    public static func buildPartialBlock<Input: ~Copyable, MiddleInput: ~Copyable, NextInput: ~Copyable>(
         accumulated: MiddlewareChain<Input, MiddleInput>,
         next: MiddlewareChain<MiddleInput, NextInput>
     ) -> MiddlewareChain<Input, NextInput> {

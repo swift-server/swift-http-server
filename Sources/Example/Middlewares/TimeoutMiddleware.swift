@@ -3,10 +3,8 @@ import Middleware
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct TimeoutMiddleware<Input>: Middleware {
     func intercept(input: Input, next: (Input) async throws -> Void) async throws {
-        try await withoutActuallyEscaping(next) { next in
-            try await withTimeout(in: .seconds(10), clock: .continuous) {
-                try await next(input)
-            }
+        try await withTimeout(in: .seconds(10), clock: .continuous) {
+            try await next(input)
         }
     }
 }
@@ -23,22 +21,41 @@ package struct TimeOutError: Error {
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public func withTimeout<T: Sendable, Clock: _Concurrency.Clock>(
+struct SendableBox<T>: @unchecked Sendable {
+    var closure: () async -> T
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension TaskGroup {
+    mutating func addTask(nonEscapableOperation: () async -> ChildTaskResult) {
+        withoutActuallyEscaping(nonEscapableOperation) { escapingClosure in
+            // This is actually safe. The body closure is async it will hop onto the
+            // right executor automatically.
+            let box = SendableBox(closure: escapingClosure)
+            self.addTask(name: nil, operation: {
+                await box.closure()
+            })
+        }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+nonisolated(nonsending) public func withTimeout<T: Sendable, Clock: _Concurrency.Clock>(
     in timeout: Clock.Duration,
     clock: Clock,
-    isolation: isolated (any Actor)? = #isolation,
-    body: @escaping () async throws -> T
+    body: () async throws -> T
 ) async throws -> T {
-    nonisolated(unsafe) let bodyFunc = { body }
     let result: Result<T, any Error> = await withTaskGroup(of: TaskResult<T>.self) { group in
-        let body = bodyFunc()
-        group.addTask {
+        // This is actually safe. The body closure is async it will hop onto the
+        // right executor automatically.
+        nonisolated(unsafe) let body = body
+        group.addTask(nonEscapableOperation: {
             do {
                 return .success(try await body())
             } catch {
                 return .error(error)
             }
-        }
+        })
         group.addTask {
             do {
                 try await clock.sleep(for: timeout, tolerance: .zero)

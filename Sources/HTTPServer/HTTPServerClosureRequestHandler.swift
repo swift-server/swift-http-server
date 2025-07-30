@@ -27,10 +27,10 @@ public import HTTPTypes
 public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
     private let _handler:
-        @Sendable (
+        nonisolated(nonsending) @Sendable (
             HTTPRequest,
             consuming HTTPRequestConcludingAsyncReader,
-            @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
 
     /// Creates a new closure-based HTTP request handler.
@@ -38,10 +38,10 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     /// - Parameter handler: A closure that will be called to handle each incoming HTTP request.
     ///   The closure takes the same parameters as the ``HTTPServerRequestHandler/handle(request:requestConcludingAsyncReader:sendResponse:)`` method.
     public init(
-        handler: @Sendable @escaping (
+        handler: nonisolated(nonsending) @Sendable @escaping (
             HTTPRequest,
             consuming HTTPRequestConcludingAsyncReader,
-            @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) {
         self._handler = handler
@@ -57,8 +57,8 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     ///   - sendResponse: A callback function to send the HTTP response.
     public func handle(
         request: HTTPRequest,
-        requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
-        sendResponse: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+        requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+        sendResponse: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
         try await self._handler(request, requestConcludingAsyncReader, sendResponse)
     }

@@ -10,12 +10,12 @@ import NIOHTTPTypes
 /// follows the ``ConcludingAsyncReader`` pattern, which allows for asynchronous consumption of
 /// a stream with a conclusive final element.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
+public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable {
     /// A reader for HTTP request body chunks that implements the ``AsyncReader`` protocol.
     ///
     /// This reader processes the body parts of an HTTP request and provides them as spans of bytes,
     /// while also capturing any trailer fields received at the end of the request.
-    public struct RequestBodyAsyncReader: AsyncReader {
+    public struct RequestBodyAsyncReader: AsyncReader, ~Copyable {
         /// The type of elements this reader provides (byte spans representing body chunks).
         public typealias ReadElement = Span<UInt8>
 
@@ -31,8 +31,8 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
         /// Initializes a new request body reader with the given NIO async channel iterator.
         ///
         /// - Parameter iterator: The NIO async channel inbound stream iterator to use for reading request parts.
-        init(
-            iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+        fileprivate init(
+            iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
         ) {
             self.iterator = iterator
         }
@@ -46,7 +46,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
         public mutating func read<Return>(
             body: (consuming ReadElement?) async throws -> Return
         ) async throws(ReadFailure) -> Return {
-            switch try await self.iterator.next() {
+            switch try await self.iterator.next(isolation: #isolation) {
             case .head:
                 fatalError()
             case .body(let element):
@@ -70,16 +70,16 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
     /// The type of errors that can occur during reading operations.
     public typealias Failure = any Error
 
-    /// The iterator that provides HTTP request parts from the underlying channel.
-    private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+    /// The internal reader that provides HTTP request parts from the underlying channel.
+    private var partsReader: RequestBodyAsyncReader
 
     /// Initializes a new HTTP request body and trailers reader with the given NIO async channel iterator.
     ///
     /// - Parameter iterator: The NIO async channel inbound stream iterator to use for reading request parts.
     init(
-        iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
     ) {
-        self.iterator = iterator
+        self.partsReader = RequestBodyAsyncReader(iterator: iterator)
     }
 
     /// Processes the request body reading operation and captures the final trailer fields.
@@ -108,10 +108,15 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
     /// }
     /// ```
     public consuming func consumeAndConclude<Return>(
-        body: (inout RequestBodyAsyncReader) async throws -> Return
+        body: (consuming RequestBodyAsyncReader) async throws -> Return
     ) async throws -> (Return, HTTPFields?) {
-        var partsReader = RequestBodyAsyncReader(iterator: self.iterator)
-        let result = try await body(&partsReader)
-        return (result, partsReader.trailers)
+        let result = try await body(self.partsReader)
+        return (result, /*self.partsReader.trailers*/nil)
     }
 }
+
+@available(*, unavailable)
+extension HTTPRequestConcludingAsyncReader: Sendable {}
+
+@available(*, unavailable)
+extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable {}

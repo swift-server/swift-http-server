@@ -6,11 +6,11 @@
 ///
 /// This type plays a central role in the middleware architecture, providing a common
 /// interface that can represent both simple and complex middleware arrangements.
-public struct MiddlewareChain<Input, NextInput>: Middleware {
+public struct MiddlewareChain<Input: ~Copyable, NextInput: ~Copyable>: Middleware {
     private let middlewareFunc:
-        (
-            Input,
-            (NextInput) async throws -> Void
+        nonisolated(nonsending) @Sendable (
+            consuming Input,
+            (consuming NextInput) async throws -> Void
         ) async throws -> Void
 
     /// Creates a new middleware chain from an existing middleware component.
@@ -30,9 +30,9 @@ public struct MiddlewareChain<Input, NextInput>: Middleware {
     ///
     /// - Parameter middlewareFunc: A closure that implements the middleware's behavior.
     init(
-        middlewareFunc: @escaping (
-            Input,
-            (NextInput) async throws -> Void
+        middlewareFunc: nonisolated(nonsending) @Sendable @escaping (
+            consuming Input,
+            (consuming NextInput) async throws -> Void
         ) async throws -> Void
     ) {
         self.middlewareFunc = middlewareFunc
@@ -50,8 +50,8 @@ public struct MiddlewareChain<Input, NextInput>: Middleware {
     ///
     /// - Throws: Any error that occurs during processing.
     public func intercept(
-        input: Input,
-        next: (NextInput) async throws -> Void
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Void
     ) async throws {
         try await middlewareFunc(input, next)
     }

@@ -4,7 +4,7 @@
 /// provide a conclusive element after writing is complete. This is particularly useful
 /// for streams that have meaningful completion states, such as HTTP response that need
 /// to finalize with optional trailers.
-public protocol ConcludingAsyncWriter<Underlying, FinalElement>: ~Copyable {
+public protocol ConcludingAsyncWriter<Underlying, FinalElement>: ~Copyable, SendableMetatype {
     /// The underlying asynchronous writer type.
     associatedtype Underlying: AsyncWriter, ~Copyable
 

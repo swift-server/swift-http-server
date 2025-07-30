@@ -3,7 +3,7 @@
 /// ``AsyncReader`` defines an interface for types that can asynchronously read elements
 /// of a specified type from a source.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public protocol AsyncReader<ReadElement, ReadFailure> {
+public protocol AsyncReader<ReadElement, ReadFailure>: ~Copyable {
     /// The type of elements that can be read by this reader.
     associatedtype ReadElement: ~Copyable, ~Escapable
 
@@ -46,7 +46,7 @@ public protocol AsyncReader<ReadElement, ReadFailure> {
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension AsyncReader {
+extension AsyncReader where Self: ~Copyable {
     /// Collects elements from the reader up to a specified limit and processes them with a body function.
     ///
     /// This method continuously reads elements from the async reader, accumulating them in a buffer
@@ -82,7 +82,7 @@ extension AsyncReader {
     /// Since this method buffers all elements in memory before processing, it should be used
     /// with caution on large datasets. The `limit` parameter serves as a safety mechanism
     /// to prevent excessive memory usage.
-    public consuming func collect<Result>(
+    public mutating func collect<Result>(
         upTo limit: Int,
         body: (Span<ReadElement>) async throws -> Result
     ) async throws -> Result where ReadElement: Copyable {
@@ -138,7 +138,7 @@ extension AsyncReader {
     /// Since this method buffers all elements in memory before processing, it should be used
     /// with caution on large datasets. The `limit` parameter serves as a safety mechanism
     /// to prevent excessive memory usage.
-    public consuming func collect<Element, Result>(
+    public mutating func collect<Element, Result>(
         upTo limit: Int,
         body: (Span<Element>) async throws -> Result
     ) async throws -> Result where ReadElement == Span<Element> {
