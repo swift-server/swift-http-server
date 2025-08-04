@@ -19,7 +19,11 @@ let extraSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "HTTPServer",
-    platforms: [.macOS("16")],
+    products: [
+        .library(
+            name: "HTTPServer",
+            targets: ["HTTPServer"])
+    ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.0.4"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
