@@ -34,7 +34,7 @@ struct ChainedMiddleware<Input, MiddleInput, NextInput>: Middleware {
     /// - Throws: Any error that occurs during processing in either middleware.
     func intercept(
         input: Input,
-        next: (NextInput) async throws -> Void
+        next: @Sendable (NextInput) async throws -> Void
     ) async throws {
         try await first.intercept(input: input) { middleInput in
             try await second.intercept(input: middleInput, next: next)
