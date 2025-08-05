@@ -2,6 +2,7 @@ import HTTPServer
 import HTTPTypes
 import Middleware
 
+@available(macOS 26.0, *)
 struct RouteHandlerMiddleware<
     RequestConcludingAsyncReader: ConcludingAsyncReader & Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable,

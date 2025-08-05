@@ -2,6 +2,7 @@ import HTTPTypes
 import Middleware
 import Tracing
 
+@available(macOS 26.0, *)
 struct TracingMiddleware<Input>: Middleware {
     func intercept(
         input: Input,

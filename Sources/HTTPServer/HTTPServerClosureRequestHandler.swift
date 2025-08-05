@@ -23,6 +23,7 @@ public import HTTPTypes
 ///     }
 /// }
 /// ```
+@available(macOS 26.0, *)
 public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
     private let _handler:

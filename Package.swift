@@ -10,11 +10,7 @@ let extraSettings: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InternalImportsByDefault"),
-    .unsafeFlags([
-        "-Xfrontend",
-        "-disable-availability-checking",
-    ]),
+    .enableUpcomingFeature("InternalImportsByDefault")
 ]
 
 let package = Package(

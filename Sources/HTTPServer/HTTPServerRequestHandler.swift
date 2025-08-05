@@ -53,6 +53,7 @@ public import HTTPTypes
 ///     }
 /// }
 /// ```
+@available(macOS 26.0, *)
 public protocol HTTPServerRequestHandler: Sendable {
     /// Handles an incoming HTTP request and generates a response.
     ///

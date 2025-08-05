@@ -8,6 +8,7 @@ import Middleware
 import X509
 
 @main
+@available(macOS 26.0, *)
 struct Example {
     static func main() async throws {
         try await serve()
@@ -68,6 +69,7 @@ struct Example {
 
 // MARK: - Server Extensions
 
+@available(macOS 26.0, *)
 extension Server {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components
