@@ -86,7 +86,7 @@ extension Server {
                 ) async throws -> HTTPResponseConcludingAsyncWriter
             ),
             Never
-        >
+        > & Sendable
     ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
         let chain = middlewareBuilder()
 
