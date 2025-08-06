@@ -11,6 +11,7 @@ import NIOHTTPTypes
 ///
 /// This writer is designed to work with HTTP responses where the body is streamed in chunks
 /// and potentially followed by trailer fields.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyable {
     /// A writer for HTTP response body chunks that implements the ``AsyncWriter`` protocol.
     ///

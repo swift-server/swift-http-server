@@ -3,6 +3,7 @@ import HTTPTypes
 import Logging
 import Middleware
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingMiddleware<
     RequestConludingAsyncReader: ConcludingAsyncReader,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable
@@ -50,9 +51,7 @@ where
             logger: self.logger
         )
         try await next(
-            (
-                request, wrappedReader,
-                { httpResponse in
+            (request, wrappedReader, { httpResponse in
                     let writer = try await respond(httpResponse)
                     return HTTPResponseLoggingConcludingAsyncWriter(
                         base: writer,
@@ -64,6 +63,7 @@ where
     }
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingConcludingAsyncReader<
     Base: ConcludingAsyncReader
 >: ConcludingAsyncReader
@@ -125,6 +125,7 @@ where
     }
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPResponseLoggingConcludingAsyncWriter<
     Base: ConcludingAsyncWriter & ~Copyable
 >: ConcludingAsyncWriter, ~Copyable

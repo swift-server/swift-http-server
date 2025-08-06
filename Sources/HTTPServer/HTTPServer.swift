@@ -59,6 +59,7 @@ import SwiftASN1
 ///     }
 /// }
 /// ```
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public final class Server<RequestHandler: HTTPServerRequestHandler>: Sendable {
     /// Starts an HTTP server with a closure-based request handler.
     ///
@@ -155,12 +156,8 @@ public final class Server<RequestHandler: HTTPServerRequestHandler>: Sendable {
         configuration: HTTPServerConfiguration,
         handler: RequestHandler
     ) async throws {
-        let serverChannel = try await Self.bind(
-            bindTarget: configuration.bindTarget
-        ) {
-            (
-                channel
-            ) -> EventLoopFuture<
+        let serverChannel = try await Self.bind(bindTarget: configuration.bindTarget) {
+            (channel) -> EventLoopFuture<
                 EventLoopFuture<
                     NIONegotiatedHTTPVersion<
                         NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
@@ -175,10 +172,8 @@ public final class Server<RequestHandler: HTTPServerRequestHandler>: Sendable {
                 switch configuration.tlSConfiguration.backing {
                 case .insecure:
                     break
-                case .certificateChainAndPrivateKey(
-                    let certificateChain,
-                    let privateKey
-                ):
+
+                case .certificateChainAndPrivateKey(let certificateChain, let privateKey):
                     let certificateChain =
                         try certificateChain
                         .map {
@@ -264,12 +259,12 @@ public final class Server<RequestHandler: HTTPServerRequestHandler>: Sendable {
                                             }
                                         }
                                     } catch {
-                                        logger.debug("HTTP2 connection closed")
+                                        logger.debug("HTTP2 connection closed: \(error)")
                                     }
                                 }
                             }
                         } catch {
-                            logger.debug("Negotiating ALPN failed")
+                            logger.debug("Negotiating ALPN failed: \(error)")
                         }
                     }
                 }

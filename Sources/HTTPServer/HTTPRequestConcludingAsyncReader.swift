@@ -9,6 +9,7 @@ import NIOHTTPTypes
 /// and concluding with the HTTP trailer fields received at the end of the request. This type
 /// follows the ``ConcludingAsyncReader`` pattern, which allows for asynchronous consumption of
 /// a stream with a conclusive final element.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
     /// A reader for HTTP request body chunks that implements the ``AsyncReader`` protocol.
     ///

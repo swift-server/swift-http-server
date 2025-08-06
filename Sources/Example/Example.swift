@@ -8,6 +8,7 @@ import Middleware
 import X509
 
 @main
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct Example {
     static func main() async throws {
         try await serve()
@@ -16,7 +17,8 @@ struct Example {
     @concurrent
     static func serve() async throws {
         InstrumentationSystem.bootstrap(LogTracer())
-        let logger = Logger(label: "Logger")
+        var logger = Logger(label: "Logger")
+        logger.logLevel = .trace
 
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
@@ -67,6 +69,7 @@ struct Example {
 
 // MARK: - Server Extensions
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension Server {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components

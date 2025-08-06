@@ -23,6 +23,7 @@ public import HTTPTypes
 ///     }
 /// }
 /// ```
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler, Sendable {
     /// The underlying closure that handles HTTP requests
     private let _handler:
@@ -40,9 +41,7 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler, Sendabl
         handler: @Sendable @escaping (
             HTTPRequest,
             consuming HTTPRequestConcludingAsyncReader,
-            @escaping (
-                HTTPResponse
-            ) async throws -> HTTPResponseConcludingAsyncWriter
+            @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
         ) async throws -> Void
     ) {
         self._handler = handler
@@ -59,9 +58,7 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler, Sendabl
     public func handle(
         request: HTTPRequest,
         requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
-        sendResponse: @escaping (
-            HTTPResponse
-        ) async throws -> HTTPResponseConcludingAsyncWriter
+        sendResponse: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
     ) async throws {
         try await self._handler(request, requestConcludingAsyncReader, sendResponse)
     }

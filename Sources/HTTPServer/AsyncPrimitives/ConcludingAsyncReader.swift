@@ -4,6 +4,7 @@
 /// provide a conclusive element after all reads are completed. This is particularly useful
 /// for streams that have meaningful completion states beyond just terminating, such as
 /// HTTP responses that include headers after the body is fully read.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public protocol ConcludingAsyncReader<Underlying, FinalElement> {
     /// The underlying asynchronous reader type that produces elements.
     associatedtype Underlying: AsyncReader, ~Copyable, ~Escapable
@@ -37,6 +38,7 @@ public protocol ConcludingAsyncReader<Underlying, FinalElement> {
     ) async throws -> (Return, FinalElement)
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension ConcludingAsyncReader {
     /// Processes the underlying async reader until completion and returns only the final element.
     ///

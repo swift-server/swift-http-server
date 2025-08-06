@@ -1,5 +1,6 @@
 import Middleware
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct TimeoutMiddleware<Input>: Middleware {
     func intercept(input: Input, next: (Input) async throws -> Void) async throws {
         try await withoutActuallyEscaping(next) { next in
@@ -21,6 +22,7 @@ package struct TimeOutError: Error {
     var underlying: any Error
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public func withTimeout<T: Sendable, Clock: _Concurrency.Clock>(
     in timeout: Clock.Duration,
     clock: Clock,

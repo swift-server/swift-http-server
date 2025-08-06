@@ -4,6 +4,7 @@ public import X509
 ///
 /// This structure contains all the necessary configuration options for setting up
 /// and running an HTTP server, including network binding and TLS settings.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPServerConfiguration: Sendable {
     /// Specifies where the server should bind and listen for incoming connections.
     ///

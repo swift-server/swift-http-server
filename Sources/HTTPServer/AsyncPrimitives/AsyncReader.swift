@@ -2,6 +2,7 @@
 ///
 /// ``AsyncReader`` defines an interface for types that can asynchronously read elements
 /// of a specified type from a source.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public protocol AsyncReader<ReadElement, ReadFailure> {
     /// The type of elements that can be read by this reader.
     associatedtype ReadElement: ~Copyable, ~Escapable
@@ -44,6 +45,7 @@ public protocol AsyncReader<ReadElement, ReadFailure> {
     ) async throws(ReadFailure) -> Return
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension AsyncReader {
     /// Collects elements from the reader up to a specified limit and processes them with a body function.
     ///
