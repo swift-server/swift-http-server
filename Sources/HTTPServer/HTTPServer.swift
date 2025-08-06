@@ -59,7 +59,7 @@ import SwiftASN1
 ///     }
 /// }
 /// ```
-@available(macOS 26.0, *)
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public final class Server<RequestHandler: HTTPServerRequestHandler> {
     /// Starts an HTTP server with a closure-based request handler.
     ///
