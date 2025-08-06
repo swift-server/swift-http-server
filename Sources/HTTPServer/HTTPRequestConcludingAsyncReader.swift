@@ -114,3 +114,9 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader {
         return (result, partsReader.trailers)
     }
 }
+
+@available(*, unavailable)
+extension HTTPRequestConcludingAsyncReader: Sendable { }
+
+@available(*, unavailable)
+extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable { }

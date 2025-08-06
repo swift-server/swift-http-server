@@ -56,3 +56,6 @@ public struct MiddlewareChain<Input, NextInput>: Middleware {
         try await middlewareFunc(input, next)
     }
 }
+
+@available(*, unavailable)
+extension MiddlewareChain: Sendable  { }

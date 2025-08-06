@@ -21,7 +21,7 @@
 /// }
 /// ```
 @resultBuilder
-public struct MiddlewareChainBuilder {
+public struct MiddlewareChainBuilder: Sendable {
     /// Builds a middleware chain from a single middleware component.
     ///
     /// This is the base case for the result builder pattern, handling a single middleware.

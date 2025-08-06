@@ -8,3 +8,5 @@ DerivedData/
 .netrc
 Package.resolved
 .swiftpm/xcode/
+.vscode
+.swift-version

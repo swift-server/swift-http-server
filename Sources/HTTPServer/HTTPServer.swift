@@ -59,7 +59,7 @@ import SwiftASN1
 ///     }
 /// }
 /// ```
-public final class Server<RequestHandler: HTTPServerRequestHandler> {
+public final class Server<RequestHandler: HTTPServerRequestHandler>: Sendable {
     /// Starts an HTTP server with a closure-based request handler.
     ///
     /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.

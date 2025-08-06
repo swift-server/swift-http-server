@@ -99,3 +99,9 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         return result
     }
 }
+
+@available(*, unavailable)
+extension HTTPResponseConcludingAsyncWriter: Sendable { }
+
+@available(*, unavailable)
+extension HTTPResponseConcludingAsyncWriter.ResponseBodyAsyncWriter: Sendable { }

@@ -1,10 +1,11 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.0
 
 import PackageDescription
 
 let extraSettings: [SwiftSetting] = [
     .enableExperimentalFeature("SuppressedAssociatedTypes"),
     .enableExperimentalFeature("LifetimeDependence"),
+    .enableExperimentalFeature("NonescapableTypes"),
     .enableUpcomingFeature("LifetimeDependence"),
     .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
     .enableUpcomingFeature("InferIsolatedConformances"),

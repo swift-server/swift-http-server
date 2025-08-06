@@ -23,7 +23,7 @@ public import HTTPTypes
 ///     }
 /// }
 /// ```
-public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
+public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler, Sendable {
     /// The underlying closure that handles HTTP requests
     private let _handler:
         @Sendable (
