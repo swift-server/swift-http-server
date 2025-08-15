@@ -156,115 +156,161 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         configuration: HTTPServerConfiguration,
         handler: RequestHandler
     ) async throws {
-        let serverChannel = try await Self.bind(bindTarget: configuration.bindTarget) {
-            (channel) -> EventLoopFuture<
-                EventLoopFuture<
-                    NIONegotiatedHTTPVersion<
-                        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-                        (
-                            Void,
-                            NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
-                        )
-                    >
-                >
-            > in
-            channel.eventLoop.makeCompletedFuture {
-                switch configuration.tlSConfiguration.backing {
-                case .insecure:
-                    break
+        switch configuration.tlSConfiguration.backing {
+        case .insecure:
+            try await Self.serveInsecureHTTP1_1(
+                bindTarget: configuration.bindTarget,
+                handler: handler,
+                logger: logger
+            )
 
-                case .certificateChainAndPrivateKey(let certificateChain, let privateKey):
-                    let certificateChain =
-                        try certificateChain
-                        .map {
-                            try NIOSSLCertificate(
-                                bytes: $0.serializeAsPEM().derBytes,
-                                format: .der
-                            )
-                        }
-                        .map { NIOSSLCertificateSource.certificate($0) }
-                    let privateKey = NIOSSLPrivateKeySource.privateKey(
-                        try NIOSSLPrivateKey(
-                            bytes: privateKey.serializeAsPEM().derBytes,
-                            format: .der
-                        )
-                    )
+        case .certificateChainAndPrivateKey(let certificateChain, let privateKey):
+            try await Self.serveSecureUpgrade(
+                bindTarget: configuration.bindTarget,
+                certificateChain: certificateChain,
+                privateKey: privateKey,
+                handler: handler,
+                logger: logger
+            )
+        }
+    }
 
-                    try channel.pipeline.syncOperations
-                        .addHandler(
-                            NIOSSLServerHandler(
-                                context: .init(
-                                    configuration:
-                                        .makeServerConfiguration(
-                                            certificateChain: certificateChain,
-                                            privateKey: privateKey
-                                        )
-                                )
-                            )
+    private static func serveInsecureHTTP1_1(
+        bindTarget: HTTPServerConfiguration.BindTarget,
+        handler: RequestHandler,
+        logger: Logger
+    ) async throws {
+        switch bindTarget.backing {
+        case .hostAndPort(let host, let port):
+            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .bind(host: host, port: port) { channel in
+                    channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+                        try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
+                        return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                            wrappingChannelSynchronously: channel,
+                            configuration: .init(isOutboundHalfClosureEnabled: true)
                         )
+                    }
                 }
-            }.flatMap {
-                channel
-                    .configureAsyncHTTPServerPipeline { channel in
-                        channel.eventLoop.makeCompletedFuture {
-                            try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
 
-                            return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                                wrappingChannelSynchronously: channel,
-                                configuration: .init(isOutboundHalfClosureEnabled: true)
-                            )
-                        }
-                    } http2ConnectionInitializer: { channel in
-                        channel.eventLoop.makeSucceededVoidFuture()
-                    } http2StreamInitializer: { channel in
-                        channel.eventLoop.makeCompletedFuture {
-                            try channel.pipeline.syncOperations
-                                .addHandler(
-                                    HTTP2FramePayloadToHTTPServerCodec()
-                                )
-
-                            return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                                wrappingChannelSynchronously: channel,
-                                configuration: .init(isOutboundHalfClosureEnabled: true)
+            try await withThrowingDiscardingTaskGroup { group in
+                try await serverChannel.executeThenClose { inbound in
+                    for try await http1Channel in inbound {
+                        group.addTask {
+                            await Self.handleRequestChannel(
+                                logger: logger,
+                                channel: http1Channel,
+                                handler: handler
                             )
                         }
                     }
+                }
             }
         }
+    }
 
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await upgradeResult in inbound {
-                    group.addTask {
-                        do {
-                            try await withThrowingDiscardingTaskGroup { connectionGroup in
-                                switch try await upgradeResult.get() {
-                                case .http1_1(let http1Channel):
-                                    connectionGroup.addTask {
-                                        await Self.handleRequestChannel(
-                                            logger: logger,
-                                            channel: http1Channel,
-                                            handler: handler
+    private static func serveSecureUpgrade(
+        bindTarget: HTTPServerConfiguration.BindTarget,
+        certificateChain: [Certificate],
+        privateKey: Certificate.PrivateKey,
+        handler: RequestHandler,
+        logger: Logger
+    ) async throws {
+        switch bindTarget.backing {
+        case .hostAndPort(let host, let port):
+            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .bind(host: host, port: port) { channel in
+                    channel.eventLoop.makeCompletedFuture {
+                        let certificateChain = try certificateChain
+                            .map {
+                                try NIOSSLCertificate(
+                                    bytes: $0.serializeAsPEM().derBytes,
+                                    format: .der
+                                )
+                            }
+                            .map { NIOSSLCertificateSource.certificate($0) }
+                        let privateKey = NIOSSLPrivateKeySource.privateKey(
+                            try NIOSSLPrivateKey(
+                                bytes: privateKey.serializeAsPEM().derBytes,
+                                format: .der
+                            )
+                        )
+
+                        try channel.pipeline.syncOperations
+                            .addHandler(
+                                NIOSSLServerHandler(
+                                    context: .init(
+                                        configuration: .makeServerConfiguration(
+                                            certificateChain: certificateChain,
+                                            privateKey: privateKey
                                         )
-                                    }
-                                case .http2((_, let http2Multiplexer)):
-                                    do {
-                                        for try await http2StreamChannel in http2Multiplexer.inbound {
-                                            connectionGroup.addTask {
-                                                await Self.handleRequestChannel(
-                                                    logger: logger,
-                                                    channel: http2StreamChannel,
-                                                    handler: handler
-                                                )
-                                            }
+                                    )
+                                )
+                            )
+                    }.flatMap {
+                        channel.configureAsyncHTTPServerPipeline { channel in
+                            channel.eventLoop.makeCompletedFuture {
+                                try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
+
+                                return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                                    wrappingChannelSynchronously: channel,
+                                    configuration: .init(isOutboundHalfClosureEnabled: true)
+                                )
+                            }
+                        } http2ConnectionInitializer: { channel in
+                            channel.eventLoop.makeSucceededVoidFuture()
+                        } http2StreamInitializer: { channel in
+                            channel.eventLoop.makeCompletedFuture {
+                                try channel.pipeline.syncOperations
+                                    .addHandler(
+                                        HTTP2FramePayloadToHTTPServerCodec()
+                                    )
+
+                                return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                                    wrappingChannelSynchronously: channel,
+                                    configuration: .init(isOutboundHalfClosureEnabled: true)
+                                )
+                            }
+                        }
+                    }
+                }
+
+            try await withThrowingDiscardingTaskGroup { group in
+                try await serverChannel.executeThenClose { inbound in
+                    for try await upgradeResult in inbound {
+                        group.addTask {
+                            do {
+                                try await withThrowingDiscardingTaskGroup { connectionGroup in
+                                    switch try await upgradeResult.get() {
+                                    case .http1_1(let http1Channel):
+                                        connectionGroup.addTask {
+                                            await Self.handleRequestChannel(
+                                                logger: logger,
+                                                channel: http1Channel,
+                                                handler: handler
+                                            )
                                         }
-                                    } catch {
-                                        logger.debug("HTTP2 connection closed: \(error)")
+                                    case .http2((_, let http2Multiplexer)):
+                                        do {
+                                            for try await http2StreamChannel in http2Multiplexer.inbound {
+                                                connectionGroup.addTask {
+                                                    await Self.handleRequestChannel(
+                                                        logger: logger,
+                                                        channel: http2StreamChannel,
+                                                        handler: handler
+                                                    )
+                                                }
+                                            }
+                                        } catch {
+                                            logger.debug("HTTP2 connection closed: \(error)")
+                                        }
                                     }
                                 }
+                            } catch {
+                                logger.debug("Negotiating ALPN failed: \(error)")
                             }
-                        } catch {
-                            logger.debug("Negotiating ALPN failed: \(error)")
                         }
                     }
                 }
@@ -312,39 +358,8 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                     // TODO: We need to send a response head here potentially
                 }
         } catch {
-            logger.debug("Error thrown while handling connection")
+            logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
         }
-    }
-
-    private static func bind(
-        bindTarget: HTTPServerConfiguration.BindTarget,
-        childChannelInitializer: @escaping @Sendable (any Channel) -> EventLoopFuture<
-            EventLoopFuture<
-                NIONegotiatedHTTPVersion<
-                    NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-                    (Void, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
-                >
-            >
-        >
-    ) async throws -> NIOAsyncChannel<
-        EventLoopFuture<
-            NIONegotiatedHTTPVersion<
-                NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-                (Void, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
-            >
-        >, Never
-    > {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            return try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .bind(
-                    host: host,
-                    port: port,
-                    childChannelInitializer: childChannelInitializer
-                )
-        }
-
     }
 }
