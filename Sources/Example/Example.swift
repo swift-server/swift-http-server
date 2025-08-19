@@ -46,6 +46,7 @@ struct Example {
             ), handler: handler(request:requestConcludingAsyncReader:responseSender:))
     }
 
+    // This is a workaround for a current bug with the compiler.
     @Sendable
     nonisolated(nonsending) private static func handler(
         request: HTTPRequest,
@@ -58,6 +59,8 @@ struct Example {
 }
 
 // MARK: - Server Extensions
+
+// This has to be commented out because of the compiler bug above. Workaround doesn't apply here.
 
 //@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 //extension Server {
