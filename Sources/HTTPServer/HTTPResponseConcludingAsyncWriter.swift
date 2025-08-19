@@ -48,6 +48,10 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         }
     }
 
+    public final class WriterState {
+        public var finishedWriting: Bool = false
+    }
+
     /// The underlying writer type for the HTTP response body.
     public typealias Underlying = ResponseBodyAsyncWriter
 
@@ -60,11 +64,17 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
     /// The underlying NIO writer for HTTP response parts.
     private var writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
 
+    private var writerState: WriterState
+
     /// Initializes a new HTTP response body and trailers writer with the given NIO async channel writer.
     ///
     /// - Parameter writer: The NIO async channel outbound writer to use for writing response parts.
-    init(writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>) {
+    init(
+        writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        writerState: WriterState
+    ) {
         self.writer = writer
+        self.writerState = writerState
     }
 
     /// Processes the body writing operation and concludes with optional trailer fields.
@@ -97,6 +107,7 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         let responseBodyAsyncWriter = ResponseBodyAsyncWriter(writer: self.writer)
         let (result, finalElement) = try await body(responseBodyAsyncWriter)
         try await self.writer.write(.end(finalElement))
+        self.writerState.finishedWriting = true
         return result
     }
 }

@@ -23,7 +23,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         public typealias ReadFailure = any Error
 
         /// The HTTP trailer fields captured at the end of the request.
-        fileprivate var trailers: HTTPFields?
+        fileprivate var state: ReaderState?
 
         /// The iterator that provides HTTP request parts from the underlying channel.
         private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
@@ -53,12 +53,18 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                 // TODO: Add ByteBuffer span interfaces
                 return try await body(Array(buffer: element).span)
             case .end(let trailers):
-                self.trailers = trailers
+                self.state?.trailers = trailers
+                self.state?.finishedReading = true
                 return try await body(nil)
             case .none:
                 return try await body(nil)
             }
         }
+    }
+
+    final class ReaderState {
+        var trailers: HTTPFields? = nil
+        var finishedReading: Bool = false
     }
 
     /// The underlying reader type for the HTTP request body.
@@ -73,13 +79,17 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     /// The internal reader that provides HTTP request parts from the underlying channel.
     private var partsReader: RequestBodyAsyncReader
 
+    fileprivate let readerState: ReaderState
+
     /// Initializes a new HTTP request body and trailers reader with the given NIO async channel iterator.
     ///
     /// - Parameter iterator: The NIO async channel inbound stream iterator to use for reading request parts.
     init(
-        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+        readerState: ReaderState
     ) {
         self.partsReader = RequestBodyAsyncReader(iterator: iterator)
+        self.readerState = readerState
     }
 
     /// Processes the request body reading operation and captures the final trailer fields.
@@ -110,8 +120,9 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     public consuming func consumeAndConclude<Return>(
         body: (consuming RequestBodyAsyncReader) async throws -> Return
     ) async throws -> (Return, HTTPFields?) {
+        self.partsReader.state = self.readerState
         let result = try await body(self.partsReader)
-        return (result, /*self.partsReader.trailers*/nil)
+        return (result, self.readerState.trailers)
     }
 }
 

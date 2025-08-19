@@ -343,17 +343,42 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                         return
                     }
 
-                    try await handler.handle(
-                        request: httpRequest,
-                        requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader(
-                            iterator: iterator
-                        ),
-                        sendResponse: HTTPResponseSender { response in
-                            try await outbound.write(.head(response))
-                            return HTTPResponseConcludingAsyncWriter(writer: outbound)
+                    let readerState = HTTPRequestConcludingAsyncReader.ReaderState()
+                    let writerState = HTTPResponseConcludingAsyncWriter.WriterState()
+
+                    do {
+                        try await handler.handle(
+                            request: httpRequest,
+                            requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader(
+                                iterator: iterator,
+                                readerState: readerState
+                            ),
+                            sendResponse: HTTPResponseSender { response in
+                                try await outbound.write(.head(response))
+                                return HTTPResponseConcludingAsyncWriter(
+                                    writer: outbound,
+                                    writerState: writerState
+                                )
+                            }
+                        )
+                    } catch {
+                        if !readerState.finishedReading {
+                            // TODO: do something - we didn't finish reading but we threw
+                            // if h2 reset stream; if h1 try draining request?
                         }
-                    )
-                    // TODO: We need to send a response head here potentially
+                        if !writerState.finishedWriting {
+                            // TODO: this means we didn't write a response end and we threw
+                            // we need to do something, possibly just close the connection or
+                            // reset the stream with the appropriate error.
+                        }
+                    }
+
+                    // TODO: handle other state scenarios.
+                    // For example, if we're using h2 and we didn't finish reading but we wrote back
+                    // a response, we should send a RST_STREAM with NO_ERROR set.
+                    // If we finished reading but we didn't write back a response, then RST_STREAM
+                    // is also likely appropriate but unclear about the error.
+                    // For h1, we should close the connection.
                 }
         } catch {
             logger.debug("Error thrown while handling connection: \(error)")
