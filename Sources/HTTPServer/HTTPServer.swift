@@ -365,11 +365,13 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                         if !readerState.finishedReading {
                             // TODO: do something - we didn't finish reading but we threw
                             // if h2 reset stream; if h1 try draining request?
+                            fatalError("Didn't finish reading but threw.")
                         }
                         if !writerState.finishedWriting {
                             // TODO: this means we didn't write a response end and we threw
                             // we need to do something, possibly just close the connection or
                             // reset the stream with the appropriate error.
+                            fatalError("Didn't finish writing but threw.")
                         }
                     }
 
