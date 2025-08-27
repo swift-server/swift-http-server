@@ -48,8 +48,8 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         }
     }
 
-    public final class WriterState {
-        public var finishedWriting: Bool = false
+    final class WriterState {
+        var finishedWriting: Bool = false
     }
 
     /// The underlying writer type for the HTTP response body.
