@@ -425,7 +425,7 @@ public struct RequestResponseContext<
     }
 
     public consuming func withContext<T>(
-        _ handler: nonisolated(nonsending) @Sendable @escaping (
+        _ handler: nonisolated(nonsending) @escaping (
             HTTPRequest,
             consuming RequestReader,
             consuming HTTPResponseSender<ResponseWriter>
