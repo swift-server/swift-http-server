@@ -14,8 +14,8 @@ where
     ResponseConcludingAsyncWriter.Underlying.WriteElement == Span<UInt8>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseContext<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
-    typealias NextInput = RequestResponseContext<
+    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias NextInput = RequestResponseMiddlewareBox<
         HTTPRequestLoggingConcludingAsyncReader<RequestConcludingAsyncReader>,
         HTTPResponseLoggingConcludingAsyncWriter<ResponseConcludingAsyncWriter>
     >
@@ -34,35 +34,34 @@ where
         input: consuming Input,
         next: (consuming NextInput) async throws -> Void
     ) async throws {
-        let request = input.request
-        let requestReader = input.requestReader
-        let responseSender = input.responseSender
-        self.logger.info("Received request \(request.path ?? "unknown" ) \(request.method.rawValue)")
-        defer {
-            self.logger.info("Finished request \(request.path ?? "unknown" ) \(request.method.rawValue)")
-        }
-        let wrappedReader = HTTPRequestLoggingConcludingAsyncReader(
-            base: requestReader,
-            logger: self.logger
-        )
-
-        var maybeSender = Optional(responseSender)
-        let requestResponseContext = RequestResponseContext(
-            request: request,
-            requestReader: wrappedReader,
-            responseSender: HTTPResponseSender { [logger] response in
-                if let sender = maybeSender.take() {
-                    let writer = try await sender.sendResponse(response)
-                    return HTTPResponseLoggingConcludingAsyncWriter(
-                        base: writer,
-                        logger: logger
-                    )
-                } else {
-                    fatalError("Called closure more than once")
-                }
+        try await input.withContents { request, requestReader, responseSender in
+            self.logger.info("Received request \(request.path ?? "unknown" ) \(request.method.rawValue)")
+            defer {
+                self.logger.info("Finished request \(request.path ?? "unknown" ) \(request.method.rawValue)")
             }
-        )
-        try await next(requestResponseContext)
+            let wrappedReader = HTTPRequestLoggingConcludingAsyncReader(
+                base: requestReader,
+                logger: self.logger
+            )
+
+            var maybeSender = Optional(responseSender)
+            let requestResponseBox = RequestResponseMiddlewareBox(
+                request: request,
+                requestReader: wrappedReader,
+                responseSender: HTTPResponseSender { [logger] response in
+                    if let sender = maybeSender.take() {
+                        let writer = try await sender.sendResponse(response)
+                        return HTTPResponseLoggingConcludingAsyncWriter(
+                            base: writer,
+                            logger: logger
+                        )
+                    } else {
+                        fatalError("Called closure more than once")
+                    }
+                }
+            )
+            try await next(requestResponseBox)
+        }
     }
 }
 

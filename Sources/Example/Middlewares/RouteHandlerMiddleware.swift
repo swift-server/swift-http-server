@@ -13,14 +13,14 @@ where
     ResponseConcludingAsyncWriter.Underlying: AsyncWriter<Span<UInt8>, any Error>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseContext<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
     typealias NextInput = Never
 
     func intercept(
         input: consuming Input,
         next: (consuming NextInput) async throws -> Void
     ) async throws {
-        try await input.withContext { request, requestReader, responseSender in
+        try await input.withContents { request, requestReader, responseSender in
             var maybeReader = Optional(requestReader)
             try await responseSender.sendResponse(HTTPResponse(status: .accepted))
                 .produceAndConclude { responseBodyAsyncWriter in
