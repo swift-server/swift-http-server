@@ -236,15 +236,16 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                             )
                         )
 
+                        var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
+                            certificateChain: certificateChain,
+                            privateKey: privateKey
+                        )
+                        tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
                         try channel.pipeline.syncOperations
                             .addHandler(
                                 NIOSSLServerHandler(
-                                    context: .init(
-                                        configuration: .makeServerConfiguration(
-                                            certificateChain: certificateChain,
-                                            privateKey: privateKey
-                                        )
-                                    )
+                                    context: .init(configuration: tlsConfiguration)
                                 )
                             )
                     }.flatMap {
