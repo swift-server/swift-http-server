@@ -48,9 +48,7 @@ public struct HTTPServerConfiguration: Sendable {
 
         let backing: Backing
 
-        public static func insecure() -> Self {
-            Self(backing: .insecure)
-        }
+        public static let insecure: Self = Self(backing: .insecure)
 
         public static func certificateChainAndPrivateKey(
             certificateChain: [Certificate],
@@ -65,16 +63,53 @@ public struct HTTPServerConfiguration: Sendable {
         }
     }
 
+    /// Configuration for the backpressure strategy to use when reading requests and writing back responses.
+    public struct BackPressureStrategy: Sendable {
+        enum Backing {
+            case none
+            case watermark(low: Int, high: Int)
+        }
+
+        internal let backing: Backing
+
+        private init(backing: Backing) {
+            self.backing = backing
+        }
+
+        /// No backpressure will be applied to reading requests or writing responses.
+        public static let none: Self = .init(backing: .none)
+
+        /// A low/high watermark will be applied when reading requests and writing responses.
+        /// - Parameters:
+        ///   - low: The threshold below which the consumer will ask the producer to produce more elements.
+        ///   - high: The threshold above which the producer will stop producing elements.
+        /// - Returns: A low/high watermark strategy with the configured thresholds.
+        public static func watermark(low: Int, high: Int) -> Self {
+            .init(backing: .watermark(low: low, high: high))
+        }
+    }
+
     /// Network binding configuration
     public var bindTarget: BindTarget
 
+    /// TLS configuration for the server.
     public var tlSConfiguration: TLSConfiguration
 
+    /// Backpressure strategy to use in the server.
+    public var backpressureStrategy: BackPressureStrategy
+
+    /// Create a new configuration.
+    /// - Parameters:
+    ///   - bindTarget: A ``BindTarget``.
+    ///   - tlsConfiguration: A ``TLSConfiguration``. Defaults to ``TLSConfiguration/insecure``.
+    ///   - backpressureStrategy: A ``BackPressureStrategy``. Defaults to ``BackPressureStrategy/none``.
     public init(
         bindTarget: BindTarget,
-        tlsConfiguration: TLSConfiguration = .insecure()
+        tlsConfiguration: TLSConfiguration = .insecure,
+        backpressureStrategy: BackPressureStrategy = .none
     ) {
         self.bindTarget = bindTarget
         self.tlSConfiguration = tlsConfiguration
+        self.backpressureStrategy = backpressureStrategy
     }
 }

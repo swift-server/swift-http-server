@@ -155,11 +155,24 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         configuration: HTTPServerConfiguration,
         handler: RequestHandler
     ) async throws {
+        let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
+        switch configuration.backpressureStrategy.backing {
+        case .none:
+            asyncChannelConfiguration = .init(isOutboundHalfClosureEnabled: true)
+
+        case .watermark(let low, let high):
+            asyncChannelConfiguration = .init(
+                backPressureStrategy: .init(lowWatermark: low, highWatermark: high),
+                isOutboundHalfClosureEnabled: true
+            )
+        }
+
         switch configuration.tlSConfiguration.backing {
         case .insecure:
             try await Self.serveInsecureHTTP1_1(
                 bindTarget: configuration.bindTarget,
                 handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
                 logger: logger
             )
 
@@ -169,6 +182,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 certificateChain: certificateChain,
                 privateKey: privateKey,
                 handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
                 logger: logger
             )
         }
@@ -177,6 +191,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     private static func serveInsecureHTTP1_1(
         bindTarget: HTTPServerConfiguration.BindTarget,
         handler: RequestHandler,
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         logger: Logger
     ) async throws {
         switch bindTarget.backing {
@@ -188,7 +203,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                         try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
                         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                             wrappingChannelSynchronously: channel,
-                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                            configuration: asyncChannelConfiguration
                         )
                     }
                 }
@@ -214,6 +229,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         certificateChain: [Certificate],
         privateKey: Certificate.PrivateKey,
         handler: RequestHandler,
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         logger: Logger
     ) async throws {
         switch bindTarget.backing {
@@ -256,7 +272,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
 
                                 return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                                     wrappingChannelSynchronously: channel,
-                                    configuration: .init(isOutboundHalfClosureEnabled: true)
+                                    configuration: asyncChannelConfiguration
                                 )
                             }
                         } http2ConnectionInitializer: { channel in
@@ -270,7 +286,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
 
                                 return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                                     wrappingChannelSynchronously: channel,
-                                    configuration: .init(isOutboundHalfClosureEnabled: true)
+                                    configuration: asyncChannelConfiguration
                                 )
                             }
                         }
