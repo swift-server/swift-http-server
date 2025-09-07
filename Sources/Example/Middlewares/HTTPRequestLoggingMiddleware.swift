@@ -108,7 +108,7 @@ where
     }
 
     consuming func consumeAndConclude<Return>(
-        body: (consuming Underlying) async throws -> Return
+        body: (consuming sending Underlying) async throws -> Return
     ) async throws -> (Return, FinalElement) {
         let (result, trailers) = try await self.base.consumeAndConclude { [logger] reader in
             let wrappedReader = RequestBodyAsyncReader(
@@ -166,7 +166,7 @@ where
     }
 
     consuming func produceAndConclude<Return>(
-        body: (consuming ResponseBodyAsyncWriter) async throws -> (Return, HTTPFields?)
+        body: (consuming sending ResponseBodyAsyncWriter) async throws -> (Return, HTTPFields?)
     ) async throws -> Return {
         let logger = self.logger
         return try await self.base.produceAndConclude { writer in

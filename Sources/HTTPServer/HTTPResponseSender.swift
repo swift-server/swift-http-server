@@ -9,7 +9,7 @@ public import HTTPTypes
 public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyable>: ~Copyable {
     private let _sendResponse: (HTTPResponse) async throws -> ResponseWriter
 
-    package init(
+    public init(
         _ sendResponse: @escaping (HTTPResponse) async throws -> ResponseWriter
     ) {
         self._sendResponse = sendResponse

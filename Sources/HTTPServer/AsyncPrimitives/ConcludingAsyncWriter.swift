@@ -29,7 +29,7 @@ public protocol ConcludingAsyncWriter<Underlying, FinalElement>: ~Copyable {
     /// }
     /// ```
     consuming func produceAndConclude<Return>(
-        body: (consuming Underlying) async throws -> (Return, FinalElement)
+        body: (consuming sending Underlying) async throws -> (Return, FinalElement)
     ) async throws -> Return
 }
 
@@ -56,7 +56,7 @@ extension ConcludingAsyncWriter where Self: ~Copyable {
     /// }
     /// ```
     public consuming func produceAndConclude(
-        body: (consuming Underlying) async throws -> FinalElement
+        body: (consuming sending Underlying) async throws -> FinalElement
     ) async throws {
         try await self.produceAndConclude { writer in
             ((), try await body(writer))

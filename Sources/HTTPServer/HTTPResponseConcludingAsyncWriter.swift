@@ -1,6 +1,7 @@
 public import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
+import Synchronization
 
 /// A specialized writer for HTTP response bodies and trailers that manages the writing process
 /// and the final trailer fields.
@@ -48,8 +49,16 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         }
     }
 
-    final class WriterState {
-        var finishedWriting: Bool = false
+    final class WriterState: Sendable {
+        struct Wrapped {
+            var finishedWriting: Bool = false
+        }
+
+        let wrapped: Mutex<Wrapped>
+
+        init() {
+            self.wrapped = .init(.init())
+        }
     }
 
     /// The underlying writer type for the HTTP response body.
@@ -102,12 +111,14 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
     /// }
     /// ```
     public consuming func produceAndConclude<Return>(
-        body: (consuming ResponseBodyAsyncWriter) async throws -> (Return, FinalElement)
+        body: (consuming sending ResponseBodyAsyncWriter) async throws -> (Return, FinalElement)
     ) async throws -> Return {
         let responseBodyAsyncWriter = ResponseBodyAsyncWriter(writer: self.writer)
         let (result, finalElement) = try await body(responseBodyAsyncWriter)
         try await self.writer.write(.end(finalElement))
-        self.writerState.finishedWriting = true
+        self.writerState.wrapped.withLock { state in
+            state.finishedWriting = true
+        }
         return result
     }
 }

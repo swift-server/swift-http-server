@@ -10,6 +10,7 @@ import NIOPosix
 import NIOSSL
 import X509
 import SwiftASN1
+import Synchronization
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
@@ -363,12 +364,12 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                             }
                         )
                     } catch {
-                        if !readerState.finishedReading {
+                        if !readerState.wrapped.withLock({ $0.finishedReading }) {
                             // TODO: do something - we didn't finish reading but we threw
                             // if h2 reset stream; if h1 try draining request?
                             fatalError("Didn't finish reading but threw.")
                         }
-                        if !writerState.finishedWriting {
+                        if !writerState.wrapped.withLock({ $0.finishedWriting }) {
                             // TODO: this means we didn't write a response end and we threw
                             // we need to do something, possibly just close the connection or
                             // reset the stream with the appropriate error.
