@@ -37,7 +37,7 @@ public struct HTTPServerConfiguration: Sendable {
     ///
     /// Provides options for running the server with or without TLS encryption.
     /// When using TLS, you must provide a certificate chain and private key.
-    public struct TLSConfiguration: Sendable {
+    public struct TLS: Sendable {
         enum Backing {
             case insecure
             case certificateChainAndPrivateKey(
@@ -62,6 +62,40 @@ public struct HTTPServerConfiguration: Sendable {
             )
         }
     }
+
+    /// HTTP/2 specific configuration.
+    public struct HTTP2: Sendable, Hashable {
+        /// The maximum frame size to be used in an HTTP/2 connection.
+        public var maxFrameSize: Int
+
+        /// The target window size for this connection.
+        ///
+        /// - Note: This will also be set as the initial window size for the connection.
+        public var targetWindowSize: Int
+
+        /// The number of concurrent streams on the HTTP/2 connection.
+        public var maxConcurrentStreams: Int?
+
+        public init(
+            maxFrameSize: Int,
+            targetWindowSize: Int,
+            maxConcurrentStreams: Int?
+        ) {
+            self.maxFrameSize = maxFrameSize
+            self.targetWindowSize = targetWindowSize
+            self.maxConcurrentStreams = maxConcurrentStreams
+        }
+
+        /// Default values. The max frame size defaults to 2^14, the target window size defaults to 2^16-1, and
+        /// the max concurrent streams default to infinite.
+        public static var defaults: Self {
+            Self(
+                maxFrameSize: 1 << 14,
+                targetWindowSize: (1 << 16) - 1,
+                maxConcurrentStreams: nil
+            )
+        }
+     }
 
     /// Configuration for the backpressure strategy to use when reading requests and writing back responses.
     public struct BackPressureStrategy: Sendable {
@@ -89,10 +123,13 @@ public struct HTTPServerConfiguration: Sendable {
     public var bindTarget: BindTarget
 
     /// TLS configuration for the server.
-    public var tlSConfiguration: TLSConfiguration
+    public var tlSConfiguration: TLS
 
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
+
+    /// Backpressure strategy to use in the server.
+    public var http2: HTTP2
 
     /// Create a new configuration.
     /// - Parameters:
@@ -100,13 +137,16 @@ public struct HTTPServerConfiguration: Sendable {
     ///   - tlsConfiguration: A ``TLSConfiguration``. Defaults to ``TLSConfiguration/insecure``.
     ///   - backpressureStrategy: A ``BackPressureStrategy``.
     ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
+    ///   - http2: A ``HTTP2``. Defaults to ``HTTP2/defaults``.
     public init(
         bindTarget: BindTarget,
-        tlsConfiguration: TLSConfiguration = .insecure,
-        backpressureStrategy: BackPressureStrategy = .watermark(low: 2, high: 10)
+        tlsConfiguration: TLS = .insecure,
+        backpressureStrategy: BackPressureStrategy = .watermark(low: 2, high: 10),
+        http2: HTTP2 = .defaults
     ) {
         self.bindTarget = bindTarget
         self.tlSConfiguration = tlsConfiguration
         self.backpressureStrategy = backpressureStrategy
+        self.http2 = http2
     }
 }

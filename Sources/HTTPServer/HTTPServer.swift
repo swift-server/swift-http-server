@@ -174,12 +174,14 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             )
 
         case .certificateChainAndPrivateKey(let certificateChain, let privateKey):
+            let http2Config = NIOHTTP2Handler.Configuration(httpServerHTTP2Configuration: configuration.http2)
             try await Self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
                 certificateChain: certificateChain,
                 privateKey: privateKey,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
+                http2Configuration: http2Config,
                 logger: logger
             )
         }
@@ -227,6 +229,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         privateKey: Certificate.PrivateKey,
         handler: RequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
+        http2Configuration: NIOHTTP2Handler.Configuration,
         logger: Logger
     ) async throws {
         switch bindTarget.backing {
@@ -263,7 +266,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                 )
                             )
                     }.flatMap {
-                        channel.configureAsyncHTTPServerPipeline { channel in
+                        channel.configureAsyncHTTPServerPipeline(http2Configuration: http2Configuration) { channel in
                             channel.eventLoop.makeCompletedFuture {
                                 try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
 
@@ -401,5 +404,51 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
         }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOHTTP2Handler.Configuration {
+    init(httpServerHTTP2Configuration http2Config: HTTPServerConfiguration.HTTP2) {
+        let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)
+        let clampedMaxFrameSize = Self.clampMaxFrameSize(http2Config.maxFrameSize)
+
+        var http2HandlerConnectionConfiguration = NIOHTTP2Handler.ConnectionConfiguration()
+        var http2HandlerHTTP2Settings = HTTP2Settings([
+            HTTP2Setting(parameter: .initialWindowSize, value: clampedTargetWindowSize),
+            HTTP2Setting(parameter: .maxFrameSize, value: clampedMaxFrameSize),
+        ])
+        if let maxConcurrentStreams = http2Config.maxConcurrentStreams {
+            http2HandlerHTTP2Settings.append(
+                HTTP2Setting(parameter: .maxConcurrentStreams, value: maxConcurrentStreams)
+            )
+        }
+        http2HandlerConnectionConfiguration.initialSettings = http2HandlerHTTP2Settings
+
+        var http2HandlerStreamConfiguration = NIOHTTP2Handler.StreamConfiguration()
+        http2HandlerStreamConfiguration.targetWindowSize = clampedTargetWindowSize
+
+        self = NIOHTTP2Handler.Configuration(
+            connection: http2HandlerConnectionConfiguration,
+            stream: http2HandlerStreamConfiguration
+        )
+    }
+
+    /// Window size which mustn't exceed `2^31 - 1` (RFC 9113 § 6.5.2).
+    private static func clampTargetWindowSize(_ targetWindowSize: Int) -> Int {
+        min(targetWindowSize, Int(Int32.max))
+    }
+
+    /// Max frame size must be in the range `2^14 ..< 2^24` (RFC 9113 § 4.2).
+    private static func clampMaxFrameSize(_ maxFrameSize: Int) -> Int {
+        let clampedMaxFrameSize: Int
+        if maxFrameSize >= (1 << 24) {
+            clampedMaxFrameSize = (1 << 24) - 1
+        } else if maxFrameSize < (1 << 14) {
+            clampedMaxFrameSize = (1 << 14)
+        } else {
+            clampedMaxFrameSize = maxFrameSize
+        }
+        return clampedMaxFrameSize
     }
 }
