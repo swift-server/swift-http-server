@@ -96,7 +96,7 @@ extension ConcludingAsyncReader where Self: ~Copyable {
     /// ```
     public consuming func collect<Result>(
         upTo limit: Int,
-        body: consuming @escaping (Span<Underlying.ReadElement>) async throws -> Result
+        body: (Span<Underlying.ReadElement>) async throws -> Result
     ) async throws -> (Result, FinalElement) where Underlying.ReadElement: Copyable {
         try await self.consumeAndConclude { reader in
             var reader = reader
@@ -132,7 +132,7 @@ extension ConcludingAsyncReader where Self: ~Copyable {
     /// ```
     public consuming func collect<Element, Result>(
         upTo limit: Int,
-        body: consuming @escaping (Span<Element>) async throws -> Result
+        body: (Span<Element>) async throws -> Result
     ) async throws -> (Result, FinalElement) where Underlying.ReadElement == Span<Element> {
         try await self.consumeAndConclude { reader in
             var reader = reader

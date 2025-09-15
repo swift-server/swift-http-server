@@ -151,7 +151,7 @@ extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable {}
 
 
 extension Optional {
-    public mutating func sendingTake() -> sending Self {
+    mutating func sendingTake() -> sending Self {
         let result = consume self
         self = nil
         return result
