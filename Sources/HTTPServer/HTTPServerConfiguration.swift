@@ -66,7 +66,6 @@ public struct HTTPServerConfiguration: Sendable {
     /// Configuration for the backpressure strategy to use when reading requests and writing back responses.
     public struct BackPressureStrategy: Sendable {
         enum Backing {
-            case none
             case watermark(low: Int, high: Int)
         }
 
@@ -75,9 +74,6 @@ public struct HTTPServerConfiguration: Sendable {
         private init(backing: Backing) {
             self.backing = backing
         }
-
-        /// No backpressure will be applied to reading requests or writing responses.
-        public static let none: Self = .init(backing: .none)
 
         /// A low/high watermark will be applied when reading requests and writing responses.
         /// - Parameters:
@@ -102,11 +98,12 @@ public struct HTTPServerConfiguration: Sendable {
     /// - Parameters:
     ///   - bindTarget: A ``BindTarget``.
     ///   - tlsConfiguration: A ``TLSConfiguration``. Defaults to ``TLSConfiguration/insecure``.
-    ///   - backpressureStrategy: A ``BackPressureStrategy``. Defaults to ``BackPressureStrategy/none``.
+    ///   - backpressureStrategy: A ``BackPressureStrategy``.
+    ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
     public init(
         bindTarget: BindTarget,
         tlsConfiguration: TLSConfiguration = .insecure,
-        backpressureStrategy: BackPressureStrategy = .none
+        backpressureStrategy: BackPressureStrategy = .watermark(low: 2, high: 10)
     ) {
         self.bindTarget = bindTarget
         self.tlSConfiguration = tlsConfiguration

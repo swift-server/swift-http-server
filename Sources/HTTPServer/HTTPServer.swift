@@ -157,9 +157,6 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     ) async throws {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch configuration.backpressureStrategy.backing {
-        case .none:
-            asyncChannelConfiguration = .init(isOutboundHalfClosureEnabled: true)
-
         case .watermark(let low, let high):
             asyncChannelConfiguration = .init(
                 backPressureStrategy: .init(lowWatermark: low, highWatermark: high),
