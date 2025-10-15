@@ -211,7 +211,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 try await serverChannel.executeThenClose { inbound in
                     for try await http1Channel in inbound {
                         group.addTask {
-                            await Self.handleRequestChannel(
+                            try await Self.handleRequestChannel(
                                 logger: logger,
                                 channel: http1Channel,
                                 handler: handler
@@ -302,7 +302,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                     switch try await upgradeResult.get() {
                                     case .http1_1(let http1Channel):
                                         connectionGroup.addTask {
-                                            await Self.handleRequestChannel(
+                                            try await Self.handleRequestChannel(
                                                 logger: logger,
                                                 channel: http1Channel,
                                                 handler: handler
@@ -312,7 +312,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                         do {
                                             for try await http2StreamChannel in http2Multiplexer.inbound {
                                                 connectionGroup.addTask {
-                                                    await Self.handleRequestChannel(
+                                                    try await Self.handleRequestChannel(
                                                         logger: logger,
                                                         channel: http2StreamChannel,
                                                         handler: handler
@@ -338,7 +338,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         logger: Logger,
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: RequestHandler
-    ) async {
+    ) async throws {
         do {
             try await channel
                 .executeThenClose { inbound, outbound in
@@ -380,17 +380,17 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                             }
                         )
                     } catch {
+                        logger.error("Error thrown while handling connection: \(error)")
                         if !readerState.wrapped.withLock({ $0.finishedReading }) {
-                            // TODO: do something - we didn't finish reading but we threw
-                            // if h2 reset stream; if h1 try draining request?
-                            fatalError("Didn't finish reading but threw.")
+                            logger.error("Did not finish reading but error thrown.")
+                            // TODO: if h2 reset stream; if h1 try draining request?
                         }
                         if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-                            // TODO: this means we didn't write a response end and we threw
-                            // we need to do something, possibly just close the connection or
+                            logger.error("Did not write response but error thrown.")
+                            // TODO: we need to do something, possibly just close the connection or
                             // reset the stream with the appropriate error.
-                            fatalError("Didn't finish writing but threw.")
                         }
+                        throw error
                     }
 
                     // TODO: handle other state scenarios.
@@ -399,10 +399,16 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                     // If we finished reading but we didn't write back a response, then RST_STREAM
                     // is also likely appropriate but unclear about the error.
                     // For h1, we should close the connection.
+
+                    // Finish the outbound and wait on the close future to make sure all pending
+                    // writes are actually written.
+                    outbound.finish()
+                    try await channel.channel.closeFuture.get()
                 }
         } catch {
-            logger.debug("Error thrown while handling connection: \(error)")
+            logger.error("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
+            throw error
         }
     }
 }

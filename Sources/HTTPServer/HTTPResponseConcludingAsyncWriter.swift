@@ -116,9 +116,7 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         let responseBodyAsyncWriter = ResponseBodyAsyncWriter(writer: self.writer)
         let (result, finalElement) = try await body(responseBodyAsyncWriter)
         try await self.writer.write(.end(finalElement))
-        self.writerState.wrapped.withLock { state in
-            state.finishedWriting = true
-        }
+        self.writerState.wrapped.withLock { $0.finishedWriting = true }
         return result
     }
 }
