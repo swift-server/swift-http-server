@@ -1,5 +1,5 @@
-public import HTTPTypes
 public import Logging
+import HTTPTypes
 import NIOCertificateReloading
 import NIOCore
 import NIOHTTP1
@@ -62,55 +62,20 @@ import Synchronization
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public final class Server<RequestHandler: HTTPServerRequestHandler> {
-    /// Starts an HTTP server with a closure-based request handler.
-    ///
-    /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.
-    /// The server will bind to the specified configuration and process requests asynchronously.
-    ///
+public struct Server<RequestHandler: HTTPServerRequestHandler>: ServerProtocol, Sendable {
+    private let logger: Logger
+    private let configuration: HTTPServerConfiguration
+
+    /// <#Description#>
     /// - Parameters:
     ///   - logger: A logger instance for recording server events and debugging information.
     ///   - configuration: The server configuration including bind target and TLS settings.
-    ///   - handler: An async closure that processes HTTP requests. The closure receives:
-    ///     - `HTTPRequest`: The incoming HTTP request with headers and metadata
-    ///     - `HTTPRequestConcludingAsyncReader`: An async reader for consuming the request body and trailers
-    ///     - A non-copyable response sender function that accepts an `HTTPResponse` and provides access to an `HTTPResponseConcludingAsyncWriter`
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// let configuration = HTTPServerConfiguration(
-    ///     bindTarget: .hostAndPort(host: "localhost", port: 8080),
-    ///     tlsConfiguration: .insecure()
-    /// )
-    ///
-    /// try await Server.serve(
-    ///     logger: logger,
-    ///     configuration: configuration
-    /// ) { request, bodyReader, sendResponse in
-    ///     // Process the request
-    ///     let response = HTTPResponse(status: .ok)
-    ///     let writer = try await sendResponse(response)
-    ///     try await writer.produceAndConclude { writer in
-    ///         try await writer.write("Hello, World!".utf8)
-    ///         return ((), nil)
-    ///     }
-    /// }
-    /// ```
-    public static func serve(
+    public init(
         logger: Logger,
         configuration: HTTPServerConfiguration,
-        handler: @Sendable @escaping (
-            HTTPRequest,
-            consuming HTTPRequestConcludingAsyncReader,
-            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
-        ) async throws -> Void
-    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
-        try await self.serve(
-            logger: logger,
-            configuration: configuration,
-            handler: HTTPServerClosureRequestHandler(handler: handler)
-        )
+    ) {
+        self.logger = logger
+        self.configuration = configuration
     }
 
     /// Starts an HTTP server with the specified request handler.
@@ -132,7 +97,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     ///     func handle(
     ///         request: HTTPRequest,
     ///         requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
-    ///         sendResponse: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
+    ///         responseSender: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
     ///     ) async throws {
     ///         let response = HTTPResponse(status: .ok)
     ///         let writer = try await sendResponse(response)
@@ -151,13 +116,9 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
     ///     handler: EchoHandler()
     /// )
     /// ```
-    public static func serve(
-        logger: Logger,
-        configuration: HTTPServerConfiguration,
-        handler: RequestHandler
-    ) async throws {
+    public func serve(handler: RequestHandler) async throws {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
-        switch configuration.backpressureStrategy.backing {
+        switch self.configuration.backpressureStrategy.backing {
         case .watermark(let low, let high):
             asyncChannelConfiguration = .init(
                 backPressureStrategy: .init(lowWatermark: low, highWatermark: high),
@@ -165,18 +126,17 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             )
         }
 
-        switch configuration.transportSecurity.backing {
+        switch self.configuration.transportSecurity.backing {
         case .plaintext:
-            try await Self.serveInsecureHTTP1_1(
-                bindTarget: configuration.bindTarget,
+            try await self.serveInsecureHTTP1_1(
+                bindTarget: self.configuration.bindTarget,
                 handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                logger: logger
+                asyncChannelConfiguration: asyncChannelConfiguration
             )
 
         case .tls(let certificateChain, let privateKey):
             let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: configuration.http2
+                httpServerHTTP2Configuration: self.configuration.http2
             )
 
             let certificateChain = try certificateChain
@@ -200,13 +160,12 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await Self.serveSecureUpgrade(
+            try await self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
-                logger: logger
+                http2Configuration: http2Config
             )
 
         case .reloadingTLS(let certificateReloader):
@@ -314,11 +273,10 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         }
     }
 
-    private static func serveInsecureHTTP1_1(
+    private func serveInsecureHTTP1_1(
         bindTarget: HTTPServerConfiguration.BindTarget,
         handler: RequestHandler,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        logger: Logger
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) async throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -338,8 +296,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 try await serverChannel.executeThenClose { inbound in
                     for try await http1Channel in inbound {
                         group.addTask {
-                            try await Self.handleRequestChannel(
-                                logger: logger,
+                            try await self.handleRequestChannel(
                                 channel: http1Channel,
                                 handler: handler
                             )
@@ -350,13 +307,12 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         }
     }
 
-    private static func serveSecureUpgrade(
+    private func serveSecureUpgrade(
         bindTarget: HTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
         handler: RequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTP2Handler.Configuration,
-        logger: Logger
+        http2Configuration: NIOHTTP2Handler.Configuration
     ) async throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -407,8 +363,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                     switch try await upgradeResult.get() {
                                     case .http1_1(let http1Channel):
                                         connectionGroup.addTask {
-                                            try await Self.handleRequestChannel(
-                                                logger: logger,
+                                            try await self.handleRequestChannel(
                                                 channel: http1Channel,
                                                 handler: handler
                                             )
@@ -417,20 +372,19 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                         do {
                                             for try await http2StreamChannel in http2Multiplexer.inbound {
                                                 connectionGroup.addTask {
-                                                    try await Self.handleRequestChannel(
-                                                        logger: logger,
+                                                    try await self.handleRequestChannel(
                                                         channel: http2StreamChannel,
                                                         handler: handler
                                                     )
                                                 }
                                             }
                                         } catch {
-                                            logger.debug("HTTP2 connection closed: \(error)")
+                                            self.logger.debug("HTTP2 connection closed: \(error)")
                                         }
                                     }
                                 }
                             } catch {
-                                logger.debug("Negotiating ALPN failed: \(error)")
+                                self.logger.debug("Negotiating ALPN failed: \(error)")
                             }
                         }
                     }
@@ -439,8 +393,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
         }
     }
 
-    private static func handleRequestChannel(
-        logger: Logger,
+    private func handleRequestChannel(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: RequestHandler
     ) async throws {
@@ -454,15 +407,15 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                     case .head(let request):
                         httpRequest = request
                     case .body:
-                        logger.debug("Unexpectedly received body on connection. Closing now")
+                        self.logger.debug("Unexpectedly received body on connection. Closing now")
                         outbound.finish()
                         return
                     case .end:
-                        logger.debug("Unexpectedly received end on connection. Closing now")
+                        self.logger.debug("Unexpectedly received end on connection. Closing now")
                         outbound.finish()
                         return
                     case .none:
-                        logger.trace("No more requests parts on connection")
+                        self.logger.trace("No more requests parts on connection")
                         return
                     }
 
@@ -476,7 +429,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                                 iterator: iterator,
                                 readerState: readerState
                             ),
-                            sendResponse: HTTPResponseSender { response in
+                            responseSender: HTTPResponseSender { response in
                                 try await outbound.write(.head(response))
                                 return HTTPResponseConcludingAsyncWriter(
                                     writer: outbound,
@@ -511,7 +464,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                     try await channel.channel.closeFuture.get()
                 }
         } catch {
-            logger.error("Error thrown while handling connection: \(error)")
+            self.logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
             throw error
         }

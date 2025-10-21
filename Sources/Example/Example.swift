@@ -22,7 +22,7 @@ struct Example {
 
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
-        try await Server.serve(
+        let server = Server<HTTPServerClosureRequestHandler>(
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
@@ -43,7 +43,9 @@ struct Example {
                     ],
                     privateKey: Certificate.PrivateKey(privateKey)
                 )
-            ), handler: handler(request:requestConcludingAsyncReader:responseSender:))
+            )
+        )
+        try await server.serve(handler: handler(request:requestConcludingAsyncReader:responseSender:))
     }
 
     // This is a workaround for a current bug with the compiler.
@@ -66,9 +68,7 @@ struct Example {
 extension Server {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components
-    static func serve(
-        logger: Logger,
-        configuration: HTTPServerConfiguration,
+    func serve(
         @MiddlewareChainBuilder
         withMiddleware middlewareBuilder: () -> some Middleware<
         RequestResponseMiddlewareBox<
@@ -80,10 +80,7 @@ extension Server {
     ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
         let chain = middlewareBuilder()
 
-        try await serve(
-            logger: logger,
-            configuration: configuration
-        ) { request, reader, responseSender in
+        try await self.serve { request, reader, responseSender in
             try await chain.intercept(input: RequestResponseMiddlewareBox(
                 request: request,
                 requestReader: reader,
