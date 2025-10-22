@@ -1,5 +1,6 @@
 public import HTTPTypes
 public import Logging
+import NIOCertificateReloading
 import NIOCore
 import NIOHTTP1
 import NIOHTTP2
@@ -164,8 +165,8 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             )
         }
 
-        switch configuration.tlSConfiguration.backing {
-        case .insecure:
+        switch configuration.transportSecurity.backing {
+        case .plaintext:
             try await Self.serveInsecureHTTP1_1(
                 bindTarget: configuration.bindTarget,
                 handler: handler,
@@ -173,12 +174,54 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 logger: logger
             )
 
-        case .certificateChainAndPrivateKey(let certificateChain, let privateKey):
-            let http2Config = NIOHTTP2Handler.Configuration(httpServerHTTP2Configuration: configuration.http2)
+        case .reloadingTLS(let certificateReloader):
+            let http2Config = NIOHTTP2Handler.Configuration(
+                httpServerHTTP2Configuration: configuration.http2
+            )
+
+            var tlsConfiguration: TLSConfiguration = try .makeServerConfiguration(
+                certificateReloader: certificateReloader
+            )
+            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
             try await Self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
+                tlsConfiguration: tlsConfiguration,
+                handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
+                http2Configuration: http2Config,
+                logger: logger
+            )
+
+        case .staticTLS(let certificateChain, let privateKey):
+            let http2Config = NIOHTTP2Handler.Configuration(
+                httpServerHTTP2Configuration: configuration.http2
+            )
+
+            let certificateChain = try certificateChain
+                .map {
+                    try NIOSSLCertificate(
+                        bytes: $0.serializeAsPEM().derBytes,
+                        format: .der
+                    )
+                }
+                .map { NIOSSLCertificateSource.certificate($0) }
+            let privateKey = NIOSSLPrivateKeySource.privateKey(
+                try NIOSSLPrivateKey(
+                    bytes: privateKey.serializeAsPEM().derBytes,
+                    format: .der
+                )
+            )
+
+            var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
                 certificateChain: certificateChain,
-                privateKey: privateKey,
+                privateKey: privateKey
+            )
+            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
+            try await Self.serveSecureUpgrade(
+                bindTarget: configuration.bindTarget,
+                tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
                 http2Configuration: http2Config,
@@ -225,8 +268,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
 
     private static func serveSecureUpgrade(
         bindTarget: HTTPServerConfiguration.BindTarget,
-        certificateChain: [Certificate],
-        privateKey: Certificate.PrivateKey,
+        tlsConfiguration: TLSConfiguration,
         handler: RequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration,
@@ -238,27 +280,6 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: host, port: port) { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        let certificateChain = try certificateChain
-                            .map {
-                                try NIOSSLCertificate(
-                                    bytes: $0.serializeAsPEM().derBytes,
-                                    format: .der
-                                )
-                            }
-                            .map { NIOSSLCertificateSource.certificate($0) }
-                        let privateKey = NIOSSLPrivateKeySource.privateKey(
-                            try NIOSSLPrivateKey(
-                                bytes: privateKey.serializeAsPEM().derBytes,
-                                format: .der
-                            )
-                        )
-
-                        var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
-                            certificateChain: certificateChain,
-                            privateKey: privateKey
-                        )
-                        tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
                         try channel.pipeline.syncOperations
                             .addHandler(
                                 NIOSSLServerHandler(

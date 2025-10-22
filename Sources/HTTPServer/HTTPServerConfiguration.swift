@@ -1,4 +1,6 @@
 public import X509
+public import NIOCertificateReloading
+import NIOSSL
 
 /// Configuration settings for the HTTP server.
 ///
@@ -33,33 +35,39 @@ public struct HTTPServerConfiguration: Sendable {
         }
     }
 
-    /// Configuration for TLS/SSL encryption settings.
+    /// Configuration for transport security settings.
     ///
     /// Provides options for running the server with or without TLS encryption.
-    /// When using TLS, you must provide a certificate chain and private key.
-    public struct TLS: Sendable {
+    /// When using TLS, you must either provide a certificate chain and private key, or a `CertificateReloader`.
+    public struct TransportSecurity: Sendable {
         enum Backing {
-            case insecure
-            case certificateChainAndPrivateKey(
+            case plaintext
+            case staticTLS(
                 certificateChain: [Certificate],
                 privateKey: Certificate.PrivateKey
             )
+            case reloadingTLS(certificateReloader: any CertificateReloader)
+
         }
 
         let backing: Backing
 
-        public static let insecure: Self = Self(backing: .insecure)
+        public static let plaintext: Self = Self(backing: .plaintext)
 
-        public static func certificateChainAndPrivateKey(
+        public static func tls(
             certificateChain: [Certificate],
             privateKey: Certificate.PrivateKey
         ) -> Self {
             Self(
-                backing: .certificateChainAndPrivateKey(
+                backing: .staticTLS(
                     certificateChain: certificateChain,
                     privateKey: privateKey
                 )
             )
+        }
+
+        public static func tls(certificateReloader: any CertificateReloader) throws -> Self {
+            Self(backing: .reloadingTLS(certificateReloader: certificateReloader))
         }
     }
 
@@ -123,7 +131,7 @@ public struct HTTPServerConfiguration: Sendable {
     public var bindTarget: BindTarget
 
     /// TLS configuration for the server.
-    public var tlSConfiguration: TLS
+    public var transportSecurity: TransportSecurity
 
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
@@ -140,12 +148,12 @@ public struct HTTPServerConfiguration: Sendable {
     ///   - http2: A ``HTTP2``. Defaults to ``HTTP2/defaults``.
     public init(
         bindTarget: BindTarget,
-        tlsConfiguration: TLS = .insecure,
+        transportSecurity: TransportSecurity = .plaintext,
         backpressureStrategy: BackPressureStrategy = .watermark(low: 2, high: 10),
         http2: HTTP2 = .defaults
     ) {
         self.bindTarget = bindTarget
-        self.tlSConfiguration = tlsConfiguration
+        self.transportSecurity = transportSecurity
         self.backpressureStrategy = backpressureStrategy
         self.http2 = http2
     }

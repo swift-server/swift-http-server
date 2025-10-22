@@ -59,6 +59,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOHTTPTypesHTTP1", package: "swift-nio-extras"),
                 .product(name: "NIOHTTPTypesHTTP2", package: "swift-nio-extras"),
+                .product(name: "NIOCertificateReloading", package: "swift-nio-extras")
             ],
             swiftSettings: extraSettings
         ),

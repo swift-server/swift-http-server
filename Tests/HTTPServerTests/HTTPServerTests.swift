@@ -38,6 +38,7 @@ struct HTTPServerTests {
         //}
 
         try await responseConcludingWriter.produceAndConclude { writer in
+            var writer = writer
             try await writer.write([1,2].span)
             return nil
         }

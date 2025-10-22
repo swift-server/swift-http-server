@@ -26,7 +26,7 @@ struct Example {
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
-                tlsConfiguration: .certificateChainAndPrivateKey(
+                transportSecurity: .tls(
                     certificateChain: [
                         try Certificate(
                             version: .v3,
