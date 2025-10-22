@@ -42,12 +42,20 @@ public struct HTTPServerConfiguration: Sendable {
     public struct TransportSecurity: Sendable {
         enum Backing {
             case plaintext
-            case staticTLS(
+            case tls(
                 certificateChain: [Certificate],
                 privateKey: Certificate.PrivateKey
             )
             case reloadingTLS(certificateReloader: any CertificateReloader)
-
+            case mTLS(
+                certificateChain: [Certificate],
+                privateKey: Certificate.PrivateKey,
+                trustRoots: [Certificate]?
+            )
+            case reloadingMTLS(
+                certificateReloader: any CertificateReloader,
+                trustRoots: [Certificate]?
+            )
         }
 
         let backing: Backing
@@ -59,7 +67,7 @@ public struct HTTPServerConfiguration: Sendable {
             privateKey: Certificate.PrivateKey
         ) -> Self {
             Self(
-                backing: .staticTLS(
+                backing: .tls(
                     certificateChain: certificateChain,
                     privateKey: privateKey
                 )
@@ -68,6 +76,30 @@ public struct HTTPServerConfiguration: Sendable {
 
         public static func tls(certificateReloader: any CertificateReloader) throws -> Self {
             Self(backing: .reloadingTLS(certificateReloader: certificateReloader))
+        }
+
+        public static func mTLS(
+            certificateChain: [Certificate],
+            privateKey: Certificate.PrivateKey,
+            trustRoots: [Certificate]?
+        ) -> Self {
+            Self(
+                backing: .mTLS(
+                    certificateChain: certificateChain,
+                    privateKey: privateKey,
+                    trustRoots: trustRoots
+                )
+            )
+        }
+
+        public static func mTLS(
+            certificateReloader: any CertificateReloader,
+            trustRoots: [Certificate]?
+        ) throws -> Self {
+            Self(backing: .reloadingMTLS(
+                certificateReloader: certificateReloader,
+                trustRoots: trustRoots
+            ))
         }
     }
 

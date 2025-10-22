@@ -174,26 +174,7 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
                 logger: logger
             )
 
-        case .reloadingTLS(let certificateReloader):
-            let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: configuration.http2
-            )
-
-            var tlsConfiguration: TLSConfiguration = try .makeServerConfiguration(
-                certificateReloader: certificateReloader
-            )
-            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
-            try await Self.serveSecureUpgrade(
-                bindTarget: configuration.bindTarget,
-                tlsConfiguration: tlsConfiguration,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
-                logger: logger
-            )
-
-        case .staticTLS(let certificateChain, let privateKey):
+        case .tls(let certificateChain, let privateKey):
             let http2Config = NIOHTTP2Handler.Configuration(
                 httpServerHTTP2Configuration: configuration.http2
             )
@@ -216,6 +197,109 @@ public final class Server<RequestHandler: HTTPServerRequestHandler> {
             var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
                 certificateChain: certificateChain,
                 privateKey: privateKey
+            )
+            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
+            try await Self.serveSecureUpgrade(
+                bindTarget: configuration.bindTarget,
+                tlsConfiguration: tlsConfiguration,
+                handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
+                http2Configuration: http2Config,
+                logger: logger
+            )
+
+        case .reloadingTLS(let certificateReloader):
+            let http2Config = NIOHTTP2Handler.Configuration(
+                httpServerHTTP2Configuration: configuration.http2
+            )
+
+            var tlsConfiguration: TLSConfiguration = try .makeServerConfiguration(
+                certificateReloader: certificateReloader
+            )
+            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
+            try await Self.serveSecureUpgrade(
+                bindTarget: configuration.bindTarget,
+                tlsConfiguration: tlsConfiguration,
+                handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
+                http2Configuration: http2Config,
+                logger: logger
+            )
+
+        case .mTLS(let certificateChain, let privateKey, let trustRoots):
+            let http2Config = NIOHTTP2Handler.Configuration(
+                httpServerHTTP2Configuration: configuration.http2
+            )
+
+            let certificateChain = try certificateChain
+                .map {
+                    try NIOSSLCertificate(
+                        bytes: $0.serializeAsPEM().derBytes,
+                        format: .der
+                    )
+                }
+                .map { NIOSSLCertificateSource.certificate($0) }
+            let privateKey = NIOSSLPrivateKeySource.privateKey(
+                try NIOSSLPrivateKey(
+                    bytes: privateKey.serializeAsPEM().derBytes,
+                    format: .der
+                )
+            )
+
+            let nioTrustRoots: NIOSSLTrustRoots
+            if let trustRoots {
+                nioTrustRoots = .certificates(
+                    try trustRoots.map {
+                        try NIOSSLCertificate(
+                            bytes: $0.serializeAsPEM().derBytes,
+                            format: .der
+                        )
+                    }
+                )
+            } else {
+                nioTrustRoots = .default
+            }
+
+            var tlsConfiguration: TLSConfiguration = .makeServerConfigurationWithMTLS(
+                certificateChain: certificateChain,
+                privateKey: privateKey,
+                trustRoots: nioTrustRoots
+            )
+            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
+
+            try await Self.serveSecureUpgrade(
+                bindTarget: configuration.bindTarget,
+                tlsConfiguration: tlsConfiguration,
+                handler: handler,
+                asyncChannelConfiguration: asyncChannelConfiguration,
+                http2Configuration: http2Config,
+                logger: logger
+            )
+
+        case .reloadingMTLS(let certificateReloader, let trustRoots):
+            let http2Config = NIOHTTP2Handler.Configuration(
+                httpServerHTTP2Configuration: configuration.http2
+            )
+
+            let nioTrustRoots: NIOSSLTrustRoots
+            if let trustRoots {
+                nioTrustRoots = .certificates(
+                    try trustRoots.map {
+                        try NIOSSLCertificate(
+                            bytes: $0.serializeAsPEM().derBytes,
+                            format: .der
+                        )
+                    }
+                )
+            } else {
+                nioTrustRoots = .default
+            }
+
+            var tlsConfiguration: TLSConfiguration = try .makeServerConfigurationWithMTLS(
+                certificateReloader: certificateReloader,
+                trustRoots: nioTrustRoots
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
