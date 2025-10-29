@@ -26,7 +26,7 @@ struct Example {
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
-                tlsConfiguration: .certificateChainAndPrivateKey(
+                transportSecurity: .tls(
                     certificateChain: [
                         try Certificate(
                             version: .v3,
@@ -43,58 +43,52 @@ struct Example {
                     ],
                     privateKey: Certificate.PrivateKey(privateKey)
                 )
-            ),
-            withMiddleware: {
-                HTTPRequestLoggingMiddleware<
-                    HTTPRequestConcludingAsyncReader,
-                    HTTPResponseConcludingAsyncWriter
-                >(logger: logger)
-                TracingMiddleware<
-                    (
-                        HTTPRequest,
-                        HTTPRequestLoggingConcludingAsyncReader<HTTPRequestConcludingAsyncReader>,
-                        (
-                            HTTPResponse
-                        ) async throws -> HTTPResponseLoggingConcludingAsyncWriter<HTTPResponseConcludingAsyncWriter>
-                    )
-                >()
-                RouteHandlerMiddleware<
-                    HTTPRequestLoggingConcludingAsyncReader<HTTPRequestConcludingAsyncReader>,
-                    HTTPResponseLoggingConcludingAsyncWriter<HTTPResponseConcludingAsyncWriter>
-                >()
-            }
-        )
+            ), handler: handler(request:requestConcludingAsyncReader:responseSender:))
+    }
+
+    // This is a workaround for a current bug with the compiler.
+    @Sendable
+    nonisolated(nonsending) private static func handler(
+        request: HTTPRequest,
+        requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+        responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+    ) async throws {
+        let writer = try await responseSender.sendResponse(HTTPResponse(status: .ok))
+        try await writer.writeAndConclude(element: "Well, hello!".utf8.span, finalElement: nil)
     }
 }
 
 // MARK: - Server Extensions
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension Server {
-    /// Serve HTTP requests using a middleware chain built with the provided builder
-    /// This method handles the type inference for HTTP middleware components
-    static func serve(
-        logger: Logger,
-        configuration: HTTPServerConfiguration,
-        @MiddlewareChainBuilder
-        withMiddleware middlewareBuilder: () -> some Middleware<
-            (
-                HTTPRequest,
-                HTTPRequestConcludingAsyncReader,
-                (
-                    HTTPResponse
-                ) async throws -> HTTPResponseConcludingAsyncWriter
-            ),
-            Never
-        > & Sendable
-    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
-        let chain = middlewareBuilder()
+// This has to be commented out because of the compiler bug above. Workaround doesn't apply here.
 
-        try await serve(
-            logger: logger,
-            configuration: configuration
-        ) { request, requestReader, sendResponse in
-            try await chain.intercept(input: (request, requestReader, sendResponse)) { _ in }
-        }
-    }
-}
+//@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+//extension Server {
+//    /// Serve HTTP requests using a middleware chain built with the provided builder
+//    /// This method handles the type inference for HTTP middleware components
+//    static func serve(
+//        logger: Logger,
+//        configuration: HTTPServerConfiguration,
+//        @MiddlewareChainBuilder
+//        withMiddleware middlewareBuilder: () -> some Middleware<
+//            RequestResponseContext<
+//                HTTPRequestConcludingAsyncReader,
+//                HTTPResponseConcludingAsyncWriter
+//            >,
+//            Never
+//        > & Sendable
+//    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
+//        let chain = middlewareBuilder()
+//
+//        try await serve(
+//            logger: logger,
+//            configuration: configuration
+//        ) { request, reader, responseSender in
+//            try await chain.intercept(input: RequestResponseContext(
+//                request: request,
+//                requestReader: reader,
+//                responseSender: responseSender
+//            )) { _ in }
+//        }
+//    }
+//}

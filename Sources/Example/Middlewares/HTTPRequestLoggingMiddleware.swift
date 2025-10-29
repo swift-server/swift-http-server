@@ -5,30 +5,25 @@ import Middleware
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingMiddleware<
-    RequestConludingAsyncReader: ConcludingAsyncReader,
+    RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable
 >: Middleware
 where
-    RequestConludingAsyncReader.Underlying: AsyncReader<Span<UInt8>, any Error>,
-    RequestConludingAsyncReader.FinalElement == HTTPFields?,
-    ResponseConcludingAsyncWriter.Underlying: AsyncWriter<Span<UInt8>, any Error>,
+    RequestConcludingAsyncReader.Underlying.ReadElement == Span<UInt8>,
+    RequestConcludingAsyncReader.FinalElement == HTTPFields?,
+    ResponseConcludingAsyncWriter.Underlying.WriteElement == Span<UInt8>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = (
-        HTTPRequest, RequestConludingAsyncReader, (HTTPResponse) async throws -> ResponseConcludingAsyncWriter
-    )
-    typealias NextInput = (
-        HTTPRequest,
-        HTTPRequestLoggingConcludingAsyncReader<RequestConludingAsyncReader>,
-        (
-            HTTPResponse
-        ) async throws -> HTTPResponseLoggingConcludingAsyncWriter<ResponseConcludingAsyncWriter>
-    )
+    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias NextInput = RequestResponseMiddlewareBox<
+        HTTPRequestLoggingConcludingAsyncReader<RequestConcludingAsyncReader>,
+        HTTPResponseLoggingConcludingAsyncWriter<ResponseConcludingAsyncWriter>
+    >
 
     let logger: Logger
 
     init(
-        requestConludingAsyncReaderType: RequestConludingAsyncReader.Type = RequestConludingAsyncReader.self,
+        requestConcludingAsyncReaderType: RequestConcludingAsyncReader.Type = RequestConcludingAsyncReader.self,
         responseConcludingAsyncWriterType: ResponseConcludingAsyncWriter.Type = ResponseConcludingAsyncWriter.self,
         logger: Logger
     ) {
@@ -36,59 +31,66 @@ where
     }
 
     func intercept(
-        input: Input,
-        next: (NextInput) async throws -> Void
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Void
     ) async throws {
-        let request = input.0
-        let requestAsyncReader = input.1
-        let respond = input.2
-        self.logger.info("Received request \(request.path ?? "unknown" ) \(request.method.rawValue)")
-        defer {
-            self.logger.info("Finished request \(request.path ?? "unknown" ) \(request.method.rawValue)")
-        }
-        let wrappedReader = HTTPRequestLoggingConcludingAsyncReader(
-            base: requestAsyncReader,
-            logger: self.logger
-        )
-        try await next(
-            (request, wrappedReader, { httpResponse in
-                    let writer = try await respond(httpResponse)
-                    return HTTPResponseLoggingConcludingAsyncWriter(
-                        base: writer,
-                        logger: self.logger
-                    )
+        try await input.withContents { request, requestReader, responseSender in
+            self.logger.info("Received request \(request.path ?? "unknown" ) \(request.method.rawValue)")
+            defer {
+                self.logger.info("Finished request \(request.path ?? "unknown" ) \(request.method.rawValue)")
+            }
+            let wrappedReader = HTTPRequestLoggingConcludingAsyncReader(
+                base: requestReader,
+                logger: self.logger
+            )
+
+            var maybeSender = Optional(responseSender)
+            let requestResponseBox = RequestResponseMiddlewareBox(
+                request: request,
+                requestReader: wrappedReader,
+                responseSender: HTTPResponseSender { [logger] response in
+                    if let sender = maybeSender.take() {
+                        let writer = try await sender.sendResponse(response)
+                        return HTTPResponseLoggingConcludingAsyncWriter(
+                            base: writer,
+                            logger: logger
+                        )
+                    } else {
+                        fatalError("Called closure more than once")
+                    }
                 }
             )
-        )
+            try await next(requestResponseBox)
+        }
     }
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingConcludingAsyncReader<
-    Base: ConcludingAsyncReader
->: ConcludingAsyncReader
+    Base: ConcludingAsyncReader & ~Copyable
+>: ConcludingAsyncReader, ~Copyable
 where
-    Base.Underlying: AsyncReader<Span<UInt8>, any Error>,
+    Base.Underlying.ReadElement == Span<UInt8>,
     Base.FinalElement == HTTPFields?
 {
     typealias Underlying = RequestBodyAsyncReader
     typealias FinalElement = HTTPFields?
 
-    struct RequestBodyAsyncReader: AsyncReader {
+    struct RequestBodyAsyncReader: AsyncReader, ~Copyable {
         typealias ReadElement = Span<UInt8>
         typealias ReadFailure = any Error
 
         private var underlying: Base.Underlying
         private let logger: Logger
 
-        init(underlying: Base.Underlying, logger: Logger) {
+        init(underlying: consuming Base.Underlying, logger: Logger) {
             self.underlying = underlying
             self.logger = logger
         }
 
         mutating func read<Return>(
             body: (consuming Span<UInt8>?) async throws -> Return
-        ) async throws(any Error) -> Return {
+        ) async throws -> Return {
             let logger = self.logger
             return try await self.underlying.read { span in
                 logger.info("Received next chunk \(span?.count ?? 0)")
@@ -100,20 +102,20 @@ where
     private var base: Base
     private let logger: Logger
 
-    init(base: Base, logger: Logger) {
+    init(base: consuming Base, logger: Logger) {
         self.base = base
         self.logger = logger
     }
 
-    func consumeAndConclude<Return>(
-        body: (inout RequestBodyAsyncReader) async throws -> Return
-    ) async throws -> (Return, HTTPFields?) {
-        let (result, trailers) = try await self.base.consumeAndConclude { bodyAsyncReader in
-            var wrappedReader = RequestBodyAsyncReader(
-                underlying: bodyAsyncReader,
-                logger: self.logger
+    consuming func consumeAndConclude<Return>(
+        body: (consuming sending Underlying) async throws -> Return
+    ) async throws -> (Return, FinalElement) {
+        let (result, trailers) = try await self.base.consumeAndConclude { [logger] reader in
+            let wrappedReader = RequestBodyAsyncReader(
+                underlying: reader,
+                logger: logger
             )
-            return try await body(&wrappedReader)
+            return try await body(wrappedReader)
         }
 
         if let trailers {
@@ -121,6 +123,7 @@ where
         } else {
             self.logger.info("Received no request trailers")
         }
+
         return (result, trailers)
     }
 }
@@ -130,7 +133,7 @@ struct HTTPResponseLoggingConcludingAsyncWriter<
     Base: ConcludingAsyncWriter & ~Copyable
 >: ConcludingAsyncWriter, ~Copyable
 where
-    Base.Underlying: AsyncWriter<Span<UInt8>, any Error>,
+    Base.Underlying.WriteElement == Span<UInt8>,
     Base.FinalElement == HTTPFields?
 {
     typealias Underlying = ResponseBodyAsyncWriter
@@ -163,7 +166,7 @@ where
     }
 
     consuming func produceAndConclude<Return>(
-        body: (consuming ResponseBodyAsyncWriter) async throws -> (Return, HTTPFields?)
+        body: (consuming sending ResponseBodyAsyncWriter) async throws -> (Return, HTTPFields?)
     ) async throws -> Return {
         let logger = self.logger
         return try await self.base.produceAndConclude { writer in
