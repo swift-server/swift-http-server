@@ -157,9 +157,3 @@ extension Optional {
         return result
     }
 }
-
-@available(*, unavailable)
-extension HTTPRequestConcludingAsyncReader: Sendable { }
-
-@available(*, unavailable)
-extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable { }

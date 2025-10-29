@@ -56,6 +56,3 @@ public struct MiddlewareChain<Input: ~Copyable, NextInput: ~Copyable>: Middlewar
         try await middlewareFunc(input, next)
     }
 }
-
-@available(*, unavailable)
-extension MiddlewareChain: Sendable  { }

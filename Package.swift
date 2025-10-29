@@ -11,7 +11,8 @@ let extraSettings: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InternalImportsByDefault")
+    .enableUpcomingFeature("InternalImportsByDefault"),
+    .unsafeFlags(["-Xfrontend", "-require-explicit-sendable", "-warnings-as-errors"])
 ]
 
 let package = Package(
