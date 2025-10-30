@@ -65,7 +65,7 @@ struct Example {
 // This has to be commented out because of the compiler bug above. Workaround doesn't apply here.
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension Server {
+extension NIOHTTPServer {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components
     func serve(
