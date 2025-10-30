@@ -2,7 +2,7 @@ public import HTTPTypes
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A generic HTTP server protocol that can handle incoming HTTP requests.
-public protocol ServerProtocol<RequestHandler> {
+public protocol HTTPServerProtocol<RequestHandler> {
     associatedtype RequestHandler: HTTPServerRequestHandler
 
     /// Starts an HTTP server with the specified request handler.
@@ -39,7 +39,7 @@ public protocol ServerProtocol<RequestHandler> {
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension ServerProtocol where RequestHandler == HTTPServerClosureRequestHandler {
+extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHandler {
     /// Starts an HTTP server with a closure-based request handler.
     ///
     /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.

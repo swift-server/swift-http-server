@@ -62,7 +62,7 @@ import Synchronization
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct Server<RequestHandler: HTTPServerRequestHandler>: ServerProtocol, Sendable {
+public struct Server<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol, Sendable {
     private let logger: Logger
     private let configuration: HTTPServerConfiguration
 
