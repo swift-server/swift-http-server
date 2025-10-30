@@ -62,33 +62,33 @@ struct Example {
 
 // This has to be commented out because of the compiler bug above. Workaround doesn't apply here.
 
-//@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-//extension Server {
-//    /// Serve HTTP requests using a middleware chain built with the provided builder
-//    /// This method handles the type inference for HTTP middleware components
-//    static func serve(
-//        logger: Logger,
-//        configuration: HTTPServerConfiguration,
-//        @MiddlewareChainBuilder
-//        withMiddleware middlewareBuilder: () -> some Middleware<
-//            RequestResponseContext<
-//                HTTPRequestConcludingAsyncReader,
-//                HTTPResponseConcludingAsyncWriter
-//            >,
-//            Never
-//        > & Sendable
-//    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
-//        let chain = middlewareBuilder()
-//
-//        try await serve(
-//            logger: logger,
-//            configuration: configuration
-//        ) { request, reader, responseSender in
-//            try await chain.intercept(input: RequestResponseContext(
-//                request: request,
-//                requestReader: reader,
-//                responseSender: responseSender
-//            )) { _ in }
-//        }
-//    }
-//}
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension Server {
+    /// Serve HTTP requests using a middleware chain built with the provided builder
+    /// This method handles the type inference for HTTP middleware components
+    static func serve(
+        logger: Logger,
+        configuration: HTTPServerConfiguration,
+        @MiddlewareChainBuilder
+        withMiddleware middlewareBuilder: () -> some Middleware<
+        RequestResponseMiddlewareBox<
+                HTTPRequestConcludingAsyncReader,
+                HTTPResponseConcludingAsyncWriter
+            >,
+            Never
+        > & Sendable
+    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
+        let chain = middlewareBuilder()
+
+        try await serve(
+            logger: logger,
+            configuration: configuration
+        ) { request, reader, responseSender in
+            try await chain.intercept(input: RequestResponseMiddlewareBox(
+                request: request,
+                requestReader: reader,
+                responseSender: responseSender
+            )) { _ in }
+        }
+    }
+}
