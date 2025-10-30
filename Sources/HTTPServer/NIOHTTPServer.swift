@@ -62,11 +62,11 @@ import Synchronization
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct Server<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol, Sendable {
+public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol, Sendable {
     private let logger: Logger
     private let configuration: HTTPServerConfiguration
 
-    /// <#Description#>
+    /// Create a new ``HTTPServer`` implemented over `SwiftNIO`.
     /// - Parameters:
     ///   - logger: A logger instance for recording server events and debugging information.
     ///   - configuration: The server configuration including bind target and TLS settings.

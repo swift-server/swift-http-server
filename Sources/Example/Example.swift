@@ -22,7 +22,7 @@ struct Example {
 
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
-        let server = Server<HTTPServerClosureRequestHandler>(
+        let server = NIOHTTPServer<HTTPServerClosureRequestHandler>(
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
