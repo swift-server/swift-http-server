@@ -20,7 +20,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// struct EchoHandler: HTTPServerRequestHandler {
     ///     func handle(
     ///         request: HTTPRequest,
-    ///         requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+    ///         requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
     ///         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ///     ) async throws {
     ///         let response = HTTPResponse(status: .ok)
@@ -63,9 +63,9 @@ extension HTTPServerProtocol {
     /// ```
     public func serve(
         handler: @Sendable @escaping (
-            HTTPRequest,
-            consuming HTTPRequestConcludingAsyncReader,
-            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            _ request: HTTPRequest,
+            _ requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
+            _ responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) async throws {
         try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))

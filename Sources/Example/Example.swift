@@ -45,14 +45,14 @@ struct Example {
                 )
             )
         )
-        try await server.serve(handler: handler(request:requestConcludingAsyncReader:responseSender:))
+        try await server.serve(handler: handler(request:requestBodyAndTrailers:responseSender:))
     }
 
     // This is a workaround for a current bug with the compiler.
     @Sendable
     nonisolated(nonsending) private static func handler(
         request: HTTPRequest,
-        requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+        requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
         let writer = try await responseSender.sendResponse(HTTPResponse(status: .ok))

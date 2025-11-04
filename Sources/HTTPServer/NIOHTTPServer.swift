@@ -96,7 +96,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     /// struct EchoHandler: HTTPServerRequestHandler {
     ///     func handle(
     ///         request: HTTPRequest,
-    ///         requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader,
+    ///         requestBodyAndTrailers: HTTPRequestConcludingAsyncReader,
     ///         responseSender: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
     ///     ) async throws {
     ///         let response = HTTPResponse(status: .ok)
@@ -425,7 +425,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                     do {
                         try await handler.handle(
                             request: httpRequest,
-                            requestConcludingAsyncReader: HTTPRequestConcludingAsyncReader(
+                            requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
                                 iterator: iterator,
                                 readerState: readerState
                             ),

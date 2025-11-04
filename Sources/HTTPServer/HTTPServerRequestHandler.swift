@@ -3,7 +3,7 @@ public import HTTPTypes
 /// A protocol that defines the contract for handling HTTP server requests.
 ///
 /// ``HTTPServerRequestHandler`` provides a structured way to process incoming HTTP requests and generate appropriate responses.
-/// Conforming types implement the ``handle(request:requestConcludingAsyncReader:responseSender:)`` method,
+/// Conforming types implement the ``handle(request:requestBodyAndTrailers:responseSender:)`` method,
 /// which is called by the HTTP server for each incoming request. The handler is responsible for:
 ///
 /// - Processing the request headers.
@@ -18,7 +18,7 @@ public import HTTPTypes
 /// struct EchoHandler: HTTPServerRequestHandler {
 /// func handle(
 ///     request: HTTPRequest,
-///     requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+///     requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
 ///     responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
 /// ) async throws {
 ///     // Read the entire request body
@@ -69,7 +69,7 @@ public protocol HTTPServerRequestHandler: Sendable {
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
-    ///   - requestConcludingAsyncReader: A reader for accessing the request body data and trailing headers.
+    ///   - requestBodyAndTrailers: A reader for accessing the request body data and trailing headers.
     ///     This follows the `ConcludingAsyncReader` pattern, allowing for incremental reading of request body data
     ///     and concluding with any trailer fields sent at the end of the request.
     ///   - responseSender: An ``HTTPResponseSender`` that takes an HTTP response and returns a writer for the
@@ -78,7 +78,7 @@ public protocol HTTPServerRequestHandler: Sendable {
     /// - Throws: Any error encountered during request processing or response generation.
     func handle(
         request: HTTPRequest,
-        requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+        requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws
 }

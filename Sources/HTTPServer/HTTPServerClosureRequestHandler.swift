@@ -36,7 +36,7 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     /// Creates a new closure-based HTTP request handler.
     ///
     /// - Parameter handler: A closure that will be called to handle each incoming HTTP request.
-    ///   The closure takes the same parameters as the ``HTTPServerRequestHandler/handle(request:requestConcludingAsyncReader:responseSender:)`` method.
+    ///   The closure takes the same parameters as the ``HTTPServerRequestHandler/handle(request:requestBodyAndTrailers:responseSender:)`` method.
     public init(
         handler: nonisolated(nonsending) @Sendable @escaping (
             HTTPRequest,
@@ -53,13 +53,13 @@ public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
-    ///   - requestConcludingAsyncReader: A reader for accessing the request body data and trailing headers.
+    ///   - requestBodyAndTrailers: A reader for accessing the request body data and trailing headers.
     ///   - responseSender: An ``HTTPResponseSender`` to send the HTTP response.
     public func handle(
         request: HTTPRequest,
-        requestConcludingAsyncReader: consuming HTTPRequestConcludingAsyncReader,
+        requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
-        try await self._handler(request, requestConcludingAsyncReader, responseSender)
+        try await self._handler(request, requestBodyAndTrailers, responseSender)
     }
 }
