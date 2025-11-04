@@ -22,7 +22,7 @@ struct Example {
 
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
-        let server = NIOHTTPServer<HTTPServerClosureRequestHandler>(
+        let server = NIOHTTPServer(
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
@@ -77,7 +77,7 @@ extension NIOHTTPServer {
             >,
             Never
         > & Sendable
-    ) async throws where RequestHandler == HTTPServerClosureRequestHandler {
+    ) async throws {
         let chain = middlewareBuilder()
 
         try await self.serve { request, reader, responseSender in

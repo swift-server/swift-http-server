@@ -2,9 +2,7 @@ public import HTTPTypes
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A generic HTTP server protocol that can handle incoming HTTP requests.
-public protocol HTTPServerProtocol<RequestHandler> {
-    associatedtype RequestHandler: HTTPServerRequestHandler
-
+public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// Starts an HTTP server with the specified request handler.
     ///
     /// This method creates and runs an HTTP server that processes incoming requests using the provided
@@ -35,11 +33,11 @@ public protocol HTTPServerProtocol<RequestHandler> {
     ///
     /// try await server.serve(handler: EchoHandler())
     /// ```
-    func serve(handler: RequestHandler) async throws
+    func serve(handler: some HTTPServerRequestHandler) async throws
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHandler {
+extension HTTPServerProtocol {
     /// Starts an HTTP server with a closure-based request handler.
     ///
     /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.

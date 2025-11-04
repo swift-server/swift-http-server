@@ -62,7 +62,7 @@ import Synchronization
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol, Sendable {
+public struct NIOHTTPServer: HTTPServerProtocol {
     private let logger: Logger
     private let configuration: HTTPServerConfiguration
 
@@ -116,7 +116,7 @@ public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServe
     ///     handler: EchoHandler()
     /// )
     /// ```
-    public func serve(handler: RequestHandler) async throws {
+    public func serve(handler: some HTTPServerRequestHandler) async throws {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch self.configuration.backpressureStrategy.backing {
         case .watermark(let low, let high):
@@ -275,7 +275,7 @@ public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServe
 
     private func serveInsecureHTTP1_1(
         bindTarget: HTTPServerConfiguration.BindTarget,
-        handler: RequestHandler,
+        handler: some HTTPServerRequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) async throws {
         switch bindTarget.backing {
@@ -310,7 +310,7 @@ public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServe
     private func serveSecureUpgrade(
         bindTarget: HTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
-        handler: RequestHandler,
+        handler: some HTTPServerRequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration
     ) async throws {
@@ -395,7 +395,7 @@ public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServe
 
     private func handleRequestChannel(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: RequestHandler
+        handler: some HTTPServerRequestHandler
     ) async throws {
         do {
             try await channel
