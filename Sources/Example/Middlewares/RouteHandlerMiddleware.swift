@@ -22,7 +22,7 @@ where
     ) async throws {
         try await input.withContents { request, requestReader, responseSender in
             var maybeReader = Optional(requestReader)
-            try await responseSender.sendResponse(HTTPResponse(status: .accepted))
+            try await responseSender.send(HTTPResponse(status: .accepted))
                 .produceAndConclude { responseBodyAsyncWriter in
                     var responseBodyAsyncWriter = responseBodyAsyncWriter
                     if let reader = maybeReader.take() {

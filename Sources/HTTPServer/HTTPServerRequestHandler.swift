@@ -46,7 +46,7 @@ public import HTTPTypes
 ///     response.headerFields[.contentType] = "text/plain"
 ///
 ///     // Send the response and write the echo data back
-///     let responseWriter = try await responseSender.sendResponse(response)
+///     let responseWriter = try await responseSender.send(response)
 ///     try await responseWriter.produceAndConclude { writer in
 ///         var writer = writer
 ///         try await writer.write(bodyData.span)

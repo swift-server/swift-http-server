@@ -24,7 +24,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     ///         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ///     ) async throws {
     ///         let response = HTTPResponse(status: .ok)
-    ///         let writer = try await responseSender.sendResponse(response)
+    ///         let writer = try await responseSender.send(response)
     ///         // Handle request and write response...
     ///     }
     /// }

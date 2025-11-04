@@ -50,7 +50,7 @@ where
                 requestReader: wrappedReader,
                 responseSender: HTTPResponseSender { [logger] response in
                     if let sender = maybeSender.take() {
-                        let writer = try await sender.sendResponse(response)
+                        let writer = try await sender.send(response)
                         return HTTPResponseLoggingConcludingAsyncWriter(
                             base: writer,
                             logger: logger

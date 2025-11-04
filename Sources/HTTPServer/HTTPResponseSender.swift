@@ -4,39 +4,39 @@ public import HTTPTypes
 ///
 /// The user will get a ``HTTPResponseSender`` as part of
 /// ``HTTPServerRequestHandler/handle(request:requestBodyAndTrailers:responseSender:)``, and they
-/// will only be allowed to call ``sendResponse(_:)`` once before the sender is consumed and cannot be referenced again.
+/// will only be allowed to call ``send(_:)`` once before the sender is consumed and cannot be referenced again.
+/// ``sendInformational(_:)`` may be called zero or more times.
 ///
 /// This forces structure in the response flow, requiring users to send a single response before they can stream a response body and
 /// trailers using the returned `ResponseWriter`.
 public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyable>: ~Copyable {
-    private let _sendInformationalResponse: ((HTTPResponse) async throws -> ())?
-
-    private let _sendResponse: (HTTPResponse) async throws -> ResponseWriter
+    private let _sendInformational: ((HTTPResponse) async throws -> ())?
+    private let _send: (HTTPResponse) async throws -> ResponseWriter
 
     public init(
-        _ sendResponse: @escaping (HTTPResponse) async throws -> ResponseWriter,
-        _ sendInformationalResponse: ((HTTPResponse) async throws -> ())? = nil
+        _ send: @escaping (HTTPResponse) async throws -> ResponseWriter,
+        _ sendInformational: ((HTTPResponse) async throws -> ())? = nil
     ) {
-        self._sendResponse = sendResponse
-        self._sendInformationalResponse = sendInformationalResponse
+        self._send = send
+        self._sendInformational = sendInformational
     }
     
     /// Send the given `HTTPResponse` and get back a `ResponseWriter` to which to write a response body and trailers.
     /// - Parameter response: The final `HTTPResponse` to send back to the client.
     /// - Returns: The `ResponseWriter` to which to write a response body and trailers.
     /// - Important: Note this method is consuming: after you send this response, you won't be able to send any more responses.
-    ///             If you need to send an informational (1xx) response, use ``sendInformationalResponse(_:)`` instead.
-    consuming public func sendResponse(_ response: HTTPResponse) async throws -> ResponseWriter {
+    ///             If you need to send an informational (1xx) response, use ``sendInformational(_:)`` instead.
+    consuming public func send(_ response: HTTPResponse) async throws -> ResponseWriter {
         precondition(response.status.kind != .informational)
-        return try await self._sendResponse(response)
+        return try await self._send(response)
     }
     
     /// Send the given informational (1xx) response.
     /// - Parameter response: An informational `HTTPResponse` to send back to the client.
-    public func sendInformationalResponse(_ response: HTTPResponse) async throws {
-        guard let _sendInformationalResponse else { return }
+    public func sendInformational(_ response: HTTPResponse) async throws {
+        guard let _sendInformational else { return }
         precondition(response.status.kind == .informational)
-        return try await _sendInformationalResponse(response)
+        return try await _sendInformational(response)
     }
 }
 

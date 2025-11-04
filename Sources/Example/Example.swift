@@ -55,7 +55,7 @@ struct Example {
         requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
-        let writer = try await responseSender.sendResponse(HTTPResponse(status: .ok))
+        let writer = try await responseSender.send(HTTPResponse(status: .ok))
         try await writer.writeAndConclude(element: "Well, hello!".utf8.span, finalElement: nil)
     }
 }

@@ -8,7 +8,7 @@ struct HTTPServerTests {
     @Test
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testConsumingServe() async throws {
-        let server = NIOHTTPServer<HTTPServerClosureRequestHandler>(
+        let server = NIOHTTPServer(
             logger: Logger(label: "Test"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
@@ -28,9 +28,9 @@ struct HTTPServerTests {
         // Uncommenting this would cause a "requestReader consumed more than once" error.
         //_ = try await requestReader.collect(upTo: 100) { _ in }
 
-        let responseConcludingWriter = try await responseSender.sendResponse(HTTPResponse(status: .ok))
+        let responseConcludingWriter = try await responseSender.send(HTTPResponse(status: .ok))
         // Uncommenting this would cause a "responseSender consumed more than once" error.
-        //let responseConcludingWriter2 = try await responseSender.sendResponse(HTTPResponse(status: .ok))
+        //let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
 
         // Uncommenting this would cause a "requestReader consumed more than once" error.
         //_ = try await requestReader.consumeAndConclude { reader in
