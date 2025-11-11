@@ -180,13 +180,12 @@ where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await Self.serveSecureUpgrade(
+            try await self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
-                logger: logger
+                http2Configuration: http2Config
             )
 
         case .mTLS(let certificateChain, let privateKey, let trustRoots):
@@ -230,13 +229,12 @@ where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await Self.serveSecureUpgrade(
+            try await self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
-                logger: logger
+                http2Configuration: http2Config
             )
 
         case .reloadingMTLS(let certificateReloader, let trustRoots):
@@ -264,13 +262,12 @@ where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await Self.serveSecureUpgrade(
+            try await self.serveSecureUpgrade(
                 bindTarget: configuration.bindTarget,
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
-                logger: logger
+                http2Configuration: http2Config
             )
         }
     }
