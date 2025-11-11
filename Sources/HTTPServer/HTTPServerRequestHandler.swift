@@ -57,6 +57,11 @@ public import HTTPTypes
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public protocol HTTPServerRequestHandler: Sendable {
+    associatedtype ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable
+    associatedtype RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable
+    associatedtype ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable
+    associatedtype RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
+
     /// Handles an incoming HTTP request and generates a response.
     ///
     /// This method is called by the HTTP server for each incoming client request. Implementations should:
@@ -77,8 +82,9 @@ public protocol HTTPServerRequestHandler: Sendable {
     ///
     /// - Throws: Any error encountered during request processing or response generation.
     func handle(
+        // TODO: add request context parameter
         request: HTTPRequest,
-        requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
-        responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+        requestBodyAndTrailers: consuming ConcludingRequestReader,
+        responseSender: consuming HTTPResponseSender<ConcludingResponseWriter>
     ) async throws
 }

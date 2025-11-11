@@ -62,7 +62,9 @@ import Synchronization
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct NIOHTTPServer: HTTPServerProtocol {
+public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol
+where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader,
+        RequestHandler.ConcludingResponseWriter == HTTPResponseConcludingAsyncWriter {
     private let logger: Logger
     private let configuration: HTTPServerConfiguration
 
@@ -116,7 +118,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     ///     handler: EchoHandler()
     /// )
     /// ```
-    public func serve(handler: some HTTPServerRequestHandler) async throws {
+    public func serve(handler: RequestHandler) async throws {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch self.configuration.backpressureStrategy.backing {
         case .watermark(let low, let high):
@@ -275,7 +277,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
 
     private func serveInsecureHTTP1_1(
         bindTarget: HTTPServerConfiguration.BindTarget,
-        handler: some HTTPServerRequestHandler,
+        handler: RequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) async throws {
         switch bindTarget.backing {
@@ -310,7 +312,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     private func serveSecureUpgrade(
         bindTarget: HTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
-        handler: some HTTPServerRequestHandler,
+        handler: RequestHandler,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration
     ) async throws {
@@ -395,7 +397,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
 
     private func handleRequestChannel(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler
+        handler: RequestHandler
     ) async throws {
         do {
             try await channel

@@ -24,7 +24,7 @@ public import HTTPTypes
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct HTTPServerClosureRequestHandler: HTTPServerRequestHandler {
+public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable, ConcludingResponseWriter: ~Copyable>: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
     private let _handler:
         nonisolated(nonsending) @Sendable (
