@@ -10,12 +10,12 @@ public import HTTPTypes
 /// This forces structure in the response flow, requiring users to send a single response before they can stream a response body and
 /// trailers using the returned `ResponseWriter`.
 public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyable>: ~Copyable {
-    private let _sendInformational: ((HTTPResponse) async throws -> ())?
+    private let _sendInformational: (HTTPResponse) async throws -> Void
     private let _send: (HTTPResponse) async throws -> ResponseWriter
 
     public init(
-        _ send: @escaping (HTTPResponse) async throws -> ResponseWriter,
-        _ sendInformational: ((HTTPResponse) async throws -> ())? = nil
+        send: @escaping (HTTPResponse) async throws -> ResponseWriter,
+        sendInformational: @escaping (HTTPResponse) async throws -> Void
     ) {
         self._send = send
         self._sendInformational = sendInformational
@@ -34,7 +34,6 @@ public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyab
     /// Send the given informational (1xx) response.
     /// - Parameter response: An informational `HTTPResponse` to send back to the client.
     public func sendInformational(_ response: HTTPResponse) async throws {
-        guard let _sendInformational else { return }
         precondition(response.status.kind == .informational)
         return try await _sendInformational(response)
     }

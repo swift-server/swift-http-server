@@ -434,6 +434,8 @@ where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader
                                     writer: outbound,
                                     writerState: writerState
                                 )
+                            } sendInformational: { response in
+                                try await outbound.write(.head(response))
                             }
                         )
                     } catch {

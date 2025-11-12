@@ -50,6 +50,7 @@ where
                 requestReader: wrappedReader,
                 responseSender: HTTPResponseSender { [logger] response in
                     if let sender = maybeSender.take() {
+                        logger.info("Sending response \(response)")
                         let writer = try await sender.send(response)
                         return HTTPResponseLoggingConcludingAsyncWriter(
                             base: writer,
@@ -58,6 +59,9 @@ where
                     } else {
                         fatalError("Called closure more than once")
                     }
+                } sendInformational: { response in
+                    self.logger.info("Sending informational response \(response)")
+                    try await maybeSender?.sendInformational(response)
                 }
             )
             try await next(requestResponseBox)
