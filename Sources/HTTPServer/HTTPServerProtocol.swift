@@ -5,12 +5,9 @@ public import HTTPTypes
 public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     // TODO: write down in the proposal why we can't make the serve method generic over the handler (closure-based APIs can't
     // be implemented)
-    associatedtype ConcludingRequestReader: ConcludingAsyncReader & ~Copyable
-    associatedtype ConcludingResponseWriter: ConcludingAsyncWriter & ~Copyable
 
+    /// The ``HTTPServerRequestHandler`` to use when handling requests.
     associatedtype RequestHandler: HTTPServerRequestHandler
-    where RequestHandler.ConcludingRequestReader == ConcludingRequestReader,
-            RequestHandler.ConcludingResponseWriter == ConcludingResponseWriter
 
     /// Starts an HTTP server with the specified request handler.
     ///
@@ -73,8 +70,8 @@ extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHan
     public func serve(
         handler: @Sendable @escaping (
             _ request: HTTPRequest,
-            _ requestBodyAndTrailers: consuming ConcludingRequestReader,
-            _ responseSender: consuming HTTPResponseSender<ConcludingResponseWriter>
+            _ requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
+            _ responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) async throws {
         try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
