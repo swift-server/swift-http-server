@@ -57,9 +57,22 @@ public import HTTPTypes
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public protocol HTTPServerRequestHandler: Sendable {
+    /// The ``ConcludingAsyncReader`` to use when reading requests. ``ConcludingAsyncReader/FinalElement``
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
+    /// `ReadElement`.
     associatedtype ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable
+
+    /// The underlying ``AsyncReader`` for ``ConcludingRequestReader``. Its ``AsyncReader/ReadElement`` must
+    /// be `Span<UInt8>`.
     associatedtype RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable
+
+    /// The ``ConcludingAsyncWriter`` to use when reading requests. ``ConcludingAsyncWriter/FinalElement``
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
+    /// `WriteElement`.
     associatedtype ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable
+
+    /// The underlying ``AsyncWriter`` for ``ConcludingResponseWriter``. Its ``AsyncWriter/WriteElement`` must
+    /// be `Span<UInt8>`.
     associatedtype RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
 
     /// Handles an incoming HTTP request and generates a response.
