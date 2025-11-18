@@ -24,11 +24,18 @@ public import HTTPTypes
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable, ConcludingResponseWriter: ~Copyable>: HTTPServerRequestHandler {
+public struct HTTPServerClosureRequestHandler<
+    RequestContext: HTTPRequestContext,
+    ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable,
+    RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable,
+    ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable,
+    RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
+>: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
     private let _handler:
         nonisolated(nonsending) @Sendable (
             HTTPRequest,
+            RequestContext,
             consuming sending HTTPRequestConcludingAsyncReader,
             consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
@@ -40,6 +47,7 @@ public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable
     public init(
         handler: nonisolated(nonsending) @Sendable @escaping (
             HTTPRequest,
+            RequestContext,
             consuming sending HTTPRequestConcludingAsyncReader,
             consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
@@ -57,9 +65,10 @@ public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable
     ///   - responseSender: An ``HTTPResponseSender`` to send the HTTP response.
     public func handle(
         request: HTTPRequest,
+        requestContext: RequestContext,
         requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
         responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
-        try await self._handler(request, requestBodyAndTrailers, responseSender)
+        try await self._handler(request, requestContext, requestBodyAndTrailers, responseSender)
     }
 }

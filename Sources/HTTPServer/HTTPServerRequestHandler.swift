@@ -75,6 +75,8 @@ public protocol HTTPServerRequestHandler: Sendable {
     /// be `Span<UInt8>`.
     associatedtype RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
 
+    associatedtype RequestContext: HTTPRequestContext
+
     /// Handles an incoming HTTP request and generates a response.
     ///
     /// This method is called by the HTTP server for each incoming client request. Implementations should:
@@ -95,8 +97,8 @@ public protocol HTTPServerRequestHandler: Sendable {
     ///
     /// - Throws: Any error encountered during request processing or response generation.
     func handle(
-        // TODO: add request context parameter
         request: HTTPRequest,
+        requestContext: RequestContext,
         requestBodyAndTrailers: consuming sending ConcludingRequestReader,
         responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
     ) async throws

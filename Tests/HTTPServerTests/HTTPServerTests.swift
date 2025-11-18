@@ -8,11 +8,17 @@ struct HTTPServerTests {
     @Test
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testConsumingServe() async throws {
-        let server = NIOHTTPServer<HTTPServerClosureRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>>(
+        let server = NIOHTTPServer<HTTPServerClosureRequestHandler<
+                HTTPServerRequestContext,
+                HTTPRequestConcludingAsyncReader,
+                HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader,
+                HTTPResponseConcludingAsyncWriter,
+                HTTPResponseConcludingAsyncWriter.ResponseBodyAsyncWriter
+        >>(
             logger: Logger(label: "Test"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
-        try await server.serve { request, requestBodyAndTrailers, responseSender in
+        try await server.serve { request, context, requestBodyAndTrailers, responseSender in
             _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
             // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
 //            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }

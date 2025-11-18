@@ -4,6 +4,7 @@ import Middleware
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct RouteHandlerMiddleware<
+    RequestContext: HTTPRequestContext,
     RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable,
 >: Middleware, Sendable
@@ -13,14 +14,14 @@ where
     ResponseConcludingAsyncWriter.Underlying: AsyncWriter<Span<UInt8>, any Error>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias Input = RequestResponseMiddlewareBox<RequestContext, RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
     typealias NextInput = Never
 
     func intercept(
         input: consuming Input,
         next: (consuming NextInput) async throws -> Void
     ) async throws {
-        try await input.withContents { request, requestReader, responseSender in
+        try await input.withContents { request, _, requestReader, responseSender in
             var maybeReader = Optional(requestReader)
             try await responseSender.send(HTTPResponse(status: .accepted))
                 .produceAndConclude { responseBodyAsyncWriter in

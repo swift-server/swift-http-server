@@ -43,7 +43,14 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter> {
+extension HTTPServerProtocol
+where RequestHandler == HTTPServerClosureRequestHandler<
+    HTTPServerRequestContext,
+    HTTPRequestConcludingAsyncReader,
+    HTTPRequestConcludingAsyncReader.Underlying,
+    HTTPResponseConcludingAsyncWriter,
+    HTTPResponseConcludingAsyncWriter.Underlying
+> {
     /// Starts an HTTP server with a closure-based request handler.
     ///
     /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.
@@ -70,6 +77,7 @@ extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHan
     public func serve(
         handler: nonisolated(nonsending) @Sendable @escaping (
             _ request: HTTPRequest,
+            _ requestContext: HTTPServerRequestContext,
             _ requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
             _ responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void

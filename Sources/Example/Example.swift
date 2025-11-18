@@ -22,7 +22,13 @@ struct Example {
 
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
-        let server = NIOHTTPServer<HTTPServerClosureRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>>(
+        let server = NIOHTTPServer<HTTPServerClosureRequestHandler<
+            HTTPServerRequestContext,
+            HTTPRequestConcludingAsyncReader,
+            HTTPRequestConcludingAsyncReader.Underlying,
+            HTTPResponseConcludingAsyncWriter,
+            HTTPResponseConcludingAsyncWriter.Underlying
+        >>(
             logger: logger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
@@ -45,7 +51,7 @@ struct Example {
                 )
             )
         )
-        try await server.serve { request, requestBodyAndTrailers, responseSender in
+        try await server.serve { request, requestContext, requestBodyAndTrailers, responseSender in
             let writer = try await responseSender.send(HTTPResponse(status: .ok))
             try await writer.writeAndConclude(element: "Well, hello!".utf8.span, finalElement: nil)
         }
@@ -54,16 +60,22 @@ struct Example {
 
 // MARK: - Server Extensions
 
-// This has to be commented out because of the compiler bug above. Workaround doesn't apply here.
-
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension NIOHTTPServer where RequestHandler == HTTPServerClosureRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter> {
+extension NIOHTTPServer
+where RequestHandler == HTTPServerClosureRequestHandler<
+    HTTPServerRequestContext,
+    HTTPRequestConcludingAsyncReader,
+    HTTPRequestConcludingAsyncReader.Underlying,
+    HTTPResponseConcludingAsyncWriter,
+    HTTPResponseConcludingAsyncWriter.Underlying
+> {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components
     func serve(
         @MiddlewareChainBuilder
         withMiddleware middlewareBuilder: () -> some Middleware<
-        RequestResponseMiddlewareBox<
+            RequestResponseMiddlewareBox<
+                HTTPServerRequestContext,
                 HTTPRequestConcludingAsyncReader,
                 HTTPResponseConcludingAsyncWriter
             >,
@@ -72,9 +84,10 @@ extension NIOHTTPServer where RequestHandler == HTTPServerClosureRequestHandler<
     ) async throws {
         let chain = middlewareBuilder()
 
-        try await self.serve { request, reader, responseSender in
+        try await self.serve { request, requestContext, reader, responseSender in
             try await chain.intercept(input: RequestResponseMiddlewareBox(
                 request: request,
+                requestContext: requestContext,
                 requestReader: reader,
                 responseSender: responseSender
             )) { _ in }
