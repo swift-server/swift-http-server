@@ -61,6 +61,7 @@ public struct HTTPServerClosureRequestHandler<
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
+    ///   - requestContext: The request's context.
     ///   - requestBodyAndTrailers: A reader for accessing the request body data and trailing headers.
     ///   - responseSender: An ``HTTPResponseSender`` to send the HTTP response.
     public func handle(
