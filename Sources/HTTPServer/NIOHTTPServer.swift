@@ -64,8 +64,7 @@ import Synchronization
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct NIOHTTPServer<RequestHandler: HTTPServerRequestHandler>: HTTPServerProtocol
 where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader,
-        RequestHandler.ConcludingResponseWriter == HTTPResponseConcludingAsyncWriter,
-      RequestHandler.RequestContext == HTTPServerRequestContext {
+        RequestHandler.ConcludingResponseWriter == HTTPResponseConcludingAsyncWriter {
     private let logger: Logger
     private let configuration: HTTPServerConfiguration
 
@@ -425,7 +424,7 @@ where RequestHandler.ConcludingRequestReader == HTTPRequestConcludingAsyncReader
                     do {
                         try await handler.handle(
                             request: httpRequest,
-                            requestContext: HTTPServerRequestContext(),
+                            requestContext: HTTPRequestContext(),
                             requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
                                 iterator: iterator,
                                 readerState: readerState

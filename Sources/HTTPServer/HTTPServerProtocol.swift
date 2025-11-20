@@ -45,7 +45,6 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension HTTPServerProtocol
 where RequestHandler == HTTPServerClosureRequestHandler<
-    HTTPServerRequestContext,
     HTTPRequestConcludingAsyncReader,
     HTTPRequestConcludingAsyncReader.Underlying,
     HTTPResponseConcludingAsyncWriter,

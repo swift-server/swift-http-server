@@ -4,7 +4,6 @@ import Middleware
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct RouteHandlerMiddleware<
-    RequestContext: HTTPRequestContext,
     RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable,
 >: Middleware, Sendable
@@ -14,7 +13,7 @@ where
     ResponseConcludingAsyncWriter.Underlying: AsyncWriter<Span<UInt8>, any Error>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseMiddlewareBox<RequestContext, RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
     typealias NextInput = Never
 
     func intercept(

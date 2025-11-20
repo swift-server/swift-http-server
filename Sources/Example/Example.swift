@@ -23,7 +23,6 @@ struct Example {
         // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
         let server = NIOHTTPServer<HTTPServerClosureRequestHandler<
-            HTTPServerRequestContext,
             HTTPRequestConcludingAsyncReader,
             HTTPRequestConcludingAsyncReader.Underlying,
             HTTPResponseConcludingAsyncWriter,
@@ -63,7 +62,6 @@ struct Example {
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension NIOHTTPServer
 where RequestHandler == HTTPServerClosureRequestHandler<
-    HTTPServerRequestContext,
     HTTPRequestConcludingAsyncReader,
     HTTPRequestConcludingAsyncReader.Underlying,
     HTTPResponseConcludingAsyncWriter,
@@ -75,7 +73,6 @@ where RequestHandler == HTTPServerClosureRequestHandler<
         @MiddlewareChainBuilder
         withMiddleware middlewareBuilder: () -> some Middleware<
             RequestResponseMiddlewareBox<
-                HTTPServerRequestContext,
                 HTTPRequestConcludingAsyncReader,
                 HTTPResponseConcludingAsyncWriter
             >,

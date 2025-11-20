@@ -25,7 +25,6 @@ public import HTTPTypes
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPServerClosureRequestHandler<
-    RequestContext: HTTPRequestContext,
     ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable,
     RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable,
     ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable,
@@ -61,7 +60,7 @@ public struct HTTPServerClosureRequestHandler<
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
-    ///   - requestContext: The request's context.
+    ///   - requestContext: A ``HTTPRequestContext``.
     ///   - requestBodyAndTrailers: A reader for accessing the request body data and trailing headers.
     ///   - responseSender: An ``HTTPResponseSender`` to send the HTTP response.
     public func handle(

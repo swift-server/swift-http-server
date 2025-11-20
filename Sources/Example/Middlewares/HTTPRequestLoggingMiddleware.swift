@@ -5,7 +5,6 @@ import Middleware
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingMiddleware<
-    RequestContext: HTTPRequestContext,
     RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable
 >: Middleware
@@ -15,9 +14,8 @@ where
     ResponseConcludingAsyncWriter.Underlying.WriteElement == Span<UInt8>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseMiddlewareBox<RequestContext, RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
     typealias NextInput = RequestResponseMiddlewareBox<
-        RequestContext,
         HTTPRequestLoggingConcludingAsyncReader<RequestConcludingAsyncReader>,
         HTTPResponseLoggingConcludingAsyncWriter<ResponseConcludingAsyncWriter>
     >

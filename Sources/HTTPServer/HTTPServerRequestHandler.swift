@@ -75,8 +75,6 @@ public protocol HTTPServerRequestHandler: Sendable {
     /// be `Span<UInt8>`.
     associatedtype RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
 
-    associatedtype RequestContext: HTTPRequestContext
-
     /// Handles an incoming HTTP request and generates a response.
     ///
     /// This method is called by the HTTP server for each incoming client request. Implementations should:
@@ -89,6 +87,7 @@ public protocol HTTPServerRequestHandler: Sendable {
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
+    ///   - requestContext: A ``HTTPRequestContext``.
     ///   - requestBodyAndTrailers: A reader for accessing the request body data and trailing headers.
     ///     This follows the `ConcludingAsyncReader` pattern, allowing for incremental reading of request body data
     ///     and concluding with any trailer fields sent at the end of the request.
