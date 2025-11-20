@@ -68,10 +68,10 @@ extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHan
     /// }
     /// ```
     public func serve(
-        handler: @Sendable @escaping (
+        handler: nonisolated(nonsending) @Sendable @escaping (
             _ request: HTTPRequest,
-            _ requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
-            _ responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            _ requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
+            _ responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) async throws {
         try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))

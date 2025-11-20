@@ -14,18 +14,18 @@ struct HTTPServerTests {
         )
         try await server.serve { request, requestBodyAndTrailers, responseSender in
             _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
-            // Uncommenting this would cause a "requestReader consumed more than once" error.
-            //_ = try await requestReader.collect(upTo: 100) { _ in }
+            // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
+//            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
 
             let responseConcludingWriter = try await responseSender.send(HTTPResponse(status: .ok))
             // Uncommenting this would cause a "responseSender consumed more than once" error.
-            //let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
+//            let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
 
-            // Uncommenting this would cause a "requestReader consumed more than once" error.
-            //_ = try await requestReader.consumeAndConclude { reader in
-            //    var reader = reader
-            //    try await reader.read { elem in }
-            //}
+            // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
+//            _ = try await requestBodyAndTrailers.consumeAndConclude { reader in
+//                var reader = reader
+//                try await reader.read { elem in }
+//            }
 
             try await responseConcludingWriter.produceAndConclude { writer in
                 var writer = writer
@@ -34,10 +34,10 @@ struct HTTPServerTests {
             }
 
             // Uncommenting this would cause a "responseConcludingWriter consumed more than once" error.
-            //try await responseConcludingWriter.writeAndConclude(
-            //    element: [1, 2].span,
-            //    finalElement: HTTPFields(dictionaryLiteral: (.acceptEncoding, "Encoding"))
-            //)
+//            try await responseConcludingWriter.writeAndConclude(
+//                element: [1, 2].span,
+//                finalElement: HTTPFields(dictionaryLiteral: (.acceptEncoding, "Encoding"))
+//            )
         }
     }
 }

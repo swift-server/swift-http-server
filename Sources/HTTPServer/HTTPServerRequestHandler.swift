@@ -97,7 +97,7 @@ public protocol HTTPServerRequestHandler: Sendable {
     func handle(
         // TODO: add request context parameter
         request: HTTPRequest,
-        requestBodyAndTrailers: consuming ConcludingRequestReader,
-        responseSender: consuming HTTPResponseSender<ConcludingResponseWriter>
+        requestBodyAndTrailers: consuming sending ConcludingRequestReader,
+        responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
     ) async throws
 }

@@ -29,8 +29,8 @@ public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable
     private let _handler:
         nonisolated(nonsending) @Sendable (
             HTTPRequest,
-            consuming HTTPRequestConcludingAsyncReader,
-            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            consuming sending HTTPRequestConcludingAsyncReader,
+            consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
 
     /// Creates a new closure-based HTTP request handler.
@@ -40,8 +40,8 @@ public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable
     public init(
         handler: nonisolated(nonsending) @Sendable @escaping (
             HTTPRequest,
-            consuming HTTPRequestConcludingAsyncReader,
-            consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            consuming sending HTTPRequestConcludingAsyncReader,
+            consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
         ) async throws -> Void
     ) {
         self._handler = handler
@@ -57,8 +57,8 @@ public struct HTTPServerClosureRequestHandler<ConcludingRequestReader: ~Copyable
     ///   - responseSender: An ``HTTPResponseSender`` to send the HTTP response.
     public func handle(
         request: HTTPRequest,
-        requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
-        responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+        requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
+        responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ) async throws {
         try await self._handler(request, requestBodyAndTrailers, responseSender)
     }
