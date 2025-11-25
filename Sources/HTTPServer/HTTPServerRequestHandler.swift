@@ -16,11 +16,12 @@ public import HTTPTypes
 ///
 /// ```swift
 /// struct EchoHandler: HTTPServerRequestHandler {
-/// func handle(
+///   func handle(
 ///     request: HTTPRequest,
-///     requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
-///     responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
-/// ) async throws {
+///     requestContext: HTTPRequestContext,
+///     requestConcludingAsyncReader: consuming sending HTTPRequestConcludingAsyncReader,
+///     responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+///   ) async throws {
 ///     // Read the entire request body
 ///     let (bodyData, trailers) = try await requestConcludingAsyncReader.consumeAndConclude { reader in
 ///         var reader = reader
@@ -81,8 +82,8 @@ public protocol HTTPServerRequestHandler: Sendable {
     /// 1. Examine the request headers in the `request` parameter
     /// 2. Read the request body data from the ``RequestConcludingAsyncReader`` as needed
     /// 3. Process the request and prepare a response
-    /// 4. Optionally call ``HTTPResponseSender/sendInformationalResponse(_:)`` as needed
-    /// 4. Call the ``HTTPResponseSender/sendResponse(_:)`` with an appropriate HTTP response
+    /// 4. Optionally call ``HTTPResponseSender/sendInformational(_:)`` as needed
+    /// 4. Call the ``HTTPResponseSender/send(_:)`` with an appropriate HTTP response
     /// 5. Write the response body data to the returned ``HTTPResponseConcludingAsyncWriter``
     ///
     /// - Parameters:

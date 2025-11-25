@@ -3,8 +3,8 @@ public import HTTPTypes
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A generic HTTP server protocol that can handle incoming HTTP requests.
 public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
-    // TODO: write down in the proposal why we can't make the serve method generic over the handler (closure-based APIs can't
-    // be implemented)
+    // TODO: write down in the proposal we can't make the serve method generic over the handler
+    // because otherwise, closure-based APIs can't be implemented.
 
     /// The ``HTTPServerRequestHandler`` to use when handling requests.
     associatedtype RequestHandler: HTTPServerRequestHandler
@@ -40,47 +40,4 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// try await server.serve(handler: EchoHandler())
     /// ```
     func serve(handler: RequestHandler) async throws
-}
-
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension HTTPServerProtocol
-where RequestHandler == HTTPServerClosureRequestHandler<
-    HTTPRequestConcludingAsyncReader,
-    HTTPRequestConcludingAsyncReader.Underlying,
-    HTTPResponseConcludingAsyncWriter,
-    HTTPResponseConcludingAsyncWriter.Underlying
-> {
-    /// Starts an HTTP server with a closure-based request handler.
-    ///
-    /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.
-    ///
-    /// - Parameters:
-    ///   - handler: An async closure that processes HTTP requests. The closure receives:
-    ///     - `HTTPRequest`: The incoming HTTP request with headers and metadata
-    ///     - ``HTTPRequestConcludingAsyncReader``: An async reader for consuming the request body and trailers
-    ///     - ``HTTPResponseSender``: A non-copyable wrapper for a function that accepts an `HTTPResponse` and provides access to an ``HTTPResponseConcludingAsyncWriter``
-    ///
-    /// ## Example
-    ///
-    /// ```swift
-    /// try await server.serve { request, bodyReader, sendResponse in
-    ///     // Process the request
-    ///     let response = HTTPResponse(status: .ok)
-    ///     let writer = try await sendResponse(response)
-    ///     try await writer.produceAndConclude { writer in
-    ///         try await writer.write("Hello, World!".utf8)
-    ///         return ((), nil)
-    ///     }
-    /// }
-    /// ```
-    public func serve(
-        handler: nonisolated(nonsending) @Sendable @escaping (
-            _ request: HTTPRequest,
-            _ requestContext: HTTPServerRequestContext,
-            _ requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
-            _ responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
-        ) async throws -> Void
-    ) async throws {
-        try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
-    }
 }

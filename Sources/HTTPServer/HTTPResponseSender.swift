@@ -3,7 +3,7 @@ public import HTTPTypes
 /// This type ensures that a single non-informational (1xx) `HTTPResponse` is sent back to the client when handling a request.
 ///
 /// The user will get a ``HTTPResponseSender`` as part of
-/// ``HTTPServerRequestHandler/handle(request:requestBodyAndTrailers:responseSender:)``, and they
+/// ``HTTPServerRequestHandler/handle(request:requestContext:requestBodyAndTrailers:responseSender:)``, and they
 /// will only be allowed to call ``send(_:)`` once before the sender is consumed and cannot be referenced again.
 /// ``sendInformational(_:)`` may be called zero or more times.
 ///
