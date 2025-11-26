@@ -10,9 +10,7 @@ SwiftNIO-based implemention of these APIs.
 
 ## 🚧 This project is a work in progress 🚧
 
-For more information, please see the introduction on the [Swift Forums](https://forums.swift.org).
-
-All feedback is welcome: please open issues here or in the swift-http-client-server-apis repository.
+All feedback is welcome: please open issues!
 
 ## Getting started
 
