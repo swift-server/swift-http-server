@@ -9,7 +9,6 @@ struct HTTPServerTests {
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testConsumingServe() async throws {
         let server = NIOHTTPServer<HTTPServerClosureRequestHandler<
-                HTTPServerRequestContext,
                 HTTPRequestConcludingAsyncReader,
                 HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader,
                 HTTPResponseConcludingAsyncWriter,

@@ -98,7 +98,7 @@ public protocol HTTPServerRequestHandler: Sendable {
     /// - Throws: Any error encountered during request processing or response generation.
     func handle(
         request: HTTPRequest,
-        requestContext: RequestContext,
+        requestContext: HTTPRequestContext,
         requestBodyAndTrailers: consuming sending ConcludingRequestReader,
         responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
     ) async throws
