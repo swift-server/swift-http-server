@@ -8,12 +8,7 @@ struct HTTPServerTests {
     @Test
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testConsumingServe() async throws {
-        let server = NIOHTTPServer<HTTPServerClosureRequestHandler<
-                HTTPRequestConcludingAsyncReader,
-                HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader,
-                HTTPResponseConcludingAsyncWriter,
-                HTTPResponseConcludingAsyncWriter.ResponseBodyAsyncWriter
-        >>(
+        let server = NIOHTTPServer(
             logger: Logger(label: "Test"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )

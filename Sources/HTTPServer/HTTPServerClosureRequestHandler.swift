@@ -25,9 +25,9 @@ public import HTTPTypes
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPServerClosureRequestHandler<
-    ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable,
+    ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable & SendableMetatype,
     RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable,
-    ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable,
+    ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable & SendableMetatype,
     RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
 >: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
@@ -35,8 +35,8 @@ public struct HTTPServerClosureRequestHandler<
         nonisolated(nonsending) @Sendable (
             HTTPRequest,
             HTTPRequestContext,
-            consuming sending HTTPRequestConcludingAsyncReader,
-            consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            consuming sending ConcludingRequestReader,
+            consuming sending HTTPResponseSender<ConcludingResponseWriter>
         ) async throws -> Void
 
     /// Creates a new closure-based HTTP request handler.
@@ -47,8 +47,8 @@ public struct HTTPServerClosureRequestHandler<
         handler: nonisolated(nonsending) @Sendable @escaping (
             HTTPRequest,
             HTTPRequestContext,
-            consuming sending HTTPRequestConcludingAsyncReader,
-            consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            consuming sending ConcludingRequestReader,
+            consuming sending HTTPResponseSender<ConcludingResponseWriter>
         ) async throws -> Void
     ) {
         self._handler = handler
@@ -66,20 +66,15 @@ public struct HTTPServerClosureRequestHandler<
     public func handle(
         request: HTTPRequest,
         requestContext: HTTPRequestContext,
-        requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
-        responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+        requestBodyAndTrailers: consuming sending ConcludingRequestReader,
+        responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
     ) async throws {
         try await self._handler(request, requestContext, requestBodyAndTrailers, responseSender)
     }
 }
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHandler<
-    HTTPRequestConcludingAsyncReader,
-    HTTPRequestConcludingAsyncReader.Underlying,
-    HTTPResponseConcludingAsyncWriter,
-    HTTPResponseConcludingAsyncWriter.Underlying
-> {
+extension HTTPServerProtocol {
     /// Starts an HTTP server with a closure-based request handler.
     ///
     /// This method provides a convenient way to start an HTTP server using a closure to handle incoming requests.
@@ -105,13 +100,13 @@ extension HTTPServerProtocol where RequestHandler == HTTPServerClosureRequestHan
     /// }
     /// ```
     public func serve(
-        handler: @Sendable @escaping (
+        body: @Sendable @escaping (
             _ request: HTTPRequest,
             _ requestContext: HTTPRequestContext,
-            _ requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
-            _ responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+            _ requestBodyAndTrailers: consuming sending ConcludingRequestReader,
+            _ responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
         ) async throws -> Void
     ) async throws {
-        try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
+        try await self.serve(handler: HTTPServerClosureRequestHandler(handler: body))
     }
 }

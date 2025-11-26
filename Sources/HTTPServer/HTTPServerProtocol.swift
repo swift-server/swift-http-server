@@ -3,11 +3,21 @@ public import HTTPTypes
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A generic HTTP server protocol that can handle incoming HTTP requests.
 public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
-    // TODO: write down in the proposal we can't make the serve method generic over the handler
-    // because otherwise, closure-based APIs can't be implemented.
+    /// The ``ConcludingAsyncReader`` to use when reading requests. ``ConcludingAsyncReader/FinalElement``
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
+    /// `ReadElement`.
+    associatedtype ConcludingRequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
+    where ConcludingRequestReader.Underlying.ReadElement == Span<UInt8>,
+          ConcludingRequestReader.Underlying.ReadFailure == any Error,
+          ConcludingRequestReader.FinalElement == HTTPFields?
 
-    /// The ``HTTPServerRequestHandler`` to use when handling requests.
-    associatedtype RequestHandler: HTTPServerRequestHandler
+    /// The ``ConcludingAsyncWriter`` to use when reading requests. ``ConcludingAsyncWriter/FinalElement``
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
+    /// `WriteElement`.
+    associatedtype ConcludingResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
+    where ConcludingResponseWriter.Underlying.WriteElement == Span<UInt8>,
+          ConcludingResponseWriter.Underlying.WriteFailure == any Error,
+          ConcludingResponseWriter.FinalElement == HTTPFields?
 
     /// Starts an HTTP server with the specified request handler.
     ///
@@ -39,5 +49,5 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     ///
     /// try await server.serve(handler: EchoHandler())
     /// ```
-    func serve(handler: RequestHandler) async throws
+    func serve(handler: some HTTPServerRequestHandler<ConcludingRequestReader, ConcludingResponseWriter>) async throws
 }
