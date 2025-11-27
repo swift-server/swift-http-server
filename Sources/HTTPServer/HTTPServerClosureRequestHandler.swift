@@ -100,13 +100,13 @@ extension HTTPServerProtocol {
     /// }
     /// ```
     public func serve(
-        body: @Sendable @escaping (
+        handler: @Sendable @escaping (
             _ request: HTTPRequest,
             _ requestContext: HTTPRequestContext,
             _ requestBodyAndTrailers: consuming sending ConcludingRequestReader,
             _ responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
         ) async throws -> Void
     ) async throws {
-        try await self.serve(handler: HTTPServerClosureRequestHandler(handler: body))
+        try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
     }
 }

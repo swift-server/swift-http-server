@@ -6,18 +6,18 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// The ``ConcludingAsyncReader`` to use when reading requests. ``ConcludingAsyncReader/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
     /// `ReadElement`.
-    associatedtype ConcludingRequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
-    where ConcludingRequestReader.Underlying.ReadElement == Span<UInt8>,
-          ConcludingRequestReader.Underlying.ReadFailure == any Error,
-          ConcludingRequestReader.FinalElement == HTTPFields?
+    associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
+    where RequestReader.Underlying.ReadElement == Span<UInt8>,
+          RequestReader.Underlying.ReadFailure == any Error,
+          RequestReader.FinalElement == HTTPFields?
 
-    /// The ``ConcludingAsyncWriter`` to use when reading requests. ``ConcludingAsyncWriter/FinalElement``
+    /// The ``ConcludingAsyncWriter`` to use when writing responses. ``ConcludingAsyncWriter/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
     /// `WriteElement`.
-    associatedtype ConcludingResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
-    where ConcludingResponseWriter.Underlying.WriteElement == Span<UInt8>,
-          ConcludingResponseWriter.Underlying.WriteFailure == any Error,
-          ConcludingResponseWriter.FinalElement == HTTPFields?
+    associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
+    where ResponseWriter.Underlying.WriteElement == Span<UInt8>,
+          ResponseWriter.Underlying.WriteFailure == any Error,
+          ResponseWriter.FinalElement == HTTPFields?
 
     /// Starts an HTTP server with the specified request handler.
     ///
@@ -28,7 +28,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     ///
     /// - Parameters:
     ///   - handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP requests. The handler
-    ///     receives each request along with a body reader and ``HTTPResponseSender``.
+    ///     receives each request along with its context, a body and trailers reader, and an ``HTTPResponseSender``.
     ///
     /// ## Example
     ///
@@ -36,8 +36,9 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// struct EchoHandler: HTTPServerRequestHandler {
     ///     func handle(
     ///         request: HTTPRequest,
-    ///         requestBodyAndTrailers: consuming HTTPRequestConcludingAsyncReader,
-    ///         responseSender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+    ///         requestContext: HTTPRequestContext,
+    ///         requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
+    ///         responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
     ///     ) async throws {
     ///         let response = HTTPResponse(status: .ok)
     ///         let writer = try await responseSender.send(response)
@@ -49,5 +50,5 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     ///
     /// try await server.serve(handler: EchoHandler())
     /// ```
-    func serve(handler: some HTTPServerRequestHandler<ConcludingRequestReader, ConcludingResponseWriter>) async throws
+    func serve(handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>) async throws
 }

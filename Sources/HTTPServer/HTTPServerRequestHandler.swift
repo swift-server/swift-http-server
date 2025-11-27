@@ -3,11 +3,11 @@ public import HTTPTypes
 /// A protocol that defines the contract for handling HTTP server requests.
 ///
 /// ``HTTPServerRequestHandler`` provides a structured way to process incoming HTTP requests and generate appropriate responses.
-/// Conforming types implement the ``handle(request:requestBodyAndTrailers:responseSender:)`` method,
+/// Conforming types implement the ``handle(request:requestContext:requestBodyAndTrailers:responseSender:)`` method,
 /// which is called by the HTTP server for each incoming request. The handler is responsible for:
 ///
 /// - Processing the request headers.
-/// - Reading the request body data using the provided ``HTTPRequestConcludingAsyncReader``
+/// - Reading the request body data using the provided `RequestReader`
 /// - Generating and sending an appropriate response using the response callback
 ///
 /// This protocol fully supports bi-directional streaming HTTP request handling including the optional request and response trailers.
@@ -57,28 +57,30 @@ public import HTTPTypes
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public protocol HTTPServerRequestHandler<ConcludingRequestReader, ConcludingResponseWriter>: Sendable {
+public protocol HTTPServerRequestHandler<RequestReader, ResponseWriter>: Sendable {
     /// The ``ConcludingAsyncReader`` to use when reading requests. ``ConcludingAsyncReader/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
     /// `ReadElement`.
-    associatedtype ConcludingRequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
-    where ConcludingRequestReader.Underlying.ReadElement == Span<UInt8>, ConcludingRequestReader.FinalElement == HTTPFields?
+    associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
+    where RequestReader.Underlying.ReadElement == Span<UInt8>,
+          RequestReader.FinalElement == HTTPFields?
 
-    /// The ``ConcludingAsyncWriter`` to use when reading requests. ``ConcludingAsyncWriter/FinalElement``
+    /// The ``ConcludingAsyncWriter`` to use when writing responses. ``ConcludingAsyncWriter/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
     /// `WriteElement`.
-    associatedtype ConcludingResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
-    where ConcludingResponseWriter.Underlying.WriteElement == Span<UInt8>, ConcludingResponseWriter.FinalElement == HTTPFields?
+    associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
+    where ResponseWriter.Underlying.WriteElement == Span<UInt8>,
+          ResponseWriter.FinalElement == HTTPFields?
 
     /// Handles an incoming HTTP request and generates a response.
     ///
     /// This method is called by the HTTP server for each incoming client request. Implementations should:
     /// 1. Examine the request headers in the `request` parameter
-    /// 2. Read the request body data from the ``RequestConcludingAsyncReader`` as needed
+    /// 2. Read the request body data from the `RequestReader` as needed
     /// 3. Process the request and prepare a response
     /// 4. Optionally call ``HTTPResponseSender/sendInformational(_:)`` as needed
     /// 4. Call the ``HTTPResponseSender/send(_:)`` with an appropriate HTTP response
-    /// 5. Write the response body data to the returned ``HTTPResponseConcludingAsyncWriter``
+    /// 5. Write the response body data to the returned `ResponseWriter`
     ///
     /// - Parameters:
     ///   - request: The HTTP request headers and metadata.
@@ -93,7 +95,7 @@ public protocol HTTPServerRequestHandler<ConcludingRequestReader, ConcludingResp
     func handle(
         request: HTTPRequest,
         requestContext: HTTPRequestContext,
-        requestBodyAndTrailers: consuming sending ConcludingRequestReader,
-        responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
+        requestBodyAndTrailers: consuming sending RequestReader,
+        responseSender: consuming sending HTTPResponseSender<ResponseWriter>
     ) async throws
 }
