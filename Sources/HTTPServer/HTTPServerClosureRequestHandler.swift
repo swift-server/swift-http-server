@@ -103,8 +103,8 @@ extension HTTPServerProtocol {
         handler: @Sendable @escaping (
             _ request: HTTPRequest,
             _ requestContext: HTTPRequestContext,
-            _ requestBodyAndTrailers: consuming sending ConcludingRequestReader,
-            _ responseSender: consuming sending HTTPResponseSender<ConcludingResponseWriter>
+            _ requestBodyAndTrailers: consuming sending RequestReader,
+            _ responseSender: consuming sending HTTPResponseSender<ResponseWriter>
         ) async throws -> Void
     ) async throws {
         try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
