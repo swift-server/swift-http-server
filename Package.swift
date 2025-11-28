@@ -5,6 +5,7 @@ import PackageDescription
 let extraSettings: [SwiftSetting] = [
     .enableExperimentalFeature("SuppressedAssociatedTypes"),
     .enableExperimentalFeature("LifetimeDependence"),
+    .enableExperimentalFeature("Lifetimes"),
     .enableUpcomingFeature("LifetimeDependence"),
     .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
     .enableUpcomingFeature("InferIsolatedConformances"),
@@ -21,7 +22,10 @@ let package = Package(
             targets: ["HTTPServer"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-collections.git", from: "1.0.4"),
+        .package(
+            url: "https://github.com/FranzBusch/swift-collections.git",
+            branch: "fb-async"
+        ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.4"),
@@ -48,7 +52,9 @@ let package = Package(
         .target(
             name: "HTTPServer",
             dependencies: [
+                "AsyncStreaming",
                 .product(name: "DequeModule", package: "swift-collections"),
+                .product(name: "BasicContainers", package: "swift-collections"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
@@ -68,6 +74,13 @@ let package = Package(
             dependencies: [
                 .product(name: "DequeModule", package: "swift-collections"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            swiftSettings: extraSettings
+        ),
+        .target(
+            name: "AsyncStreaming",
+            dependencies: [
+                .product(name: "BasicContainers", package: "swift-collections")
             ],
             swiftSettings: extraSettings
         ),

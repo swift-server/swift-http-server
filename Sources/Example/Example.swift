@@ -19,6 +19,7 @@ import Instrumentation
 import Logging
 import Middleware
 import X509
+internal import AsyncStreaming
 
 @main
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
@@ -61,7 +62,7 @@ struct Example {
 
         try await server.serve { request, requestContext, requestBodyAndTrailers, responseSender in
             let writer = try await responseSender.send(HTTPResponse(status: .ok))
-            try await writer.writeAndConclude(element: "Well, hello!".utf8.span, finalElement: nil)
+            try await writer.writeAndConclude("Well, hello!".utf8.span, finalElement: nil)
         }
     }
 }

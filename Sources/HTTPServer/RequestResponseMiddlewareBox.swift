@@ -1,4 +1,5 @@
 public import HTTPTypes
+public import AsyncStreaming
 
 /// This type holds the values passed to the ``HTTPServerRequestHandler`` when handling a request.
 /// It is necessary to box them together so that they can be used with `Middlewares`, as this will be the `Middleware.Input`.

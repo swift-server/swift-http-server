@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+public import AsyncStreaming
 
 /// A protocol that defines the contract for handling HTTP server requests.
 ///
@@ -75,14 +76,14 @@ public protocol HTTPServerRequestHandler<RequestReader, ResponseWriter>: Sendabl
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
     /// `ReadElement`.
     associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
-    where RequestReader.Underlying.ReadElement == Span<UInt8>,
+    where RequestReader.Underlying.ReadElement == UInt8,
           RequestReader.FinalElement == HTTPFields?
 
     /// The ``ConcludingAsyncWriter`` to use when writing responses. ``ConcludingAsyncWriter/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
     /// `WriteElement`.
     associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
-    where ResponseWriter.Underlying.WriteElement == Span<UInt8>,
+    where ResponseWriter.Underlying.WriteElement == UInt8,
           ResponseWriter.FinalElement == HTTPFields?
 
     /// Handles an incoming HTTP request and generates a response.

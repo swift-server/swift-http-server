@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+public import AsyncStreaming
 
 /// A closure-based implementation of ``HTTPServerRequestHandler``.
 ///
@@ -39,9 +40,9 @@ public import HTTPTypes
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPServerClosureRequestHandler<
     ConcludingRequestReader: ConcludingAsyncReader<RequestReader, HTTPFields?> & ~Copyable & SendableMetatype,
-    RequestReader: AsyncReader<Span<UInt8>, any Error> & ~Copyable,
+    RequestReader: AsyncReader<UInt8, any Error> & ~Copyable & ~Escapable,
     ConcludingResponseWriter: ConcludingAsyncWriter<RequestWriter, HTTPFields?> & ~Copyable & SendableMetatype,
-    RequestWriter: AsyncWriter<Span<UInt8>, any Error> & ~Copyable
+    RequestWriter: AsyncWriter<UInt8, any Error> & ~Copyable & ~Escapable
 >: HTTPServerRequestHandler {
     /// The underlying closure that handles HTTP requests
     private let _handler:

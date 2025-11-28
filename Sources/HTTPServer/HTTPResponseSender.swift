@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+public import AsyncStreaming
 
 /// This type ensures that a single non-informational (1xx) `HTTPResponse` is sent back to the client when handling a request.
 ///
@@ -22,6 +23,7 @@ public import HTTPTypes
 ///
 /// This forces structure in the response flow, requiring users to send a single response before they can stream a response body and
 /// trailers using the returned `ResponseWriter`.
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyable>: ~Copyable {
     private let _sendInformational: (HTTPResponse) async throws -> Void
     private let _send: (HTTPResponse) async throws -> ResponseWriter

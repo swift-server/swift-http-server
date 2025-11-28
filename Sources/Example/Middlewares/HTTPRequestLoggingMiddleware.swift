@@ -2,6 +2,8 @@ import HTTPServer
 import HTTPTypes
 import Logging
 import Middleware
+import AsyncStreaming
+import BasicContainers
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPRequestLoggingMiddleware<
@@ -9,9 +11,9 @@ struct HTTPRequestLoggingMiddleware<
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable
 >: Middleware
 where
-    RequestConcludingAsyncReader.Underlying.ReadElement == Span<UInt8>,
+    RequestConcludingAsyncReader.Underlying.ReadElement == UInt8,
     RequestConcludingAsyncReader.FinalElement == HTTPFields?,
-    ResponseConcludingAsyncWriter.Underlying.WriteElement == Span<UInt8>,
+    ResponseConcludingAsyncWriter.Underlying.WriteElement == UInt8,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
     typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
@@ -75,30 +77,34 @@ struct HTTPRequestLoggingConcludingAsyncReader<
     Base: ConcludingAsyncReader & ~Copyable
 >: ConcludingAsyncReader, ~Copyable
 where
-    Base.Underlying.ReadElement == Span<UInt8>,
+    Base.Underlying.ReadElement == UInt8,
     Base.FinalElement == HTTPFields?
 {
     typealias Underlying = RequestBodyAsyncReader
     typealias FinalElement = HTTPFields?
 
-    struct RequestBodyAsyncReader: AsyncReader, ~Copyable {
-        typealias ReadElement = Span<UInt8>
-        typealias ReadFailure = any Error
+    struct RequestBodyAsyncReader: AsyncReader, ~Copyable, ~Escapable {
+        typealias ReadElement = Base.Underlying.ReadElement
+        typealias ReadFailure = Base.Underlying.ReadFailure
 
         private var underlying: Base.Underlying
         private let logger: Logger
 
+        @_lifetime(copy underlying)
         init(underlying: consuming Base.Underlying, logger: Logger) {
             self.underlying = underlying
             self.logger = logger
         }
 
-        mutating func read<Return>(
-            body: (consuming Span<UInt8>?) async throws -> Return
-        ) async throws -> Return {
-            let logger = self.logger
-            return try await self.underlying.read { span in
-                logger.info("Received next chunk \(span?.count ?? 0)")
+        #if compiler(<6.3)
+        @_lifetime(&self)
+        #endif
+        mutating func read<Return, Failure: Error>(
+            maximumCount: Int?,
+            body: nonisolated(nonsending) (consuming Span<ReadElement>) async throws(Failure) -> Return
+        ) async throws(EitherError<ReadFailure, Failure>) -> Return {
+            return try await self.underlying.read(maximumCount: maximumCount) { span throws(Failure) in
+                logger.info("Received next chunk \(span.count)")
                 return try await body(span)
             }
         }
@@ -112,10 +118,10 @@ where
         self.logger = logger
     }
 
-    consuming func consumeAndConclude<Return>(
-        body: (consuming sending Underlying) async throws -> Return
-    ) async throws -> (Return, FinalElement) {
-        let (result, trailers) = try await self.base.consumeAndConclude { [logger] reader in
+    consuming func consumeAndConclude<Return, Failure: Error>(
+        body: nonisolated(nonsending) (consuming sending Underlying) async throws(Failure) -> Return
+    ) async throws(Failure) -> (Return, FinalElement) {
+        let (result, trailers) = try await self.base.consumeAndConclude { reader throws(Failure) in
             let wrappedReader = RequestBodyAsyncReader(
                 underlying: reader,
                 logger: logger
@@ -138,27 +144,41 @@ struct HTTPResponseLoggingConcludingAsyncWriter<
     Base: ConcludingAsyncWriter & ~Copyable
 >: ConcludingAsyncWriter, ~Copyable
 where
-    Base.Underlying.WriteElement == Span<UInt8>,
+    Base.Underlying.WriteElement == UInt8,
     Base.FinalElement == HTTPFields?
 {
     typealias Underlying = ResponseBodyAsyncWriter
     typealias FinalElement = HTTPFields?
 
-    struct ResponseBodyAsyncWriter: AsyncWriter, ~Copyable {
-        typealias WriteElement = Span<UInt8>
-        typealias WriteFailure = any Error
+    struct ResponseBodyAsyncWriter: AsyncWriter, ~Copyable, ~Escapable {
+        typealias WriteElement = Base.Underlying.WriteElement
+        typealias WriteFailure = Base.Underlying.WriteFailure
 
         private var underlying: Base.Underlying
         private let logger: Logger
 
+        @_lifetime(copy underlying)
         init(underlying: consuming Base.Underlying, logger: Logger) {
             self.underlying = underlying
             self.logger = logger
         }
 
-        mutating func write(_ elements: consuming Span<UInt8>) async throws(any Error) {
-            logger.info("Wrote next chunk \(elements.count)")
-            try await self.underlying.write(elements)
+        @_lifetime(self: copy self)
+        mutating func write<Result, Failure: Error>(
+            _ body: (inout OutputSpan<WriteElement>) async throws(Failure) -> Result
+        ) async throws(EitherError<WriteFailure, Failure>) -> Result {
+            try await self.underlying.write { span throws(Failure) in
+                self.logger.info("Wrote next chunk \(span.count)")
+                return try await body(&span)
+            }
+        }
+
+        @_lifetime(self: copy self)
+        mutating func write(
+            _ span: Span<WriteElement>
+        ) async throws(EitherError<WriteFailure, AsyncWriterWroteShortError>) {
+            self.logger.info("Wrote next chunk")
+            try await self.underlying.write(span)
         }
     }
 

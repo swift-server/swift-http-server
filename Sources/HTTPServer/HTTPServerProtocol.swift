@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+public import AsyncStreaming
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A generic HTTP server protocol that can handle incoming HTTP requests.
@@ -20,7 +21,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
     /// `ReadElement`.
     associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
-    where RequestReader.Underlying.ReadElement == Span<UInt8>,
+    where RequestReader.Underlying.ReadElement == UInt8,
           RequestReader.Underlying.ReadFailure == any Error,
           RequestReader.FinalElement == HTTPFields?
 
@@ -28,7 +29,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
     /// `WriteElement`.
     associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
-    where ResponseWriter.Underlying.WriteElement == Span<UInt8>,
+    where ResponseWriter.Underlying.WriteElement == UInt8,
           ResponseWriter.Underlying.WriteFailure == any Error,
           ResponseWriter.FinalElement == HTTPFields?
 

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPTypes
+public import AsyncStreaming
 import NIOCore
 import NIOHTTPTypes
 import Synchronization
@@ -30,8 +31,8 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     /// This reader processes the body parts of an HTTP request and provides them as spans of bytes,
     /// while also capturing any trailer fields received at the end of the request.
     public struct RequestBodyAsyncReader: AsyncReader, ~Copyable {
-        /// The type of elements this reader provides (byte spans representing body chunks).
-        public typealias ReadElement = Span<UInt8>
+        /// The type of elements this reader provides.
+        public typealias ReadElement = UInt8
 
         /// The type of errors that can occur during reading operations.
         public typealias ReadFailure = any Error
@@ -59,23 +60,34 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         ///                  and returns a value of type `Return`.
         /// - Returns: The value returned by the body function after processing the read element.
         /// - Throws: An error if the reading operation fails.
-        public mutating func read<Return>(
-            body: (consuming ReadElement?) async throws -> Return
-        ) async throws(ReadFailure) -> Return {
-            switch try await self.iterator.next(isolation: #isolation) {
-            case .head:
-                fatalError()
-            case .body(let element):
-                // TODO: Add ByteBuffer span interfaces
-                return try await body(Array(buffer: element).span)
-            case .end(let trailers):
-                self.state.wrapped.withLock { state in
-                    state.trailers = trailers
-                    state.finishedReading = true
+        public mutating func read<Return, Failure: Error>(
+            maximumCount: Int?,
+            body: nonisolated(nonsending) (consuming Span<ReadElement>) async throws(Failure) -> Return
+        ) async throws(EitherError<ReadFailure, Failure>) -> Return {
+            let requestPart: HTTPRequestPart?
+            do {
+                requestPart = try await self.iterator.next(isolation: #isolation)
+            } catch {
+                throw .first(error)
+            }
+
+            do {
+                switch requestPart {
+                case .head:
+                    fatalError()
+                case .body(let element):
+                    return try await body(Array(buffer: element).span)
+                case .end(let trailers):
+                    self.state.wrapped.withLock { state in
+                        state.trailers = trailers
+                        state.finishedReading = true
+                    }
+                    return try await body(.init())
+                case .none:
+                    return try await body(.init())
                 }
-                return try await body(nil)
-            case .none:
-                return try await body(nil)
+            } catch {
+                throw .second(error)
             }
         }
     }
@@ -142,9 +154,9 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     ///     return collectedData
     /// }
     /// ```
-    public consuming func consumeAndConclude<Return>(
-        body: (consuming sending RequestBodyAsyncReader) async throws -> Return
-    ) async throws -> (Return, HTTPFields?) {
+    public consuming func consumeAndConclude<Return, Failure: Error>(
+        body: nonisolated(nonsending) (consuming sending RequestBodyAsyncReader) async throws(Failure) -> Return
+    ) async throws(Failure) -> (Return, HTTPFields?) {
         if let iterator = self.iterator.sendingTake() {
             let partsReader = RequestBodyAsyncReader(iterator: iterator, readerState: self.state)
             let result = try await body(partsReader)

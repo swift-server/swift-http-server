@@ -1,22 +1,23 @@
-import HTTPServer
-import HTTPTypes
-import Middleware
+public import HTTPTypes
+public import AsyncStreaming
+public import Middleware
+public import HTTPServer
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-struct RouteHandlerMiddleware<
+public struct RouteHandlerMiddleware<
     RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
     ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable,
 >: Middleware, Sendable
 where
-    RequestConcludingAsyncReader.Underlying: AsyncReader<Span<UInt8>, any Error>,
+    RequestConcludingAsyncReader.Underlying: AsyncReader<UInt8, any Error>,
     RequestConcludingAsyncReader.FinalElement == HTTPFields?,
-    ResponseConcludingAsyncWriter.Underlying: AsyncWriter<Span<UInt8>, any Error>,
+    ResponseConcludingAsyncWriter.Underlying: AsyncWriter<UInt8, any Error>,
     ResponseConcludingAsyncWriter.FinalElement == HTTPFields?
 {
-    typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
-    typealias NextInput = Never
+    public typealias Input = RequestResponseMiddlewareBox<RequestConcludingAsyncReader, ResponseConcludingAsyncWriter>
+    public typealias NextInput = Never
 
-    func intercept(
+    public func intercept(
         input: consuming Input,
         next: (consuming NextInput) async throws -> Void
     ) async throws {
@@ -27,16 +28,9 @@ where
                     var responseBodyAsyncWriter = responseBodyAsyncWriter
                     if let reader = maybeReader.take() {
                         _ = try await reader.consumeAndConclude { bodyAsyncReader in
-                            var shouldContinue = true
                             var bodyAsyncReader = bodyAsyncReader
-                            while shouldContinue {
-                                try await bodyAsyncReader.read { span in
-                                    guard let span else {
-                                        shouldContinue = false
-                                        return
-                                    }
-                                    try await responseBodyAsyncWriter.write(span)
-                                }
+                            try await bodyAsyncReader.read(maximumCount: nil) { span in
+                                try await responseBodyAsyncWriter.write(span)
                             }
                         }
                         return HTTPFields(dictionaryLiteral: (HTTPField.Name.acceptEncoding, "encoding"))
