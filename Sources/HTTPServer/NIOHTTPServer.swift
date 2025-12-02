@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import Logging
 import HTTPTypes
+public import Logging
 import NIOCertificateReloading
 import NIOConcurrencyHelpers
 import NIOCore
@@ -23,9 +23,9 @@ import NIOHTTPTypesHTTP1
 import NIOHTTPTypesHTTP2
 import NIOPosix
 import NIOSSL
-import X509
 import SwiftASN1
 import Synchronization
+import X509
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///

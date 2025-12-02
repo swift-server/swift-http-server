@@ -28,8 +28,7 @@ enum ListeningAddressError: CustomStringConvertible, Error {
             return "Unsupported address type: only IPv4 and IPv6 are supported"
         case .serverClosed:
             return """
-                There is no listening address bound for this server: there may have been \
-                an error which caused the server to close, or it may have shut down.
+                There is no listening address bound for this server: there may have been an error which caused the server to close, or it may have shut down.
                 """
         }
     }
@@ -45,7 +44,7 @@ extension NIOHTTPServer {
             promise.fail(error)
         }
     }
-    
+
     /// The address the server is listening from.
     ///
     /// It is an `async` property because it will only return once the address has been successfully bound.
@@ -54,9 +53,9 @@ extension NIOHTTPServer {
     ///   server isn't listening anymore.
     public var listeningAddress: SocketAddress {
         get async throws {
-            return try await self.listeningAddressState
-              .withLockedValue { try $0.listeningAddressFuture }
-              .get()
+            try await self.listeningAddressState
+                .withLockedValue { try $0.listeningAddressFuture }
+                .get()
         }
     }
 }
@@ -93,8 +92,7 @@ extension NIOHTTPServer {
                     let socketAddress = try SocketAddress(address)
                     self = .listening(listeningAddressPromise.futureResult)
                     return .succeedPromise(listeningAddressPromise, address: socketAddress)
-                }
-                catch {
+                } catch {
                     self = .closedOrInvalidAddress(error)
                     return .failPromise(listeningAddressPromise, error: error)
                 }

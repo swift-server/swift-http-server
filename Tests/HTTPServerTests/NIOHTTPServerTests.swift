@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-@testable import HTTPServer
 import HTTPTypes
 import Logging
 import NIOCore
@@ -19,6 +18,8 @@ import NIOHTTP1
 import NIOHTTPTypes
 import NIOPosix
 import Testing
+
+@testable import HTTPServer
 
 #if canImport(Dispatch)
 import Dispatch
