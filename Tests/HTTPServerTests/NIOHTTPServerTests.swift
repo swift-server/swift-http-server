@@ -37,9 +37,7 @@ struct NIOHTTPServerTests {
 
         try await withThrowingTaskGroup { group in
             group.addTask {
-                try await server.serve { _, _, _, _ in
-                    return
-                }
+                try await server.serve { _, _, _, _ in }
             }
 
             let serverAddress = try await server.listeningAddress
