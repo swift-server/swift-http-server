@@ -25,7 +25,7 @@ import NIOPosix
 import NIOSSL
 import SwiftASN1
 import Synchronization
-import X509
+public import X509
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
@@ -84,6 +84,35 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     private let configuration: HTTPServerConfiguration
 
     var listeningAddressState: NIOLockedValueBox<State>
+
+    /// Task-local storage for connection-specific information accessible from request handlers.
+    ///
+    /// Use this to access data such as the peer's validated certificate chain.
+    @TaskLocal public static var context: Context = Context()
+
+    /// Connection-specific information available during request handling.
+    ///
+    /// Provides access to data such as the peer's validated certificate chain.
+    public struct Context: Sendable {
+        var peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
+
+        init(_ peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>? = nil) {
+            self.peerCertificateChainFuture = peerCertificateChainFuture
+        }
+
+        /// The peer's validated certificate chain. This returns `nil` if a
+        /// ``HTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set in
+        /// the ``HTTPServerConfiguration/TransportSecurity`` property of the server configuration, or if the peer did
+        /// not authenticate with certificates.
+        public var peerCertificateChain: X509.ValidatedCertificateChain? {
+            get async throws {
+                if let certs = try await self.peerCertificateChainFuture?.get() {
+                    return .init(uncheckedCertificateChain: try certs.map { try Certificate($0) })
+                }
+                return nil
+            }
+        }
+    }
 
     /// Create a new ``HTTPServer`` implemented over `SwiftNIO`.
     /// - Parameters:
@@ -171,20 +200,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 httpServerHTTP2Configuration: self.configuration.http2
             )
 
-            let certificateChain = try certificateChain
-                .map {
-                    try NIOSSLCertificate(
-                        bytes: $0.serializeAsPEM().derBytes,
-                        format: .der
-                    )
-                }
-                .map { NIOSSLCertificateSource.certificate($0) }
-            let privateKey = NIOSSLPrivateKeySource.privateKey(
-                try NIOSSLPrivateKey(
-                    bytes: privateKey.serializeAsPEM().derBytes,
-                    format: .der
-                )
-            )
+            let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
+            let privateKey = try NIOSSLPrivateKeySource(privateKey)
 
             var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
                 certificateChain: certificateChain,
@@ -218,39 +235,14 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 http2Configuration: http2Config
             )
 
-        case .mTLS(let certificateChain, let privateKey, let trustRoots):
+        case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationCallback):
             let http2Config = NIOHTTP2Handler.Configuration(
                 httpServerHTTP2Configuration: configuration.http2
             )
 
-            let certificateChain = try certificateChain
-                .map {
-                    try NIOSSLCertificate(
-                        bytes: $0.serializeAsPEM().derBytes,
-                        format: .der
-                    )
-                }
-                .map { NIOSSLCertificateSource.certificate($0) }
-            let privateKey = NIOSSLPrivateKeySource.privateKey(
-                try NIOSSLPrivateKey(
-                    bytes: privateKey.serializeAsPEM().derBytes,
-                    format: .der
-                )
-            )
-
-            let nioTrustRoots: NIOSSLTrustRoots
-            if let trustRoots {
-                nioTrustRoots = .certificates(
-                    try trustRoots.map {
-                        try NIOSSLCertificate(
-                            bytes: $0.serializeAsPEM().derBytes,
-                            format: .der
-                        )
-                    }
-                )
-            } else {
-                nioTrustRoots = .default
-            }
+            let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
+            let privateKey = try NIOSSLPrivateKeySource(privateKey)
+            let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
 
             var tlsConfiguration: TLSConfiguration = .makeServerConfigurationWithMTLS(
                 certificateChain: certificateChain,
@@ -264,27 +256,16 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config
+                http2Configuration: http2Config,
+                verificationCallback: verificationCallback
             )
 
-        case .reloadingMTLS(let certificateReloader, let trustRoots):
+        case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationCallback):
             let http2Config = NIOHTTP2Handler.Configuration(
                 httpServerHTTP2Configuration: configuration.http2
             )
 
-            let nioTrustRoots: NIOSSLTrustRoots
-            if let trustRoots {
-                nioTrustRoots = .certificates(
-                    try trustRoots.map {
-                        try NIOSSLCertificate(
-                            bytes: $0.serializeAsPEM().derBytes,
-                            format: .der
-                        )
-                    }
-                )
-            } else {
-                nioTrustRoots = .default
-            }
+            let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
 
             var tlsConfiguration: TLSConfiguration = try .makeServerConfigurationWithMTLS(
                 certificateReloader: certificateReloader,
@@ -297,7 +278,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config
+                http2Configuration: http2Config,
+                verificationCallback: verificationCallback
             )
         }
     }
@@ -343,7 +325,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
         tlsConfiguration: TLSConfiguration,
         handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTP2Handler.Configuration
+        http2Configuration: NIOHTTP2Handler.Configuration,
+        verificationCallback: HTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback? = nil
     ) async throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -352,11 +335,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 .bind(host: host, port: port) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         try channel.pipeline.syncOperations
-                            .addHandler(
-                                NIOSSLServerHandler(
-                                    context: .init(configuration: tlsConfiguration)
-                                )
-                            )
+                            .addHandler(self.makeSSLServerHandler(tlsConfiguration, verificationCallback))
                     }.flatMap {
                         channel.configureAsyncHTTPServerPipeline(http2Configuration: http2Configuration) { channel in
                             channel.eventLoop.makeCompletedFuture {
@@ -368,7 +347,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                                 )
                             }
                         } http2ConnectionInitializer: { channel in
-                            channel.eventLoop.makeSucceededVoidFuture()
+                            channel.eventLoop.makeCompletedFuture(.success(channel))
                         } http2StreamInitializer: { channel in
                             channel.eventLoop.makeCompletedFuture {
                                 try channel.pipeline.syncOperations
@@ -395,20 +374,26 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                                 try await withThrowingDiscardingTaskGroup { connectionGroup in
                                     switch try await upgradeResult.get() {
                                     case .http1_1(let http1Channel):
-                                        connectionGroup.addTask {
-                                            try await self.handleRequestChannel(
-                                                channel: http1Channel,
-                                                handler: handler
-                                            )
+                                        let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
+                                        Self.$context.withValue(Context(chainFuture)) {
+                                            connectionGroup.addTask {
+                                                try await self.handleRequestChannel(
+                                                    channel: http1Channel,
+                                                    handler: handler
+                                                )
+                                            }
                                         }
-                                    case .http2((_, let http2Multiplexer)):
+                                    case .http2((let http2Connection, let http2Multiplexer)):
                                         do {
+                                            let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
                                             for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                connectionGroup.addTask {
-                                                    try await self.handleRequestChannel(
-                                                        channel: http2StreamChannel,
-                                                        handler: handler
-                                                    )
+                                                Self.$context.withValue(Context(chainFuture)) {
+                                                    connectionGroup.addTask {
+                                                        try await self.handleRequestChannel(
+                                                            channel: http2StreamChannel,
+                                                            handler: handler
+                                                        )
+                                                    }
                                                 }
                                             }
                                         } catch {
@@ -503,6 +488,25 @@ public struct NIOHTTPServer: HTTPServerProtocol {
             self.logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
             throw error
+        }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOHTTPServer {
+    fileprivate func makeSSLServerHandler(
+        _ tlsConfiguration: TLSConfiguration,
+        _ customVerificationCallback: HTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback?
+    ) throws -> NIOSSLServerHandler {
+        if let customVerificationCallback {
+            return try NIOSSLServerHandler(
+                context: .init(configuration: tlsConfiguration),
+                customVerificationCallbackWithMetadata: { certificates, promise in
+                    customVerificationCallback(certificates, promise)
+                }
+            )
+        } else {
+            return try NIOSSLServerHandler(context: .init(configuration: tlsConfiguration))
         }
     }
 }

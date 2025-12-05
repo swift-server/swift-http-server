@@ -11,9 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import X509
 public import NIOCertificateReloading
-import NIOSSL
+public import NIOCore
+public import NIOSSL
+public import X509
 
 /// Configuration settings for the HTTP server.
 ///
@@ -53,6 +54,26 @@ public struct HTTPServerConfiguration: Sendable {
     /// Provides options for running the server with or without TLS encryption.
     /// When using TLS, you must either provide a certificate chain and private key, or a `CertificateReloader`.
     public struct TransportSecurity: Sendable {
+        /// A callback that replaces `NIOSSL`'s default certificate verification with custom verification logic.
+        ///
+        /// This is just a `Sendable` version of `NIOSSLCustomVerificationCallbackWithMetadata`.
+        ///
+        /// ## Usage
+        ///
+        /// The callback receives:
+        /// - **certificates**: The certificates presented by the peer. You are responsible for building and validating
+        ///   a chain of trust from these certificates.
+        /// - **promise**: A promise that must be completed. Call `promise.succeed(...)` with the subset of certificates
+        ///   that formed the validated chain of trust, or `promise.fail()` if verification fails.
+        ///
+        /// - Warning: This callback completely replaces NIOSSL's certificate verification logic and must be used with
+        ///   caution.
+        public typealias CustomCertificateVerificationCallback =
+            @Sendable (
+                [NIOSSLCertificate],
+                EventLoopPromise<NIOSSLVerificationResultWithMetadata>
+            ) -> Void
+
         enum Backing {
             case plaintext
             case tls(
@@ -63,11 +84,13 @@ public struct HTTPServerConfiguration: Sendable {
             case mTLS(
                 certificateChain: [Certificate],
                 privateKey: Certificate.PrivateKey,
-                trustRoots: [Certificate]?
+                trustRoots: [Certificate]?,
+                customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
             )
             case reloadingMTLS(
                 certificateReloader: any CertificateReloader,
-                trustRoots: [Certificate]?
+                trustRoots: [Certificate]?,
+                customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
             )
         }
 
@@ -75,6 +98,10 @@ public struct HTTPServerConfiguration: Sendable {
 
         public static let plaintext: Self = Self(backing: .plaintext)
 
+        /// Enables TLS.
+        /// - Parameters:
+        ///   - certificateChain: The certificate chain to present during negotiation.
+        ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
         public static func tls(
             certificateChain: [Certificate],
             privateKey: Certificate.PrivateKey
@@ -87,32 +114,60 @@ public struct HTTPServerConfiguration: Sendable {
             )
         }
 
+        /// Enables TLS with automatic certificate reloading.
+        /// - Parameters:
+        ///   - certificateReloader: The certificate reloader instance.
         public static func tls(certificateReloader: any CertificateReloader) throws -> Self {
             Self(backing: .reloadingTLS(certificateReloader: certificateReloader))
         }
 
+        /// Enables mTLS. Optionally provide a custom verification callback to override the default verification logic
+        /// used to verify client certificates, and control the derivation of a validated chain of trust from the
+        /// certificates presented by the peer.
+        ///
+        /// - Parameters:
+        ///   - certificateChain: The certificate chain to present during negotiation.
+        ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
+        ///   - trustRoots: The root certificates to trust when verifying client certificates.
+        ///   - customCertificateVerificationCallback: A custom certificate verification callback. This will override
+        ///     NIOSSL's default certificate verification logic.
         public static func mTLS(
             certificateChain: [Certificate],
             privateKey: Certificate.PrivateKey,
-            trustRoots: [Certificate]?
+            trustRoots: [Certificate]?,
+            customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
         ) -> Self {
             Self(
                 backing: .mTLS(
                     certificateChain: certificateChain,
                     privateKey: privateKey,
-                    trustRoots: trustRoots
+                    trustRoots: trustRoots,
+                    customCertificateVerificationCallback: customCertificateVerificationCallback
                 )
             )
         }
 
+        /// Enables mTLS with certificate reloading. Optionally provide a custom verification callback to override the default verification logic
+        /// used to verify client certificates, and control the derivation of a validated chain of trust from the
+        /// certificates presented by the peer.
+        ///
+        /// - Parameters:
+        ///   - certificateReloader: The certificate reloader instance.
+        ///   - trustRoots: The root certificates to trust when verifying client certificates.
+        ///   - customCertificateVerificationCallback: A custom certificate verification callback. This will override
+        ///     NIOSSL's default certificate verification logic.
         public static func mTLS(
             certificateReloader: any CertificateReloader,
-            trustRoots: [Certificate]?
+            trustRoots: [Certificate]?,
+            customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
         ) throws -> Self {
-            Self(backing: .reloadingMTLS(
-                certificateReloader: certificateReloader,
-                trustRoots: trustRoots
-            ))
+            Self(
+                backing: .reloadingMTLS(
+                    certificateReloader: certificateReloader,
+                    trustRoots: trustRoots,
+                    customCertificateVerificationCallback: customCertificateVerificationCallback
+                )
+            )
         }
     }
 
@@ -148,7 +203,7 @@ public struct HTTPServerConfiguration: Sendable {
                 maxConcurrentStreams: nil
             )
         }
-     }
+    }
 
     /// Configuration for the backpressure strategy to use when reading requests and writing back responses.
     public struct BackPressureStrategy: Sendable {
@@ -187,7 +242,7 @@ public struct HTTPServerConfiguration: Sendable {
     /// Create a new configuration.
     /// - Parameters:
     ///   - bindTarget: A ``BindTarget``.
-    ///   - tlsConfiguration: A ``TLSConfiguration``. Defaults to ``TLSConfiguration/insecure``.
+    ///   - transportSecurity: A ``TransportSecurity``. Defaults to ``TransportSecurity/plaintext``.
     ///   - backpressureStrategy: A ``BackPressureStrategy``.
     ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
     ///   - http2: A ``HTTP2``. Defaults to ``HTTP2/defaults``.
