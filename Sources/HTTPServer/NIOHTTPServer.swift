@@ -88,12 +88,12 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     /// Task-local storage for connection-specific information accessible from request handlers.
     ///
     /// Use this to access data such as the peer's validated certificate chain.
-    @TaskLocal public static var context: Context = Context()
+    @TaskLocal public static var connectionContext = ConnectionContext()
 
     /// Connection-specific information available during request handling.
     ///
     /// Provides access to data such as the peer's validated certificate chain.
-    public struct Context: Sendable {
+    public struct ConnectionContext: Sendable {
         var peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
 
         init(_ peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>? = nil) {
@@ -375,7 +375,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                                     switch try await upgradeResult.get() {
                                     case .http1_1(let http1Channel):
                                         let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
-                                        Self.$context.withValue(Context(chainFuture)) {
+                                        Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
                                             connectionGroup.addTask {
                                                 try await self.handleRequestChannel(
                                                     channel: http1Channel,
@@ -387,7 +387,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                                         do {
                                             let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
                                             for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                Self.$context.withValue(Context(chainFuture)) {
+                                                Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
                                                     connectionGroup.addTask {
                                                         try await self.handleRequestChannel(
                                                             channel: http2StreamChannel,

@@ -1,4 +1,3 @@
-@testable import HTTPServer
 import NIOCore
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
@@ -6,6 +5,8 @@ import NIOHTTPTypesHTTP2
 import NIOPosix
 import NIOSSL
 import X509
+
+@testable import HTTPServer
 
 typealias ClientChannel = NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
 
@@ -70,7 +71,7 @@ func setUpClientWithMTLS(
     case .http2(let http2Channel):
         precondition(applicationProtocol == "h2", "Unexpectedly established a HTTP 2 channel")
         return try await http2Channel.openStream { channel in
-            channel.eventLoop.makeCompletedFuture() {
+            channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(HTTP2FramePayloadToHTTPClientCodec())
                 return try ClientChannel(wrappingChannelSynchronously: channel, configuration: .init())
             }

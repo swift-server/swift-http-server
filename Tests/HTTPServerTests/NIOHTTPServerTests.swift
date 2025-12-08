@@ -160,7 +160,7 @@ struct NIOHTTPServerTests {
                     #expect(request.path == "/")
 
                     do {
-                        let peerChain = try #require(try await NIOHTTPServer.context.peerCertificateChain)
+                        let peerChain = try #require(try await NIOHTTPServer.connectionContext.peerCertificateChain)
                         #expect(Array(peerChain) == [clientChain.leaf])
                     } catch {
                         Issue.record("Could not obtain the peer's certificate chain: \(error)")

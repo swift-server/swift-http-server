@@ -39,7 +39,7 @@ struct TestCA {
             }
         )
     }
-    
+
     static func makeCertificate(
         issuerName: DistinguishedName,
         issuerKey: Certificate.PrivateKey,
@@ -61,4 +61,3 @@ struct TestCA {
         )
     }
 }
-
