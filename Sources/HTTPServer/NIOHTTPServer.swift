@@ -40,7 +40,7 @@ public import X509
 /// ## Usage
 ///
 /// ```swift
-/// let configuration = HTTPServerConfiguration(
+/// let configuration = NIOHTTPServerConfiguration(
 ///     bindTarget: .hostAndPort(host: "localhost", port: 8080),
 ///     tlsConfiguration: .insecure()
 /// )
@@ -81,7 +81,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     public typealias ResponseWriter = HTTPResponseConcludingAsyncWriter
 
     private let logger: Logger
-    private let configuration: HTTPServerConfiguration
+    private let configuration: NIOHTTPServerConfiguration
 
     var listeningAddressState: NIOLockedValueBox<State>
 
@@ -101,8 +101,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
         }
 
         /// The peer's validated certificate chain. This returns `nil` if a
-        /// ``HTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set in
-        /// the ``HTTPServerConfiguration/TransportSecurity`` property of the server configuration, or if the peer did
+        /// ``NIOHTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set in the
+        /// ``NIOHTTPServerConfiguration/TransportSecurity`` property of the server configuration, or if the peer did
         /// not authenticate with certificates.
         public var peerCertificateChain: X509.ValidatedCertificateChain? {
             get async throws {
@@ -120,7 +120,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     ///   - configuration: The server configuration including bind target and TLS settings.
     public init(
         logger: Logger,
-        configuration: HTTPServerConfiguration,
+        configuration: NIOHTTPServerConfiguration,
     ) {
         self.logger = logger
         self.configuration = configuration
@@ -285,7 +285,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     }
 
     private func serveInsecureHTTP1_1(
-        bindTarget: HTTPServerConfiguration.BindTarget,
+        bindTarget: NIOHTTPServerConfiguration.BindTarget,
         handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) async throws {
@@ -321,12 +321,12 @@ public struct NIOHTTPServer: HTTPServerProtocol {
     }
 
     private func serveSecureUpgrade(
-        bindTarget: HTTPServerConfiguration.BindTarget,
+        bindTarget: NIOHTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
         handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration,
-        verificationCallback: HTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback? = nil
+        verificationCallback: NIOHTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback? = nil
     ) async throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -496,7 +496,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
 extension NIOHTTPServer {
     fileprivate func makeSSLServerHandler(
         _ tlsConfiguration: TLSConfiguration,
-        _ customVerificationCallback: HTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback?
+        _ customVerificationCallback: NIOHTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback?
     ) throws -> NIOSSLServerHandler {
         if let customVerificationCallback {
             return try NIOSSLServerHandler(
@@ -513,7 +513,7 @@ extension NIOHTTPServer {
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension NIOHTTP2Handler.Configuration {
-    init(httpServerHTTP2Configuration http2Config: HTTPServerConfiguration.HTTP2) {
+    init(httpServerHTTP2Configuration http2Config: NIOHTTPServerConfiguration.HTTP2) {
         let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)
         let clampedMaxFrameSize = Self.clampMaxFrameSize(http2Config.maxFrameSize)
 

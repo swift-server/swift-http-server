@@ -16,12 +16,12 @@ public import NIOCore
 public import NIOSSL
 public import X509
 
-/// Configuration settings for the HTTP server.
+/// Configuration settings for ``NIOHTTPServer``.
 ///
 /// This structure contains all the necessary configuration options for setting up
-/// and running an HTTP server, including network binding and TLS settings.
+/// and running ``NIOHTTPServer``, including network binding and TLS settings.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct HTTPServerConfiguration: Sendable {
+public struct NIOHTTPServerConfiguration: Sendable {
     /// Specifies where the server should bind and listen for incoming connections.
     ///
     /// Currently supports binding to a specific host and port combination.
