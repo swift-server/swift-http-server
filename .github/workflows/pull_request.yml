@@ -14,7 +14,7 @@ jobs:
         with:
             api_breakage_check_container_image: "swift:6.2-noble"
             format_check_container_image: "swift:6.2-noble"
-            license_header_check_project_name: "SwiftHTTPServer"
+            license_header_check_project_name: "Swift HTTP Server"
 
     unit-tests:
         name: Unit tests
@@ -24,8 +24,8 @@ jobs:
             linux_6_0_enabled: false
             linux_6_1_enabled: false
             # linux_6_1_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
-            linux_6_2_enabled: false
-            # linux_6_2_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
+            linux_6_2_enabled: true
+            linux_6_2_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
             linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error"
             linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error"
 
@@ -36,7 +36,7 @@ jobs:
             linux_5_10_enabled: false
             linux_6_0_enabled: false
             linux_6_1_enabled: false
-            linux_6_2_enabled: false
+            linux_6_2_enabled: true
 
     static-sdk:
         name: Static SDK
@@ -49,3 +49,4 @@ jobs:
             linux_5_10_enabled: false
             linux_6_0_enabled: false
             linux_6_1_enabled: false
+            linux_6_2_enabled: true
