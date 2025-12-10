@@ -78,9 +78,10 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
         let backing: Backing
 
+        /// Configures the server for plaintext HTTP without TLS encryption.
         public static let plaintext: Self = Self(backing: .plaintext)
 
-        /// Enables TLS.
+        /// Configures the server for TLS with the provided certificate chain and private key.
         /// - Parameters:
         ///   - certificateChain: The certificate chain to present during negotiation.
         ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
@@ -96,14 +97,14 @@ public struct NIOHTTPServerConfiguration: Sendable {
             )
         }
 
-        /// Enables TLS with automatic certificate reloading.
+        /// Configures the server for TLS with automatic certificate reloading.
         /// - Parameters:
         ///   - certificateReloader: The certificate reloader instance.
         public static func tls(certificateReloader: any CertificateReloader) throws -> Self {
             Self(backing: .reloadingTLS(certificateReloader: certificateReloader))
         }
 
-        /// Enables mTLS.
+        /// Configures the server for mTLS with support for customizing client certificate verification logic.
         ///
         /// - Parameters:
         ///   - certificateChain: The certificate chain to present during negotiation.
@@ -143,7 +144,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
             )
         }
 
-        /// Enables mTLS with certificate reloading.
+        /// Configures the server for mTLS with automatic certificate reloading and support for customizing client
+        /// certificate verification logic.
         ///
         /// - Parameters:
         ///   - certificateReloader: The certificate reloader instance.
