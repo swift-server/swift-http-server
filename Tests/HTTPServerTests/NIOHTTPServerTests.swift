@@ -145,9 +145,9 @@ struct NIOHTTPServerTests {
                     certificateChain: [serverChain.leaf],
                     privateKey: serverChain.privateKey,
                     trustRoots: [clientChain.ca],
-                    customCertificateVerificationCallback: { certificates, promise in
+                    customCertificateVerificationCallback: { certificates in
                         // Return the peer's certificate chain; this must then be accessible in the request handler
-                        promise.succeed(.certificateVerified(.init(.init(certificates))))
+                        .certificateVerified(.init(.init(uncheckedCertificateChain: certificates)))
                     }
                 )
             )

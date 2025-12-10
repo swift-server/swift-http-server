@@ -11,8 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import NIOCore
-
 /// Represents an IPv4 address.
 public struct IPv4: Hashable, Sendable {
     /// The resolved host address.

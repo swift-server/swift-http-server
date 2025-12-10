@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 public import NIOCertificateReloading
-public import NIOCore
-public import NIOSSL
+import NIOCore
+import NIOSSL
 public import X509
 
 /// Configuration settings for ``NIOHTTPServer``.
@@ -54,26 +54,6 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// Provides options for running the server with or without TLS encryption.
     /// When using TLS, you must either provide a certificate chain and private key, or a `CertificateReloader`.
     public struct TransportSecurity: Sendable {
-        /// A callback that replaces `NIOSSL`'s default certificate verification with custom verification logic.
-        ///
-        /// This is just a `Sendable` version of `NIOSSLCustomVerificationCallbackWithMetadata`.
-        ///
-        /// ## Usage
-        ///
-        /// The callback receives:
-        /// - **certificates**: The certificates presented by the peer. You are responsible for building and validating
-        ///   a chain of trust from these certificates.
-        /// - **promise**: A promise that must be completed. Call `promise.succeed(...)` with the subset of certificates
-        ///   that formed the validated chain of trust, or `promise.fail()` if verification fails.
-        ///
-        /// - Warning: This callback completely replaces NIOSSL's certificate verification logic and must be used with
-        ///   caution.
-        public typealias CustomCertificateVerificationCallback =
-            @Sendable (
-                [NIOSSLCertificate],
-                EventLoopPromise<NIOSSLVerificationResultWithMetadata>
-            ) -> Void
-
         enum Backing {
             case plaintext
             case tls(
@@ -257,4 +237,62 @@ public struct NIOHTTPServerConfiguration: Sendable {
         self.backpressureStrategy = backpressureStrategy
         self.http2 = http2
     }
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOHTTPServerConfiguration.TransportSecurity {
+    /// Represents the outcome of certificate verification.
+    ///
+    /// Indicates whether certificate verification succeeded or failed, and provides associated metadata when
+    /// verification is successful.
+    public enum CertificateVerificationResult: Sendable, Hashable {
+        /// An error representing certificate verification failure.
+        public struct VerificationError: Swift.Error, Hashable {
+            let description: String
+
+            /// Creates a verification error with a description of the failure.
+            /// - Parameter description: A description of why certificate verification failed.
+            public init(description: String) {
+                self.description = description
+            }
+        }
+
+        /// Metadata resulting from successful certificate verification.
+        public struct VerificationMetadata: Sendable, Hashable {
+            /// A container for the validated certificate chain: an array of certificates forming a verified and ordered
+            /// chain of trust, starting from the peer's leaf certificate to a trusted root certificate.
+            public var validatedCertificateChain: X509.ValidatedCertificateChain?
+
+            /// Creates an instance with the peer's *validated* certificate chain.
+            ///
+            /// - Parameter validatedCertificateChain: An optional *validated* certificate chain. If provided, it must
+            /// **only** contain the **validated** chain of trust that was built and verified from the certificates
+            /// presented by the peer.
+            public init(_ validatedCertificateChain: X509.ValidatedCertificateChain?) {
+                self.validatedCertificateChain = validatedCertificateChain
+            }
+        }
+
+        /// Certificate verification succeeded.
+        ///
+        /// The associated metadata contains information captured during verification.
+        case certificateVerified(VerificationMetadata)
+
+        /// Certificate verification failed.
+        case failed(VerificationError)
+    }
+
+    /// A callback for implementing custom certificate verification logic.
+    ///
+    /// Use this callback to perform custom certificate verification. The callback receives the certificates presented
+    /// by the peer as `[X509.Certificate]`. Within the callback, you must validate these certificates against your
+    /// trust roots and derive a validated chain of trust per [RFC 4158](https://datatracker.ietf.org/doc/html/rfc4158).
+    ///
+    /// Return ``CertificateVerificationResult/certificateVerified(_:)`` if verification succeeds, optionally including
+    /// the validated certificate chain you derived. Returning the validated certificate chain allows ``NIOHTTPServer``
+    /// to provide access to it in the request handler through ``NIOHTTPServer/ConnectionContext/peerCertificateChain``,
+    /// accessed via the task-local ``NIOHTTPServer/connectionContext`` property. Otherwise, return
+    /// ``CertificateVerificationResult/failed(_:)`` if verification fails.
+    public typealias CustomCertificateVerificationCallback =
+        @Sendable ([Certificate]) async throws -> CertificateVerificationResult
 }

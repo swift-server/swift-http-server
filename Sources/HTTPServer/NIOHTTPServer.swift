@@ -502,7 +502,27 @@ extension NIOHTTPServer {
             return try NIOSSLServerHandler(
                 context: .init(configuration: tlsConfiguration),
                 customVerificationCallbackWithMetadata: { certificates, promise in
-                    customVerificationCallback(certificates, promise)
+                    promise.completeWithTask {
+                        // Convert input [NIOSSLCertificate] to [X509.Certificate]
+                        let x509Certs = try certificates.map { try Certificate($0) }
+
+                        let callbackResult = try await customVerificationCallback(x509Certs)
+
+                        switch callbackResult {
+                        case .certificateVerified(let verificationMetadata):
+                            guard let peerChain = verificationMetadata.validatedCertificateChain else {
+                                return .certificateVerified(.init(nil))
+                            }
+
+                            // Convert the result into [NIOSSLCertificate]
+                            let nioSSLCerts = try peerChain.map { try NIOSSLCertificate($0) }
+                            return .certificateVerified(.init(.init(nioSSLCerts)))
+
+                        case .failed(let error):
+                            self.logger.error("Custom certificate verification failed: \(error)")
+                            return .failed
+                        }
+                    }
                 }
             )
         } else {
