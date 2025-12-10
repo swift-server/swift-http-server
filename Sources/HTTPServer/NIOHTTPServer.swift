@@ -101,9 +101,9 @@ public struct NIOHTTPServer: HTTPServerProtocol {
         }
 
         /// The peer's validated certificate chain. This returns `nil` if a
-        /// ``NIOHTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set in the
-        /// ``NIOHTTPServerConfiguration/TransportSecurity`` property of the server configuration, or if the peer did
-        /// not authenticate with certificates.
+        /// ``NIOHTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set when
+        /// configuring mTLS in the server configuration, or if the custom verification callback did not return the
+        /// derived validated chain.
         public var peerCertificateChain: X509.ValidatedCertificateChain? {
             get async throws {
                 if let certs = try await self.peerCertificateChainFuture?.get() {
@@ -235,7 +235,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 http2Configuration: http2Config
             )
 
-        case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationCallback):
+        case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationMode, let verificationCallback):
             let http2Config = NIOHTTP2Handler.Configuration(
                 httpServerHTTP2Configuration: configuration.http2
             )
@@ -249,6 +249,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 privateKey: privateKey,
                 trustRoots: nioTrustRoots
             )
+            tlsConfiguration.certificateVerification = .init(verificationMode)
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
             try await self.serveSecureUpgrade(
@@ -260,7 +261,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 verificationCallback: verificationCallback
             )
 
-        case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationCallback):
+        case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationMode, let verificationCallback):
             let http2Config = NIOHTTP2Handler.Configuration(
                 httpServerHTTP2Configuration: configuration.http2
             )
@@ -271,6 +272,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                 certificateReloader: certificateReloader,
                 trustRoots: nioTrustRoots
             )
+            tlsConfiguration.certificateVerification = .init(verificationMode)
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
             try await self.serveSecureUpgrade(

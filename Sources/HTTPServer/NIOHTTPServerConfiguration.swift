@@ -65,11 +65,13 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 certificateChain: [Certificate],
                 privateKey: Certificate.PrivateKey,
                 trustRoots: [Certificate]?,
+                certificateVerification: CertificateVerification = .noHostnameVerification,
                 customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
             )
             case reloadingMTLS(
                 certificateReloader: any CertificateReloader,
                 trustRoots: [Certificate]?,
+                certificateVerification: CertificateVerification = .noHostnameVerification,
                 customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
             )
         }
@@ -109,12 +111,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
         ///   - certificateChain: The certificate chain to present during negotiation.
         ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
         ///   - trustRoots: The root certificates to trust when verifying client certificates.
+        ///   - certificateVerification: Configures the client certificate validation behaviour. Defaults to
+        ///      ``CertificateVerification/noHostnameVerification``.
         ///   - customCertificateVerificationCallback: A custom certificate verification callback. This will override
         ///     NIOSSL's default certificate verification logic.
         public static func mTLS(
             certificateChain: [Certificate],
             privateKey: Certificate.PrivateKey,
             trustRoots: [Certificate]?,
+            certificateVerification: CertificateVerification = .noHostnameVerification,
             customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
         ) -> Self {
             Self(
@@ -134,11 +139,14 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// - Parameters:
         ///   - certificateReloader: The certificate reloader instance.
         ///   - trustRoots: The root certificates to trust when verifying client certificates.
+        ///   - certificateVerification: Configures the client certificate validation behaviour. Defaults to
+        //      ``CertificateVerification/noHostnameVerification``.
         ///   - customCertificateVerificationCallback: A custom certificate verification callback. This will override
         ///     NIOSSL's default certificate verification logic.
         public static func mTLS(
             certificateReloader: any CertificateReloader,
             trustRoots: [Certificate]?,
+            certificateVerification: CertificateVerification = .noHostnameVerification,
             customCertificateVerificationCallback: CustomCertificateVerificationCallback? = nil
         ) throws -> Self {
             Self(
@@ -245,18 +253,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     ///
     /// Indicates whether certificate verification succeeded or failed, and provides associated metadata when
     /// verification is successful.
-    public enum CertificateVerificationResult: Sendable, Hashable {
-        /// An error representing certificate verification failure.
-        public struct VerificationError: Swift.Error, Hashable {
-            let description: String
-
-            /// Creates a verification error with a description of the failure.
-            /// - Parameter description: A description of why certificate verification failed.
-            public init(description: String) {
-                self.description = description
-            }
-        }
-
+    public enum VerificationResult: Sendable, Hashable {
         /// Metadata resulting from successful certificate verification.
         public struct VerificationMetadata: Sendable, Hashable {
             /// A container for the validated certificate chain: an array of certificates forming a verified and ordered
@@ -270,6 +267,17 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
             /// presented by the peer.
             public init(_ validatedCertificateChain: X509.ValidatedCertificateChain?) {
                 self.validatedCertificateChain = validatedCertificateChain
+            }
+        }
+
+        /// An error representing certificate verification failure.
+        public struct VerificationError: Swift.Error, Hashable {
+            public let reason: String
+
+            /// Creates a verification error with the reason why verification failed.
+            /// - Parameter reason: The reason of why certificate verification failed.
+            public init(reason: String) {
+                self.reason = reason
             }
         }
 
@@ -288,11 +296,51 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     /// by the peer as `[X509.Certificate]`. Within the callback, you must validate these certificates against your
     /// trust roots and derive a validated chain of trust per [RFC 4158](https://datatracker.ietf.org/doc/html/rfc4158).
     ///
-    /// Return ``CertificateVerificationResult/certificateVerified(_:)`` if verification succeeds, optionally including
+    /// Return ``VerificationResult/certificateVerified(_:)`` if verification succeeds, optionally including
     /// the validated certificate chain you derived. Returning the validated certificate chain allows ``NIOHTTPServer``
     /// to provide access to it in the request handler through ``NIOHTTPServer/ConnectionContext/peerCertificateChain``,
     /// accessed via the task-local ``NIOHTTPServer/connectionContext`` property. Otherwise, return
-    /// ``CertificateVerificationResult/failed(_:)`` if verification fails.
-    public typealias CustomCertificateVerificationCallback =
-        @Sendable ([Certificate]) async throws -> CertificateVerificationResult
+    /// ``VerificationResult/failed(_:)`` if verification fails.
+    public typealias CustomCertificateVerificationCallback = @Sendable ([Certificate]) async throws -> VerificationResult
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOHTTPServerConfiguration.TransportSecurity {
+    /// Represents the certificate verification behaviour.
+    public struct CertificateVerification: Sendable {
+        enum VerificationMode {
+            case optionalVerification
+            case noHostnameVerification
+        }
+
+        let mode: VerificationMode
+
+        /// Allows peers to connect without presenting any certificates. However, if the peer *does* present
+        /// certificates, they are validated like normal (exactly like with ``noHostnameVerification``), and the TLS
+        /// handshake will fail if verification fails.
+        ///
+        /// - Warning: With this mode, a peer can successfully connect even without presenting any certificates. As such,
+        ///   this mode must be used with great caution.
+        public static var optionalVerification: Self {
+            Self(mode: .optionalVerification)
+        }
+
+        /// Validates the certificates presented by the peer but skips hostname verification as it cannot succeed in
+        /// a server context.
+        public static var noHostnameVerification: Self {
+            Self(mode: .noHostnameVerification)
+        }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOSSL.CertificateVerification {
+    init(_ verificationMode: NIOHTTPServerConfiguration.TransportSecurity.CertificateVerification) {
+        switch verificationMode.mode {
+        case .noHostnameVerification:
+            self = .noHostnameVerification
+        case .optionalVerification:
+            self = .optionalVerification
+        }
+    }
 }
