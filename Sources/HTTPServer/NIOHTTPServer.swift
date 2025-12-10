@@ -100,9 +100,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
             self.peerCertificateChainFuture = peerCertificateChainFuture
         }
 
-        /// The peer's validated certificate chain. This returns `nil` if a
-        /// ``NIOHTTPServerConfiguration/TransportSecurity/CustomCertificateVerificationCallback`` was not set when
-        /// configuring mTLS in the server configuration, or if the custom verification callback did not return the
+        /// The peer's validated certificate chain. This returns `nil` if a custom verification callback was not set
+        /// when configuring mTLS in the server configuration, or if the custom verification callback did not return the
         /// derived validated chain.
         public var peerCertificateChain: X509.ValidatedCertificateChain? {
             get async throws {
@@ -328,7 +327,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
         handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration,
-        verificationCallback: NIOHTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback? = nil
+        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
     ) async throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -498,7 +497,7 @@ public struct NIOHTTPServer: HTTPServerProtocol {
 extension NIOHTTPServer {
     fileprivate func makeSSLServerHandler(
         _ tlsConfiguration: TLSConfiguration,
-        _ customVerificationCallback: NIOHTTPServerConfiguration.TransportSecurity.CustomCertificateVerificationCallback?
+        _ customVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
     ) throws -> NIOSSLServerHandler {
         if let customVerificationCallback {
             return try NIOSSLServerHandler(
