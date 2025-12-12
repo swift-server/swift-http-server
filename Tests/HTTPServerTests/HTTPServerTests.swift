@@ -25,32 +25,41 @@ struct HTTPServerTests {
             logger: Logger(label: "Test"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
-        try await server.serve { request, context, requestBodyAndTrailers, responseSender in
-            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
-            // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
-//            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
 
-            let responseConcludingWriter = try await responseSender.send(HTTPResponse(status: .ok))
-            // Uncommenting this would cause a "responseSender consumed more than once" error.
-//            let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
+        try await withThrowingTaskGroup { group in
+            group.addTask {
+                try await server.serve { request, context, requestBodyAndTrailers, responseSender in
+                    _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
+                    // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
+                    //            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
 
-            // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
-//            _ = try await requestBodyAndTrailers.consumeAndConclude { reader in
-//                var reader = reader
-//                try await reader.read { elem in }
-//            }
+                    let responseConcludingWriter = try await responseSender.send(HTTPResponse(status: .ok))
+                    // Uncommenting this would cause a "responseSender consumed more than once" error.
+                    //            let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
 
-            try await responseConcludingWriter.produceAndConclude { writer in
-                var writer = writer
-                try await writer.write([1,2].span)
-                return nil
+                    // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
+                    //            _ = try await requestBodyAndTrailers.consumeAndConclude { reader in
+                    //                var reader = reader
+                    //                try await reader.read { elem in }
+                    //            }
+
+                    try await responseConcludingWriter.produceAndConclude { writer in
+                        var writer = writer
+                        try await writer.write([1, 2].span)
+                        return nil
+                    }
+
+                    // Uncommenting this would cause a "responseConcludingWriter consumed more than once" error.
+                    //            try await responseConcludingWriter.writeAndConclude(
+                    //                element: [1, 2].span,
+                    //                finalElement: HTTPFields(dictionaryLiteral: (.acceptEncoding, "Encoding"))
+                    //            )
+                }
             }
 
-            // Uncommenting this would cause a "responseConcludingWriter consumed more than once" error.
-//            try await responseConcludingWriter.writeAndConclude(
-//                element: [1, 2].span,
-//                finalElement: HTTPFields(dictionaryLiteral: (.acceptEncoding, "Encoding"))
-//            )
+            _ = try await server.listeningAddress
+
+            group.cancelAll()
         }
     }
 }
