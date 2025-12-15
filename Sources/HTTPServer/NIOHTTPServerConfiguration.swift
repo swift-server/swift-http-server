@@ -153,9 +153,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
         ///   - certificateVerification: Configures the client certificate validation behaviour. Defaults to
         ///     ``CertificateVerification/noHostnameVerification``.
         ///   - customCertificateVerificationCallback: If specified, this callback *overrides* the default NIOSSL client
-        ///     certificate verification logic. Refer to the documentation for this argument in
-        ///     ``mTLS(certificateChain:privateKey:trustRoots:certificateVerification:customCertificateVerificationCallback:)``
-        ///     for more details.
+        ///     certificate verification logic. The callback receives the certificates presented by the peer. Within the
+        ///     callback, you must validate these certificates against your trust roots and derive a validated chain of
+        ///     trust per [RFC 4158](https://datatracker.ietf.org/doc/html/rfc4158). Return
+        ///     ``CertificateVerificationResult/certificateVerified(_:)`` from the callback if verification succeeds,
+        ///     optionally including the validated certificate chain you derived. Returning the validated certificate
+        ///     chain allows ``NIOHTTPServer`` to provide access to it in the request handler through
+        ///     ``NIOHTTPServer/ConnectionContext/peerCertificateChain``, accessed via the task-local
+        ///     ``NIOHTTPServer/connectionContext`` property. Otherwise, return
+        ///     ``CertificateVerificationResult/failed(_:)`` if verification fails.
         ///
         /// - Warning: If `customCertificateVerificationCallback` is set, it will **override** NIOSSL's default
         ///   certificate verification logic.

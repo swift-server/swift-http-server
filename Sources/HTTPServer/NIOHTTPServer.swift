@@ -25,7 +25,7 @@ import NIOPosix
 import NIOSSL
 import SwiftASN1
 import Synchronization
-public import X509
+import X509
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
@@ -87,31 +87,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
 
     /// Task-local storage for connection-specific information accessible from request handlers.
     ///
-    /// Use this to access data such as the peer's validated certificate chain.
+    /// - SeeAlso: ``ConnectionContext``.
     @TaskLocal public static var connectionContext = ConnectionContext()
-
-    /// Connection-specific information available during request handling.
-    ///
-    /// Provides access to data such as the peer's validated certificate chain.
-    public struct ConnectionContext: Sendable {
-        var peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
-
-        init(_ peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>? = nil) {
-            self.peerCertificateChainFuture = peerCertificateChainFuture
-        }
-
-        /// The peer's validated certificate chain. This returns `nil` if a custom verification callback was not set
-        /// when configuring mTLS in the server configuration, or if the custom verification callback did not return the
-        /// derived validated chain.
-        public var peerCertificateChain: X509.ValidatedCertificateChain? {
-            get async throws {
-                if let certs = try await self.peerCertificateChainFuture?.get() {
-                    return .init(uncheckedCertificateChain: try certs.map { try Certificate($0) })
-                }
-                return nil
-            }
-        }
-    }
 
     /// Create a new ``HTTPServer`` implemented over `SwiftNIO`.
     /// - Parameters:
@@ -387,8 +364,8 @@ public struct NIOHTTPServer: HTTPServerProtocol {
                                     case .http2((let http2Connection, let http2Multiplexer)):
                                         do {
                                             let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
-                                            for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                                            try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                                                for try await http2StreamChannel in http2Multiplexer.inbound {
                                                     connectionGroup.addTask {
                                                         try await self.handleRequestChannel(
                                                             channel: http2StreamChannel,
@@ -520,7 +497,9 @@ extension NIOHTTPServer {
                             return .certificateVerified(.init(.init(nioSSLCerts)))
 
                         case .failed(let error):
-                            self.logger.error("Custom certificate verification failed: \(error)")
+                            self.logger.error("Custom certificate verification failed", metadata: [
+                                "failure-reason": .string(error.reason)
+                            ])
                             return .failed
                         }
                     }
