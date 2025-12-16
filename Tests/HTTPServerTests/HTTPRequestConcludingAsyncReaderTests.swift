@@ -134,6 +134,35 @@ struct HTTPRequestConcludingAsyncReaderTests {
         }
     }
 
+    @Test("Throw while reading request")
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    func testThrowingWhileReadingRequest() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+
+        let bodyChunks = (0..<10).map { i in ByteBuffer(bytes: [i]) }
+        for chunk in bodyChunks {
+            source.yield(.body(chunk))
+        }
+        source.yield(.end([.cookie: "test"]))
+        source.finish()
+
+        // Check that the read error is propagated
+        try await #require(throws: TestError.errorWhileReading) {
+            let requestReader = HTTPRequestConcludingAsyncReader(
+                iterator: stream.makeAsyncIterator(),
+                readerState: .init()
+            )
+
+            _ = try await requestReader.consumeAndConclude { bodyReader in
+                var bodyReader = bodyReader
+
+                try await bodyReader.read { element in
+                    throw TestError.errorWhileReading
+                }
+            }
+        }
+    }
+
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     @Test("More bytes available than consumption limit")
     func testCollectMoreBytesThanAvailable() async throws {

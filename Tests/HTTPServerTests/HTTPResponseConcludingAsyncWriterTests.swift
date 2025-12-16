@@ -55,6 +55,30 @@ struct HTTPResponseConcludingAsyncWriterTests {
         #expect(trailer == .end(self.trailerSampleOne))
     }
 
+    @Test("Throw while writing response")
+    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    func testThrowWhileProducing() async throws {
+        let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
+
+        // Check that the write error is propagated
+        try await #require(throws: TestError.errorWhileWriting) {
+            let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())
+            try await responseWriter.produceAndConclude { bodyWriter in
+                var bodyWriter = bodyWriter
+
+                // Write an element
+                try await bodyWriter.write(self.bodySampleOne.span)
+                // Then throw
+                throw TestError.errorWhileWriting
+            }
+        }
+
+        var responseIterator = sink.makeAsyncIterator()
+
+        let firstElement = try #require(await responseIterator.next())
+        #expect(firstElement == .body(.init(bytes: self.bodySampleOne)))
+    }
+
     @Test("Write multiple elements and multiple trailers")
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testProduceMultipleElementsAndMultipleTrailers() async throws {
