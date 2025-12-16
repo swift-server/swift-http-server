@@ -104,7 +104,7 @@ struct NIOHTTPServerTests {
                     try await responseBodySender.produceAndConclude { responseBodyWriter in
                         var responseBodyWriter = responseBodyWriter
                         try await responseBodyWriter.write([1, 2].span)
-                        return [.trailer: "test_trailer"]
+                        return Self.trailer
                     }
                 }
             }
@@ -181,7 +181,7 @@ struct NIOHTTPServerTests {
                     try await sender.produceAndConclude { bodyWriter in
                         var bodyWriter = bodyWriter
                         try await bodyWriter.write([1, 2].span)
-                        return [.trailer: "test_trailer"]
+                        return Self.trailer
                     }
                 }
             }
