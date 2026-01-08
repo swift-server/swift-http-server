@@ -114,7 +114,7 @@ extension HTTPServerProtocol {
     /// }
     /// ```
     public func serve(
-        handler: @Sendable @escaping (
+        handler: nonisolated(nonsending) @Sendable @escaping (
             _ request: HTTPRequest,
             _ requestContext: HTTPRequestContext,
             _ requestBodyAndTrailers: consuming sending RequestReader,
