@@ -83,4 +83,15 @@ public struct SocketAddress: Hashable, Sendable {
 
         return address
     }
+
+    /// The ``SocketAddress``'s port.
+    public var port: Int {
+        switch self.base {
+        case .ipv4(let ipv4):
+            return ipv4.port
+
+        case .ipv6(let ipv6):
+            return ipv6.port
+        }
+    }
 }
