@@ -76,7 +76,7 @@ import X509
 /// }
 /// ```
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-public struct NIOHTTPServer: HTTPServerProtocol {
+public struct NIOHTTPServer: HTTPServer {
     public typealias RequestReader = HTTPRequestConcludingAsyncReader
     public typealias ResponseWriter = HTTPResponseConcludingAsyncWriter
 

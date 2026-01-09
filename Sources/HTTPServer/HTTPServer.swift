@@ -15,10 +15,13 @@ public import HTTPTypes
 public import AsyncStreaming
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-/// A generic HTTP server protocol that can handle incoming HTTP requests.
-public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
+/// A protocol that defines the interface for an HTTP server.
+///
+/// ``HTTPServer`` provides the contract for server implementations that accept incoming HTTP connections and process requests
+/// using an ``HTTPServerRequestHandler``.
+public protocol HTTPServer: Sendable, ~Copyable, ~Escapable {
     /// The ``ConcludingAsyncReader`` to use when reading requests. ``ConcludingAsyncReader/FinalElement``
-    /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `Span<UInt8>` as its
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `UInt8` as its
     /// `ReadElement`.
     associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
     where RequestReader.Underlying.ReadElement == UInt8,
@@ -26,7 +29,7 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
           RequestReader.FinalElement == HTTPFields?
 
     /// The ``ConcludingAsyncWriter`` to use when writing responses. ``ConcludingAsyncWriter/FinalElement``
-    /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `Span<UInt8>` as its
+    /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `UInt8` as its
     /// `WriteElement`.
     associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
     where ResponseWriter.Underlying.WriteElement == UInt8,
@@ -47,22 +50,8 @@ public protocol HTTPServerProtocol: Sendable, ~Copyable, ~Escapable {
     /// ## Example
     ///
     /// ```swift
-    /// struct EchoHandler: HTTPServerRequestHandler {
-    ///     func handle(
-    ///         request: HTTPRequest,
-    ///         requestContext: HTTPRequestContext,
-    ///         requestBodyAndTrailers: consuming sending HTTPRequestConcludingAsyncReader,
-    ///         responseSender: consuming sending HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
-    ///     ) async throws {
-    ///         let response = HTTPResponse(status: .ok)
-    ///         let writer = try await responseSender.send(response)
-    ///         // Handle request and write response...
-    ///     }
-    /// }
-    ///
-    /// let server = // create an instance of a type conforming to the `ServerProtocol`
-    ///
-    /// try await server.serve(handler: EchoHandler())
+    /// let server = // create an instance of a type conforming to the `HTTPServer` protocol
+    /// try await server.serve(handler: YourRequestHandler())
     /// ```
     func serve(handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>) async throws
 }
