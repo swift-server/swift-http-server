@@ -124,7 +124,8 @@ extension NIOHTTPServer {
     }
 }
 
-extension SocketAddress {
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+extension NIOHTTPServer.SocketAddress {
     fileprivate init(_ address: NIOCore.SocketAddress?) throws(ListeningAddressError) {
         guard let address, let port = address.port else {
             throw ListeningAddressError.addressOrPortNotAvailable
