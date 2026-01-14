@@ -1,12 +1,11 @@
 //===----------------------------------------------------------------------===//
 //
-// This source file is part of the Swift HTTP API Proposal open source project
+// This source file is part of the Swift HTTP Server open source project
 //
-// Copyright (c) 2025 Apple Inc. and the Swift HTTP API Proposal project authors
+// Copyright (c) 2025 Apple Inc. and the Swift HTTP Server project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
-// See CONTRIBUTORS.txt for the list of Swift HTTP API Proposal project authors
 //
 // SPDX-License-Identifier: Apache-2.0
 //
