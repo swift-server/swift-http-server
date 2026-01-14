@@ -139,6 +139,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
                     certificateChain: certificateChain,
                     privateKey: privateKey,
                     trustRoots: trustRoots,
+                    certificateVerification: certificateVerification,
                     customCertificateVerificationCallback: customCertificateVerificationCallback
                 )
             )
@@ -177,6 +178,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 backing: .reloadingMTLS(
                     certificateReloader: certificateReloader,
                     trustRoots: trustRoots,
+                    certificateVerification: certificateVerification,
                     customCertificateVerificationCallback: customCertificateVerificationCallback
                 )
             )
