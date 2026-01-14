@@ -119,6 +119,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
                 let (_, finalElement) = try await requestReader.consumeAndConclude { bodyReader in
                     // Read all body chunks
                     var chunksProcessed = 0
+                    // swift-format-ignore: ReplaceForEachWithForLoop
                     try await bodyReader.forEach { element in
                         var buffer = ByteBuffer()
                         buffer.writeBytes(element.bytes)
