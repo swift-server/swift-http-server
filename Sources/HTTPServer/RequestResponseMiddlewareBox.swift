@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPTypes
 public import AsyncStreaming
+public import HTTPTypes
 
 /// This type holds the values passed to the ``HTTPServerRequestHandler`` when handling a request.
 /// It is necessary to box them together so that they can be used with `Middlewares`, as this will be the `Middleware.Input`.
@@ -25,7 +25,7 @@ public struct RequestResponseMiddlewareBox<
     private let requestContext: HTTPRequestContext
     private let requestReader: RequestReader
     private let responseSender: HTTPResponseSender<ResponseWriter>
-    
+
     /// Create a new ``RequestResponseMiddlewareBox``.
     /// - Parameters:
     ///   - request: The `HTTPRequest`.
@@ -42,17 +42,18 @@ public struct RequestResponseMiddlewareBox<
         self.requestReader = requestReader
         self.responseSender = responseSender
     }
-    
+
     /// Provides a closure exposing the request, request reader and response sender contained in this box.
     /// - Parameter handler: The handler for this box's contents.
     /// - Returns: The value returned from `handler`.
     public consuming func withContents<T>(
-        _ handler: nonisolated(nonsending) (
-            HTTPRequest,
-            HTTPRequestContext,
-            consuming RequestReader,
-            consuming HTTPResponseSender<ResponseWriter>
-        ) async throws -> T
+        _ handler:
+            nonisolated(nonsending) (
+                HTTPRequest,
+                HTTPRequestContext,
+                consuming RequestReader,
+                consuming HTTPResponseSender<ResponseWriter>
+            ) async throws -> T
     ) async throws -> T {
         try await handler(
             self.request,

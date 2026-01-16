@@ -66,13 +66,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 privateKey: Certificate.PrivateKey,
                 trustRoots: [Certificate]?,
                 certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-                customCertificateVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
+                customCertificateVerificationCallback: (
+                    @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
+                )? = nil
             )
             case reloadingMTLS(
                 certificateReloader: any CertificateReloader,
                 trustRoots: [Certificate]?,
                 certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-                customCertificateVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
+                customCertificateVerificationCallback: (
+                    @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
+                )? = nil
             )
         }
 

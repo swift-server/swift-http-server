@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+internal import AsyncStreaming
 import Crypto
 import Foundation
 import HTTPServer
@@ -19,7 +20,6 @@ import Instrumentation
 import Logging
 import Middleware
 import X509
-internal import AsyncStreaming
 
 @main
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
@@ -86,12 +86,14 @@ extension NIOHTTPServer {
         let chain = middlewareBuilder()
 
         try await self.serve { request, requestContext, reader, responseSender in
-            try await chain.intercept(input: RequestResponseMiddlewareBox(
-                request: request,
-                requestContext: requestContext,
-                requestReader: reader,
-                responseSender: responseSender
-            )) { _ in }
+            try await chain.intercept(
+                input: RequestResponseMiddlewareBox(
+                    request: request,
+                    requestContext: requestContext,
+                    requestReader: reader,
+                    responseSender: responseSender
+                )
+            ) { _ in }
         }
     }
 }

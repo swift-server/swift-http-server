@@ -31,7 +31,7 @@ extension Array {
     /// }
     /// ```
     public func asyncReader() -> some AsyncReader<Element, Never> & SendableMetatype {
-        return ArrayAsyncReader(array: self)
+        ArrayAsyncReader(array: self)
     }
 }
 

@@ -11,11 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-@testable import HTTPServer
 import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
 import Testing
+
+@testable import HTTPServer
 
 @Suite
 struct HTTPResponseConcludingAsyncWriterTests {
@@ -128,7 +129,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
         let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())
 
         try await responseWriter.produceAndConclude { bodyWriter in
-            return self.trailerSampleTwo
+            self.trailerSampleTwo
         }
 
         var responseIterator = sink.makeAsyncIterator()

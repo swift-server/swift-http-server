@@ -43,7 +43,8 @@ extension AsyncWriter where Self: ~Copyable, Self: ~Escapable {
     @_lifetime(self: copy self)
     public mutating func write<ReadFailure: Error>(
         _ reader: consuming some (AsyncReader<WriteElement, ReadFailure> & ~Copyable & ~Escapable)
-    ) async throws(EitherError<ReadFailure, EitherError<WriteFailure, AsyncWriterWroteShortError>>) where WriteElement: Copyable {
+    ) async throws(EitherError<ReadFailure, EitherError<WriteFailure, AsyncWriterWroteShortError>>)
+    where WriteElement: Copyable {
         // swift-format-ignore: ReplaceForEachWithForLoop
         try await reader.forEach { (span) throws(EitherError<WriteFailure, AsyncWriterWroteShortError>) -> Void in
             try await self.write(span)

@@ -12,13 +12,14 @@
 //===----------------------------------------------------------------------===//
 
 import AsyncStreaming
-@testable import HTTPServer
 import HTTPTypes
 import NIOCore
 import NIOHTTP1
 import NIOHTTPTypes
 import NIOPosix
 import Testing
+
+@testable import HTTPServer
 
 @Suite
 struct HTTPRequestConcludingAsyncReaderTests {
@@ -50,7 +51,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
         arguments: [ByteBuffer(repeating: 1, count: 100), ByteBuffer()],
         [
             HTTPFields([.init(name: .cookie, value: "test_cookie")]),
-            HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")])
+            HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")]),
         ]
     )
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
@@ -177,7 +178,10 @@ struct HTTPRequestConcludingAsyncReaderTests {
             source.yield(.body(.init(repeating: 5, count: 10)))
             source.finish()
 
-            let requestReader = HTTPRequestConcludingAsyncReader(iterator: stream.makeAsyncIterator(), readerState: .init())
+            let requestReader = HTTPRequestConcludingAsyncReader(
+                iterator: stream.makeAsyncIterator(),
+                readerState: .init()
+            )
 
             _ = try await requestReader.consumeAndConclude { requestBodyReader in
                 var requestBodyReader = requestBodyReader

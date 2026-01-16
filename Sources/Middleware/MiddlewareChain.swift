@@ -43,10 +43,11 @@ public struct MiddlewareChain<Input: ~Copyable, NextInput: ~Copyable>: Middlewar
     ///
     /// - Parameter middlewareFunc: A closure that implements the middleware's behavior.
     init(
-        middlewareFunc: nonisolated(nonsending) @Sendable @escaping (
-            consuming Input,
-            (consuming NextInput) async throws -> Void
-        ) async throws -> Void
+        middlewareFunc:
+            nonisolated(nonsending) @Sendable @escaping (
+                consuming Input,
+                (consuming NextInput) async throws -> Void
+            ) async throws -> Void
     ) {
         self.middlewareFunc = middlewareFunc
     }

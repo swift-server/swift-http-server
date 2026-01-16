@@ -11,7 +11,7 @@ let extraSettings: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InternalImportsByDefault")
+    .enableUpcomingFeature("InternalImportsByDefault"),
 ]
 
 let package = Package(
@@ -19,7 +19,8 @@ let package = Package(
     products: [
         .library(
             name: "HTTPServer",
-            targets: ["HTTPServer"])
+            targets: ["HTTPServer"]
+        )
     ],
     dependencies: [
         .package(
@@ -65,7 +66,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOHTTPTypesHTTP1", package: "swift-nio-extras"),
                 .product(name: "NIOHTTPTypesHTTP2", package: "swift-nio-extras"),
-                .product(name: "NIOCertificateReloading", package: "swift-nio-extras")
+                .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),
             ],
             swiftSettings: extraSettings
         ),
@@ -88,7 +89,7 @@ let package = Package(
             name: "HTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                "HTTPServer",
+                .target(name: "HTTPServer"),
             ]
         ),
     ]

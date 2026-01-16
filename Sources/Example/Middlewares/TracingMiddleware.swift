@@ -18,7 +18,7 @@ import Tracing
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct TracingMiddleware<Input: ~Copyable>: Middleware {
     typealias NextInput = Input
-    
+
     func intercept(
         input: consuming Input,
         next: (consuming NextInput) async throws -> Void

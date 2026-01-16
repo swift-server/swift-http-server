@@ -11,11 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-@testable import HTTPServer
+import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
-import HTTPTypes
 import Testing
+
+@testable import HTTPServer
 
 @Suite
 struct HTTPResponseSenderTests {

@@ -45,9 +45,12 @@ extension TaskGroup {
             // This is actually safe. The body closure is async it will hop onto the
             // right executor automatically.
             let box = SendableBox(closure: escapingClosure)
-            self.addTask(name: nil, operation: {
-                await box.closure()
-            })
+            self.addTask(
+                name: nil,
+                operation: {
+                    await box.closure()
+                }
+            )
         }
     }
 }

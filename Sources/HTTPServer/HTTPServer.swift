@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPTypes
 public import AsyncStreaming
+public import HTTPTypes
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 /// A protocol that defines the interface for an HTTP server.
@@ -24,17 +24,19 @@ public protocol HTTPServer: Sendable, ~Copyable, ~Escapable {
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncReader/Underlying`` must use `UInt8` as its
     /// `ReadElement`.
     associatedtype RequestReader: ConcludingAsyncReader & ~Copyable & SendableMetatype
-    where RequestReader.Underlying.ReadElement == UInt8,
-          RequestReader.Underlying.ReadFailure == any Error,
-          RequestReader.FinalElement == HTTPFields?
+    where
+        RequestReader.Underlying.ReadElement == UInt8,
+        RequestReader.Underlying.ReadFailure == any Error,
+        RequestReader.FinalElement == HTTPFields?
 
     /// The ``ConcludingAsyncWriter`` to use when writing responses. ``ConcludingAsyncWriter/FinalElement``
     /// must be an optional `HTTPFields`, and ``ConcludingAsyncWriter/Underlying`` must use `UInt8` as its
     /// `WriteElement`.
     associatedtype ResponseWriter: ConcludingAsyncWriter & ~Copyable & SendableMetatype
-    where ResponseWriter.Underlying.WriteElement == UInt8,
-          ResponseWriter.Underlying.WriteFailure == any Error,
-          ResponseWriter.FinalElement == HTTPFields?
+    where
+        ResponseWriter.Underlying.WriteElement == UInt8,
+        ResponseWriter.Underlying.WriteFailure == any Error,
+        ResponseWriter.FinalElement == HTTPFields?
 
     /// Starts an HTTP server with the specified request handler.
     ///

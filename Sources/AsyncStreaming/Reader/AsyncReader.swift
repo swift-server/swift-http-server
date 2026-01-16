@@ -101,7 +101,7 @@ extension AsyncReader where Self: ~Copyable, Self: ~Escapable {
     ) async throws(Failure) -> Return where Self.ReadFailure == Never {
         do {
             return try await self.read(maximumCount: maximumCount) { (span) throws(Failure) -> Return in
-                return try await body(span)
+                try await body(span)
             }
         } catch {
             switch error {

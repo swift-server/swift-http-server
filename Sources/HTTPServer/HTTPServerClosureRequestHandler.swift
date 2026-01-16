@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPTypes
 public import AsyncStreaming
+public import HTTPTypes
 
 /// A closure-based implementation of ``HTTPServerRequestHandler``.
 ///
@@ -58,12 +58,13 @@ public struct HTTPServerClosureRequestHandler<
     /// - Parameter handler: A closure that will be called to handle each incoming HTTP request.
     ///   The closure takes the same parameters as the ``HTTPServerRequestHandler/handle(request:requestBodyAndTrailers:responseSender:)`` method.
     public init(
-        handler: nonisolated(nonsending) @Sendable @escaping (
-            HTTPRequest,
-            HTTPRequestContext,
-            consuming sending ConcludingRequestReader,
-            consuming sending HTTPResponseSender<ConcludingResponseWriter>
-        ) async throws -> Void
+        handler:
+            nonisolated(nonsending) @Sendable @escaping (
+                HTTPRequest,
+                HTTPRequestContext,
+                consuming sending ConcludingRequestReader,
+                consuming sending HTTPResponseSender<ConcludingResponseWriter>
+            ) async throws -> Void
     ) {
         self._handler = handler
     }
@@ -114,12 +115,13 @@ extension HTTPServer {
     /// }
     /// ```
     public func serve(
-        handler: nonisolated(nonsending) @Sendable @escaping (
-            _ request: HTTPRequest,
-            _ requestContext: HTTPRequestContext,
-            _ requestBodyAndTrailers: consuming sending RequestReader,
-            _ responseSender: consuming sending HTTPResponseSender<ResponseWriter>
-        ) async throws -> Void
+        handler:
+            nonisolated(nonsending) @Sendable @escaping (
+                _ request: HTTPRequest,
+                _ requestContext: HTTPRequestContext,
+                _ requestBodyAndTrailers: consuming sending RequestReader,
+                _ responseSender: consuming sending HTTPResponseSender<ResponseWriter>
+            ) async throws -> Void
     ) async throws {
         try await self.serve(handler: HTTPServerClosureRequestHandler(handler: handler))
     }

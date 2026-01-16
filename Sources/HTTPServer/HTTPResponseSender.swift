@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPTypes
 public import AsyncStreaming
+public import HTTPTypes
 
 /// This type ensures that a single non-informational (1xx) `HTTPResponse` is sent back to the client when handling a request.
 ///
@@ -35,7 +35,7 @@ public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyab
         self._send = send
         self._sendInformational = sendInformational
     }
-    
+
     /// Send the given `HTTPResponse` and get back a `ResponseWriter` to which to write a response body and trailers.
     /// - Parameter response: The final `HTTPResponse` to send back to the client.
     /// - Returns: The `ResponseWriter` to which to write a response body and trailers.
@@ -45,7 +45,7 @@ public struct HTTPResponseSender<ResponseWriter: ConcludingAsyncWriter & ~Copyab
         precondition(response.status.kind != .informational)
         return try await self._send(response)
     }
-    
+
     /// Send the given informational (1xx) response.
     /// - Parameter response: An informational `HTTPResponse` to send back to the client.
     public func sendInformational(_ response: HTTPResponse) async throws {

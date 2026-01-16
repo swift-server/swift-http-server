@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPTypes
 public import AsyncStreaming
+public import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
 import Synchronization
@@ -173,7 +173,6 @@ extension HTTPRequestConcludingAsyncReader: Sendable {}
 
 @available(*, unavailable)
 extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable {}
-
 
 extension Optional {
     mutating func sendingTake() -> sending Self {

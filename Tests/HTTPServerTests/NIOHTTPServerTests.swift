@@ -145,7 +145,11 @@ struct NIOHTTPServerTests {
     }
 
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-    @Test("mTLS request-response with custom verification callback returning peer certificates", .serialized, arguments: ["http/1.1", "h2"])
+    @Test(
+        "mTLS request-response with custom verification callback returning peer certificates",
+        .serialized,
+        arguments: ["http/1.1", "h2"]
+    )
     func testMTLS(applicationProtocol: String) async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
         let clientChain = try TestCA.makeSelfSignedChain()

@@ -44,7 +44,7 @@ extension AsyncReader where Self: ~Copyable, Self: ~Escapable {
     public consuming func map<MappedElement>(
         _ transformation: @escaping (borrowing ReadElement) async -> MappedElement
     ) -> some (AsyncReader<MappedElement, ReadFailure> & ~Copyable & ~Escapable) {
-        return AsyncMapReader(base: self, transformation: transformation)
+        AsyncMapReader(base: self, transformation: transformation)
     }
 }
 
@@ -54,7 +54,9 @@ extension AsyncReader where Self: ~Copyable, Self: ~Escapable {
 /// to each element read from the base reader. The transformation is applied lazily
 /// as elements are read, maintaining the streaming nature of the operation.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-struct AsyncMapReader<Base: AsyncReader & ~Copyable & ~Escapable, MappedElement: ~Copyable>: AsyncReader, ~Copyable, ~Escapable {
+struct AsyncMapReader<Base: AsyncReader & ~Copyable & ~Escapable, MappedElement: ~Copyable>: AsyncReader, ~Copyable,
+    ~Escapable
+{
     typealias ReadElement = MappedElement
     typealias ReadFailure = Base.ReadFailure
 

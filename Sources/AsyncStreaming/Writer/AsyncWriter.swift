@@ -132,7 +132,9 @@ extension AsyncWriter where Self: ~Copyable, Self: ~Escapable {
     }
 
     @_lifetime(self: copy self)
-    public mutating func write(_ span: Span<WriteElement>) async throws(EitherError<WriteFailure, AsyncWriterWroteShortError>)
+    public mutating func write(
+        _ span: Span<WriteElement>
+    ) async throws(EitherError<WriteFailure, AsyncWriterWroteShortError>)
     where WriteElement: Copyable {
         var index = span.indices.startIndex
         while index < span.indices.endIndex {
