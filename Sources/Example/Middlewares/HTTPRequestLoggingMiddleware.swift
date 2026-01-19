@@ -1,5 +1,3 @@
-// This is currently commented out because a compiler bug is causing issues.
-
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift HTTP Server open source project
@@ -13,6 +11,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+
+// This is currently commented out because a compiler bug is causing issues.
 
 //import HTTPServer
 //import HTTPTypes
