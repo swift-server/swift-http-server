@@ -15,7 +15,7 @@ let extraSettings: [SwiftSetting] = [
 ]
 
 let package = Package(
-    name: "HTTPServer",
+    name: "swift-http-server",
     products: [
         .library(
             name: "HTTPServer",
@@ -89,7 +89,7 @@ let package = Package(
             name: "HTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                .target(name: "HTTPServer"),
+                "HTTPServer",
             ]
         ),
     ]
