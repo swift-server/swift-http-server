@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPServer
+import HTTPTypes
 import NIOCore
 import NIOEmbedded
 import NIOHTTP1
@@ -22,7 +24,7 @@ import NIOSSL
 import Testing
 import X509
 
-@testable import HTTPServer
+@testable import NIOHTTPServer
 
 @Suite
 struct NIOHTTPServerEndToEndTests {

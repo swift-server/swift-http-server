@@ -15,6 +15,7 @@
 import HTTPServer
 import HTTPTypes
 import Logging
+import NIOHTTPServer
 import Testing
 
 @Suite

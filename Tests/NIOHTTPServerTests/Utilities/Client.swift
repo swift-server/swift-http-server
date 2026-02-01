@@ -20,7 +20,7 @@ import NIOPosix
 import NIOSSL
 import X509
 
-@testable import HTTPServer
+@testable import NIOHTTPServer
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 func setUpClient(host: String, port: Int) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {

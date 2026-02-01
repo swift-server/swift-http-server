@@ -21,7 +21,7 @@ import SwiftASN1
 import Testing
 import X509
 
-@testable import HTTPServer
+@testable import NIOHTTPServer
 
 @Suite
 struct NIOHTTPServerSwiftConfigurationTests {

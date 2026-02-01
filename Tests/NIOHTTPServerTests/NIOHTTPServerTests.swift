@@ -19,7 +19,7 @@ import NIOHTTPTypes
 import Testing
 import X509
 
-@testable import HTTPServer
+@testable import NIOHTTPServer
 
 #if canImport(Dispatch)
 import Dispatch

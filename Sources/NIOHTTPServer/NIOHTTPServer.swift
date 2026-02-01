@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+public import HTTPServer
 import HTTPTypes
 public import Logging
 import NIOCertificateReloading

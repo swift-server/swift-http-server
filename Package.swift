@@ -33,7 +33,11 @@ let package = Package(
         .library(
             name: "HTTPServer",
             targets: ["HTTPServer"]
-        )
+        ),
+        .library(
+            name: "NIOHTTPServer",
+            targets: ["NIOHTTPServer"]
+        ),
     ],
     traits: [
         .trait(name: "SwiftConfiguration"),
@@ -65,11 +69,20 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 "HTTPServer",
                 "Middleware",
+                "NIOHTTPServer",
             ],
             swiftSettings: extraSettings
         ),
         .target(
             name: "HTTPServer",
+            dependencies: [
+                "AsyncStreaming",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+            ],
+            swiftSettings: extraSettings
+        ),
+        .target(
+            name: "NIOHTTPServer",
             dependencies: [
                 "AsyncStreaming",
                 .product(name: "DequeModule", package: "swift-collections"),
@@ -90,6 +103,7 @@ let package = Package(
                     package: "swift-configuration",
                     condition: .when(traits: ["SwiftConfiguration"])
                 ),
+                "HTTPServer",
             ],
             swiftSettings: extraSettings
         ),
@@ -109,10 +123,10 @@ let package = Package(
             swiftSettings: extraSettings
         ),
         .testTarget(
-            name: "HTTPServerTests",
+            name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                "HTTPServer",
+                "NIOHTTPServer",
             ]
         ),
     ]

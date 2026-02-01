@@ -20,7 +20,7 @@ import NIOHTTPTypes
 import NIOPosix
 import Testing
 
-@testable import HTTPServer
+@testable import NIOHTTPServer
 
 @Suite
 struct HTTPRequestConcludingAsyncReaderTests {
