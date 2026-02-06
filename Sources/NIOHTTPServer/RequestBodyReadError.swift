@@ -18,7 +18,7 @@ enum RequestBodyReadError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .streamEndedBeforeReceivingRequestEnd:
-            "The stream unexpectedly ended before receiving a request end."
+            "The request stream unexpectedly ended before receiving a request end part."
         }
     }
 }
