@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal import AsyncStreaming
+import AsyncStreaming
 import Crypto
 import Foundation
 import HTTPServer
@@ -24,7 +24,7 @@ import NIOHTTPServer
 import X509
 
 @main
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 struct Example {
     static func main() async throws {
         try await serve()
@@ -71,7 +71,7 @@ struct Example {
 
 // MARK: - Server Extensions
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     /// Serve HTTP requests using a middleware chain built with the provided builder
     /// This method handles the type inference for HTTP middleware components

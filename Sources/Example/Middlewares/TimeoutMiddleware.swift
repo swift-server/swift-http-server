@@ -14,7 +14,7 @@
 
 import Middleware
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 struct TimeoutMiddleware<Input>: Middleware {
     func intercept(input: Input, next: (Input) async throws -> Void) async throws {
         try await withTimeout(in: .seconds(10), clock: .continuous) {
@@ -34,12 +34,12 @@ package struct TimeOutError: Error {
     var underlying: any Error
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 struct SendableBox<T>: @unchecked Sendable {
     var closure: () async -> T
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension TaskGroup {
     mutating func addTask(nonEscapableOperation: () async -> ChildTaskResult) {
         withoutActuallyEscaping(nonEscapableOperation) { escapingClosure in
@@ -56,7 +56,7 @@ extension TaskGroup {
     }
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 nonisolated(nonsending) public func withTimeout<T: Sendable, Clock: _Concurrency.Clock>(
     in timeout: Clock.Duration,
     clock: Clock,

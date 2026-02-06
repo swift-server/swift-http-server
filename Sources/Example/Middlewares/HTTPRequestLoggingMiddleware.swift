@@ -21,7 +21,7 @@
 //import AsyncStreaming
 //import BasicContainers
 //
-//@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+//@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 //struct HTTPRequestLoggingMiddleware<
 //    RequestConcludingAsyncReader: ConcludingAsyncReader & ~Copyable,
 //    ResponseConcludingAsyncWriter: ConcludingAsyncWriter & ~Copyable
@@ -88,7 +88,7 @@
 //    }
 //}
 //
-//@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+//@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 //struct HTTPRequestLoggingConcludingAsyncReader<
 //    Base: ConcludingAsyncReader & ~Copyable
 //>: ConcludingAsyncReader, ~Copyable
@@ -155,7 +155,7 @@
 //    }
 //}
 //
-//@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+//@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 //struct HTTPResponseLoggingConcludingAsyncWriter<
 //    Base: ConcludingAsyncWriter & ~Copyable
 //>: ConcludingAsyncWriter, ~Copyable

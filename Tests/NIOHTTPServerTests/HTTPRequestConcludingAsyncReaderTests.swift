@@ -25,7 +25,7 @@ import Testing
 @Suite
 struct HTTPRequestConcludingAsyncReaderTests {
     @Test("Head request not allowed")
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testWriteHeadRequestPartFatalError() async throws {
         // The request body reader should fatal error if it receives a head part
         await #expect(processExitsWith: .failure) {
@@ -48,7 +48,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
     }
 
     @Test("Stream cannot be finished before writing request end part")
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testNotWritingRequestEndPartFatalError() async throws {
         await #expect(processExitsWith: .failure) {
             let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -80,7 +80,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
             HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")]),
         ]
     )
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testRequestWithConcludingElement(body: ByteBuffer, trailers: HTTPFields) async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -124,7 +124,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
             HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")]),
         ]
     )
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testStreamedRequestBody(bodyChunks: [ByteBuffer], trailers: HTTPFields) async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -162,7 +162,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
     }
 
     @Test("Throw while reading request")
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testThrowingWhileReadingRequest() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -194,7 +194,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
         }
     }
 
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("More bytes available than consumption limit")
     func testCollectMoreBytesThanAvailable() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -223,7 +223,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
         }
     }
 
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Multiple body chunks; multiple reads with limits")
     func testReadWithLimits() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -268,7 +268,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
         }
     }
 
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Multiple random-length chunks; multiple reads with random limits")
     func testMultipleReadsWithRandomLimits() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()

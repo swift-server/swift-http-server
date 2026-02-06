@@ -14,10 +14,11 @@
 
 public import AsyncStreaming
 public import HTTPTypes
+public import HTTPServer
 
 /// This type holds the values passed to the ``HTTPServerRequestHandler`` when handling a request.
 /// It is necessary to box them together so that they can be used with `Middlewares`, as this will be the `Middleware.Input`.
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 public struct RequestResponseMiddlewareBox<
     RequestReader: ConcludingAsyncReader & ~Copyable,
     ResponseWriter: ConcludingAsyncWriter & ~Copyable
