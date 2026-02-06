@@ -50,15 +50,12 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                 case finished
 
                 enum ReadingBodyState {
-                    // Not yet received any request body parts
-                    case initial
+                    // All received bytes have been consumed; no excess bytes need to be stored.
+                    case noExcess
 
                     // `read` was called with a `maximumCount` value that was lower than the bytes available. The excess
                     // bytes are stored here so they can be dispensed in future calls to `read`.
                     case excess(ByteBuffer)
-
-                    // No excess bytes currently needing to be stored
-                    case noExcess
                 }
             }
 
@@ -68,7 +65,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
             private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
 
             init(iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator) {
-                self.state = .readingBody(.initial)
+                self.state = .readingBody(.noExcess)
                 self.iterator = iterator
             }
 
@@ -89,7 +86,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                         // excess and don't advance the iterator.
                         bodyElement = excessElement
 
-                    case .initial, .noExcess:
+                    case .noExcess:
                         // There is no excess from previous reads. We obtain the next element from the stream.
                         let requestPart = try await self.iterator.next(isolation: #isolation)
 
