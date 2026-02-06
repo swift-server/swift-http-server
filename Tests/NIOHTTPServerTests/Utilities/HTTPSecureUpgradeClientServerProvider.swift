@@ -32,12 +32,12 @@ struct HTTPSecureUpgradeClientServerProvider {
     let serverTLSConfiguration: TLSConfiguration
     let verificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)?
 
-    let http2Configuration: NIOHTTP2Handler.Configuration
+    let http2Configuration: NIOHTTPServerConfiguration.HTTP2
 
     static func withProvider(
         tlsConfiguration: TLSConfiguration,
         tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)? = nil,
-        http2Configuration: NIOHTTP2Handler.Configuration = .init(),
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2 = .defaults,
         handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
         body: (HTTPSecureUpgradeClientServerProvider) async throws -> Void
     ) async throws {

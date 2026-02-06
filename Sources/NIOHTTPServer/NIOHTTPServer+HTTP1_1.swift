@@ -20,6 +20,10 @@ import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOPosix
 
+#if ServiceLifecycle
+import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutdown.
+#endif
+
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension NIOHTTPServer {
     func serveInsecureHTTP1_1(
@@ -43,6 +47,15 @@ extension NIOHTTPServer {
         case .hostAndPort(let host, let port):
             let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                #if ServiceLifecycle
+                .serverChannelInitializer { channel in
+                    channel.eventLoop.makeCompletedFuture {
+                        try channel.pipeline.syncOperations.addHandler(
+                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
+                        )
+                    }
+                }
+                #endif  // ServiceLifecycle
                 .bind(host: host, port: port) { channel in
                     self.setupHTTP1_1ConnectionChildChannel(
                         channel: channel,

@@ -29,6 +29,10 @@ import SwiftASN1
 import Synchronization
 import X509
 
+#if ServiceLifecycle
+import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutdown.
+#endif
+
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
 /// The `Server` class provides a high-level interface for creating HTTP servers with support for:
@@ -85,6 +89,10 @@ public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
     private let configuration: NIOHTTPServerConfiguration
 
+    #if ServiceLifecycle
+    let serverQuiescingHelper: ServerQuiescingHelper
+    #endif
+
     var listeningAddressState: NIOLockedValueBox<State>
 
     /// Task-local storage for connection-specific information accessible from request handlers.
@@ -106,6 +114,10 @@ public struct NIOHTTPServer: HTTPServer {
         // TODO: If we allow users to pass in an event loop, use that instead of the singleton MTELG.
         let eventLoopGroup: MultiThreadedEventLoopGroup = .singletonMultiThreadedEventLoopGroup
         self.listeningAddressState = .init(.idle(eventLoopGroup.any().makePromise()))
+
+        #if ServiceLifecycle
+        self.serverQuiescingHelper = .init(group: eventLoopGroup)
+        #endif
     }
 
     /// Starts an HTTP server with the specified request handler.
@@ -147,14 +159,7 @@ public struct NIOHTTPServer: HTTPServer {
     /// )
     /// ```
     public func serve(handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>) async throws {
-        defer {
-            switch self.listeningAddressState.withLockedValue({ $0.close() }) {
-            case .failPromise(let promise, let error):
-                promise.fail(error)
-            case .doNothing:
-                ()
-            }
-        }
+        defer { self.close() }
 
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch self.configuration.backpressureStrategy.backing {
@@ -174,10 +179,6 @@ public struct NIOHTTPServer: HTTPServer {
             )
 
         case .tls(let certificateChain, let privateKey):
-            let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: self.configuration.http2
-            )
-
             let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
             let privateKey = try NIOSSLPrivateKeySource(privateKey)
 
@@ -192,14 +193,10 @@ public struct NIOHTTPServer: HTTPServer {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config
+                http2Configuration: self.configuration.http2
             )
 
         case .reloadingTLS(let certificateReloader):
-            let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: configuration.http2
-            )
-
             var tlsConfiguration: TLSConfiguration = try .makeServerConfiguration(
                 certificateReloader: certificateReloader
             )
@@ -210,14 +207,10 @@ public struct NIOHTTPServer: HTTPServer {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config
+                http2Configuration: self.configuration.http2
             )
 
         case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationMode, let verificationCallback):
-            let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: configuration.http2
-            )
-
             let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
             let privateKey = try NIOSSLPrivateKeySource(privateKey)
             let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
@@ -235,15 +228,11 @@ public struct NIOHTTPServer: HTTPServer {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
+                http2Configuration: self.configuration.http2,
                 verificationCallback: verificationCallback
             )
 
         case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationMode, let verificationCallback):
-            let http2Config = NIOHTTP2Handler.Configuration(
-                httpServerHTTP2Configuration: configuration.http2
-            )
-
             let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
 
             var tlsConfiguration: TLSConfiguration = try .makeServerConfigurationWithMTLS(
@@ -258,7 +247,7 @@ public struct NIOHTTPServer: HTTPServer {
                 tlsConfiguration: tlsConfiguration,
                 handler: handler,
                 asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: http2Config,
+                http2Configuration: self.configuration.http2,
                 verificationCallback: verificationCallback
             )
         }
@@ -341,6 +330,15 @@ public struct NIOHTTPServer: HTTPServer {
             self.logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
             throw error
+        }
+    }
+
+    func close() {
+        switch self.listeningAddressState.withLockedValue({ $0.close() }) {
+        case .failPromise(let promise, let error):
+            promise.fail(error)
+        case .doNothing:
+            ()
         }
     }
 }

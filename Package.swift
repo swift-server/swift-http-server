@@ -41,7 +41,8 @@ let package = Package(
     ],
     traits: [
         .trait(name: "SwiftConfiguration"),
-        .default(enabledTraits: ["SwiftConfiguration"]),
+        .trait(name: "ServiceLifecycle"),
+        .default(enabledTraits: ["SwiftConfiguration", "ServiceLifecycle"]),
     ],
     dependencies: [
         .package(
@@ -55,8 +56,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.92.2"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.36.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.30.0"),
-        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.0.0"),
-        .package(url: "https://github.com/apple/swift-configuration", from: "1.0.0"),
+        // TODO: Update dependency once PR is merged.
+        .package(url: "https://github.com/aryan-25/swift-nio-http2.git", branch: "server-connection-manager"),
+        .package(url: "https://github.com/apple/swift-configuration.git", from: "1.0.0"),
+        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.9.1"),
     ],
     targets: [
         .executableTarget(
@@ -78,6 +81,11 @@ let package = Package(
             dependencies: [
                 "AsyncStreaming",
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(
+                    name: "ServiceLifecycle",
+                    package: "swift-service-lifecycle",
+                    condition: .when(traits: ["ServiceLifecycle"])
+                ),
             ],
             swiftSettings: extraSettings
         ),
@@ -103,6 +111,11 @@ let package = Package(
                     package: "swift-configuration",
                     condition: .when(traits: ["SwiftConfiguration"])
                 ),
+                .product(
+                    name: "NIOExtras",
+                    package: "swift-nio-extras",
+                    condition: .when(traits: ["ServiceLifecycle"])
+                ),
                 "HTTPServer",
             ],
             swiftSettings: extraSettings
@@ -126,6 +139,8 @@ let package = Package(
             name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
                 "NIOHTTPServer",
             ]
         ),
