@@ -95,7 +95,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                             fatalError("Unexpectedly received a request head.")
 
                         case .none:
-                            fatalError("The stream unexpectedly ended before receiving a request end.")
+                            throw RequestBodyReadError.streamEndedBeforeReceivingRequestEnd
 
                         case .body(let element):
                             bodyElement = element
