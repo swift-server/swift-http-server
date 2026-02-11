@@ -14,6 +14,7 @@
 
 import HTTPServer
 import HTTPTypes
+import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP1
@@ -31,8 +32,9 @@ struct NIOHTTPServerEndToEndTests {
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     @Test("HTTP/1.1 request and response")
     func testHTTP1_1() async throws {
-        try await HTTP1ClientServerProvider.withProvider(
-            handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
+        try await HTTP1TestingChannelClientServerProvider.withProvider(
+            logger: Logger(label: "NIOHTTPServerEndToEndTests"),
+            serverRequestHandler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 let sender = try await resSender.send(.init(status: .ok))
 
                 try await sender.produceAndConclude { writer in
@@ -42,7 +44,7 @@ struct NIOHTTPServerEndToEndTests {
                 }
             }
         ) { clientServerProvider in
-            try await clientServerProvider.withConnectedClient { client in
+            try await clientServerProvider.withConnection { client in
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(.head(.init(method: .get, scheme: "", authority: "", path: "/")))
                     try await outbound.write(.end(nil))
@@ -91,6 +93,7 @@ struct NIOHTTPServerEndToEndTests {
         clientTLSConfig.applicationProtocols = ["h2"]
 
         try await HTTPSecureUpgradeClientServerProvider.withProvider(
+            logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             tlsConfiguration: serverTLSConfig,
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 let sender = try await resSender.send(.init(status: .ok))
@@ -102,11 +105,12 @@ struct NIOHTTPServerEndToEndTests {
                 }
             }
         ) { clientServerProvider in
-            try await clientServerProvider.withConnectedClient(clientTLSConfiguration: clientTLSConfig) {
+            try await clientServerProvider.withConnectedClient(tlsConfig: clientTLSConfig) {
                 negotiatedConnection in
                 switch negotiatedConnection {
                 case .http1(_):
                     Issue.record("Failed to negotiate HTTP/2 despite the client requiring HTTP/2.")
+
                 case .http2(let http2StreamManager):
                     let http2AsyncChannel = try await http2StreamManager.openStream()
 

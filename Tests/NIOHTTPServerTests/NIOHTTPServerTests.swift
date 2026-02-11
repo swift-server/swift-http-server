@@ -53,7 +53,7 @@ struct NIOHTTPServerTests {
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "Test"),
+            logger: Logger(label: "NIOHTTPServerTests"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 1234))
         )
 
@@ -81,7 +81,7 @@ struct NIOHTTPServerTests {
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "Test"),
+            logger: Logger(label: "NIOHTTPServerTests"),
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
 
@@ -112,7 +112,7 @@ struct NIOHTTPServerTests {
 
             let serverAddress = try await server.listeningAddress
 
-            let client = try await setUpClient(host: serverAddress.host, port: serverAddress.port)
+            let client = try await NIOHTTP1Client.setUpClient(at: serverAddress)
             try await client.executeThenClose { inbound, outbound in
                 try await outbound.write(Self.reqHead)
                 try await outbound.write(Self.reqBody)
@@ -143,7 +143,7 @@ struct NIOHTTPServerTests {
         let clientChain = try TestCA.makeSelfSignedChain()
 
         let server = NIOHTTPServer(
-            logger: Logger(label: "Test"),
+            logger: Logger(label: "NIOHTTPServerTests"),
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 transportSecurity: .mTLS(
@@ -193,29 +193,61 @@ struct NIOHTTPServerTests {
 
             let serverAddress = try await server.listeningAddress
 
-            let clientChannel = try await setUpClientWithMTLS(
+            let clientChannel = try await NIOSecureUpgradeClient.setUpMTLSClient(
                 at: serverAddress,
-                chain: clientChain,
+                clientChain: clientChain,
                 trustRoots: [serverChain.ca],
                 applicationProtocol: applicationProtocol
             )
 
-            try await clientChannel.executeThenClose { inbound, outbound in
-                try await outbound.write(Self.reqHead)
-                try await outbound.write(Self.reqBody)
-                try await outbound.write(Self.reqEnd)
-
-                for try await response in inbound {
-                    try await Self.clientResponseHandler(
-                        response,
-                        expectedStatus: .ok,
-                        expectedBody: .init([1, 2]),
-                        expectedTrailers: Self.trailer
-                    )
+            switch clientChannel {
+            case .http1(let client):
+                guard applicationProtocol == "http/1.1" else {
+                    Issue.record("Unexpectedly negotiated a HTTP/1.1 connection")
+                    return
                 }
+
+                try await client.executeThenClose { inbound, outbound in
+                    try await outbound.write(Self.reqHead)
+                    try await outbound.write(Self.reqBody)
+                    try await outbound.write(Self.reqEnd)
+
+                    for try await response in inbound {
+                        try await Self.clientResponseHandler(
+                            response,
+                            expectedStatus: .ok,
+                            expectedBody: .init([1, 2]),
+                            expectedTrailers: Self.trailer
+                        )
+                    }
+                }
+                // Cancel the server and client task once we know the client has received the response
+                group.cancelAll()
+
+            case .http2(let streamManager):
+                guard applicationProtocol == "h2" else {
+                    Issue.record("Unexpectedly negotiated a HTTP/2 connection")
+                    return
+                }
+
+                let streamChannel = try await streamManager.openStream()
+                try await streamChannel.executeThenClose { inbound, outbound in
+                    try await outbound.write(Self.reqHead)
+                    try await outbound.write(Self.reqBody)
+                    try await outbound.write(Self.reqEnd)
+
+                    for try await response in inbound {
+                        try await Self.clientResponseHandler(
+                            response,
+                            expectedStatus: .ok,
+                            expectedBody: .init([1, 2]),
+                            expectedTrailers: Self.trailer
+                        )
+                    }
+                }
+                // Cancel the server and client task once we know the client has received the response
+                group.cancelAll()
             }
-            // Cancel the server and client task once we know the client has received the response
-            group.cancelAll()
         }
     }
 }

@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPServer
+import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP1
@@ -19,20 +21,37 @@ import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import X509
 
-@testable import HTTPServer
 @testable import NIOHTTPServer
 
+/// A testing utility that sets up a `NIOHTTPServer` instance (with the HTTP/1.1 transport) based on
+/// `NIOAsyncTestingChannel` (instead of the `ServerSocketChannel` that `NIOHTTPServer` normally uses) and vends a
+/// client instance for sending requests and observing responses.
+///
+/// This provider creates a `NIOHTTPServer` instance using a `NIOAsyncTestingChannel` as its listening channel. Since no
+/// network socket is actually listening for incoming connections, client connections are simulated by *writing* a
+/// connection channel to the server channel. This connection channel is set up with the same handlers that
+/// `ServerBootstrap` would set up and vend to `NIOHTTPServer` on an incoming connection.
+///
+/// This provider vends a NIO HTTP client channel (also backed by a `NIOAsyncTestingChannel`) that can be used to send
+/// requests and observer response in terms of HTTP types (`HTTPRequestPart` and `HTTPResponsePart`) to the server
+/// connection channel.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-struct HTTP1ClientServerProvider {
+struct HTTP1TestingChannelClientServerProvider {
     let server: NIOHTTPServer
     let serverTestChannel: NIOAsyncTestingChannel
 
+    /// Sets up the server with a testing channel and the provided request handler, starts the server, and provides
+    /// `Self` to the `body` closure. Call `withConnection(_:)` on the provided instance to simulate incoming
+    /// connections.
     static func withProvider(
-        handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
-        body: (HTTP1ClientServerProvider) async throws -> Void
+        logger: Logger,
+        serverRequestHandler: some HTTPServerRequestHandler<
+            HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter
+        >,
+        body: (Self) async throws -> Void
     ) async throws {
         let server = NIOHTTPServer(
-            logger: .init(label: "test"),
+            logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000))
         )
@@ -42,26 +61,27 @@ struct HTTP1ClientServerProvider {
         try await withThrowingTaskGroup { group in
             // We are ready now. Start the server with the test channel.
             group.addTask {
-                try await server.serveInsecureHTTP1_1WithTestChannel(testChannel: serverTestChannel, handler: handler)
+                try await server.serveInsecureHTTP1_1WithTestChannel(
+                    testChannel: serverTestChannel,
+                    handler: serverRequestHandler
+                )
             }
 
             // Execute the provided closure with a `HTTP1ClientServerProvider` instance created from the server
             // instance and the test channel instance
-            try await body(
-                HTTP1ClientServerProvider(server: server, serverTestChannel: serverTestChannel)
-            )
+            try await body(Self(server: server, serverTestChannel: serverTestChannel))
 
             group.cancelAll()
         }
     }
 
     /// Starts a new connection with the server and executes the provided `body` closure.
-    /// - Parameter body: A closure that should send a request using the provided client instance and validate
-    ///   the received response.
-    func withConnectedClient(
+    /// - Parameter body: A closure that should send a request using the provided client instance and validate the
+    ///   received response.
+    func withConnection(
         body: (NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>) async throws -> Void
     ) async throws {
-        // Create a test connection channel
+        // Create a connection channel that we will write to the server.
         let serverTestConnectionChannel = NIOAsyncTestingChannel()
 
         let connectionPromise = serverTestConnectionChannel.eventLoop.makePromise(of: Void.self)
@@ -95,12 +115,13 @@ struct HTTP1ClientServerProvider {
         }
     }
 
+    /// Creates a client testing channel configured with HTTP channel handlers and wraps it in a `NIOAsyncChannel`.
     private func setUpClientConnection() async throws -> (
-        NIOAsyncTestingChannel, NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
+        NIOAsyncTestingChannel,
+        NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
     ) {
         let clientTestChannel = try await NIOAsyncTestingChannel { channel in
-            try channel.pipeline.syncOperations.addHTTPClientHandlers()
-            try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPClientCodec())
+            try NIOHTTP1Client.clientChannelInitializer(channel)
         }
 
         // Wrap the client channel in a NIOAsyncChannel for convenience
@@ -112,28 +133,5 @@ struct HTTP1ClientServerProvider {
         }.get()
 
         return (clientTestChannel, clientAsyncChannel)
-    }
-}
-
-extension NIOAsyncTestingChannel {
-    /// Forwards all of our outbound writes to `other` and vice-versa.
-    func glueTo(_ other: NIOAsyncTestingChannel) async throws {
-        await withThrowingTaskGroup { group in
-            // 1. Forward all `self` writes to `other`
-            group.addTask {
-                while !Task.isCancelled {
-                    let ourPart = try await self.waitForOutboundWrite(as: ByteBuffer.self)
-                    try await other.writeInbound(ourPart)
-                }
-            }
-
-            // 2. Forward all `other` writes to `self`
-            group.addTask {
-                while !Task.isCancelled {
-                    let otherPart = try await other.waitForOutboundWrite(as: ByteBuffer.self)
-                    try await self.writeInbound(otherPart)
-                }
-            }
-        }
     }
 }

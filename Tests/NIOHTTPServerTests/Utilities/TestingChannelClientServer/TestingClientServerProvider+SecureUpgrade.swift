@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTPServer
+import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP2
@@ -21,9 +23,13 @@ import NIOHTTPTypesHTTP2
 import NIOSSL
 import X509
 
-@testable import HTTPServer
 @testable import NIOHTTPServer
 
+/// A testing utility that sets up a `NIOHTTPServer` instance (with the secure upgrade transport) based on
+/// `NIOAsyncTestingChannel` (instead of the `ServerSocketChannel` that `NIOHTTPServer` normally uses) and vends a
+/// client instance for sending requests and observing responses.
+///
+/// Like ``HTTP1ClientServerProvider``, but for the secure upgrade transport.
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 struct HTTPSecureUpgradeClientServerProvider {
     let server: NIOHTTPServer
@@ -34,7 +40,11 @@ struct HTTPSecureUpgradeClientServerProvider {
 
     let http2Configuration: NIOHTTP2Handler.Configuration
 
+    /// Sets up the server with a testing channel and the provided request handler, starts the server, and provides
+    /// `Self` to the `body` closure. Call `withConnectedClient(clientTLSConfiguration:body:)` on the provided instance
+    /// to simulate incoming connections.
     static func withProvider(
+        logger: Logger,
         tlsConfiguration: TLSConfiguration,
         tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)? = nil,
         http2Configuration: NIOHTTP2Handler.Configuration = .init(),
@@ -42,7 +52,7 @@ struct HTTPSecureUpgradeClientServerProvider {
         body: (HTTPSecureUpgradeClientServerProvider) async throws -> Void
     ) async throws {
         let server = NIOHTTPServer(
-            logger: .init(label: "test"),
+            logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000))
         )
@@ -71,9 +81,11 @@ struct HTTPSecureUpgradeClientServerProvider {
         }
     }
 
+    /// Starts a new TLS connection with ALPN negotiation to the server and executes the provided `body` closure with
+    /// the negotiated ALPN result as an argument.
     func withConnectedClient(
-        clientTLSConfiguration: TLSConfiguration,
-        body: (NegotiatedConnection) async throws -> Void
+        tlsConfig: TLSConfiguration,
+        body: (NegotiatedClientConnection) async throws -> Void
     ) async throws {
         // Create a test connection channel
         let serverTestConnectionChannel = NIOAsyncTestingChannel()
@@ -99,11 +111,11 @@ struct HTTPSecureUpgradeClientServerProvider {
         // Write the connection channel to the server channel to simulate an incoming connection
         try await self.serverTestChannel.writeInbound(negotiatedServerConnectionFuture)
 
-        // Now we could write requests directly to the server channle, but it expects `ByteBuffer` inputs. This is
+        // Now we could write requests directly to the server channel, but it expects `ByteBuffer` inputs. This is
         // cumbersome to work with in tests.
         // So, we create a client channel, and use it to send requests and observe responses in terms of HTTP types.
         let (clientTestChannel, clientNegotiatedConnectionFuture) = try await self.setUpClientConnection(
-            tlsConfiguration: clientTLSConfiguration
+            tlsConfig: tlsConfig
         )
 
         try await withThrowingDiscardingTaskGroup { group in
@@ -117,7 +129,7 @@ struct HTTPSecureUpgradeClientServerProvider {
     }
 
     private func setUpClientConnection(
-        tlsConfiguration: TLSConfiguration
+        tlsConfig: TLSConfiguration
     ) async throws -> (
         NIOAsyncTestingChannel,
         EventLoopFuture<
@@ -128,73 +140,19 @@ struct HTTPSecureUpgradeClientServerProvider {
     ) {
         let clientTestChannel = try await NIOAsyncTestingChannel { channel in
             _ = channel.eventLoop.makeCompletedFuture {
-                try channel.pipeline.syncOperations.addHandler(
-                    try NIOSSLClientHandler(context: .init(configuration: tlsConfiguration), serverHostname: nil)
-                )
+                try NIOSecureUpgradeClient.sslClientChannelInitializer(channel, tlsConfig: tlsConfig)
             }
         }
 
-        let clientNegotiatedConnection = try await clientTestChannel.eventLoop.flatSubmit {
-            clientTestChannel.configureHTTP2AsyncSecureUpgrade(
-                http1ConnectionInitializer: { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHTTPClientHandlers()
-                        try channel.pipeline.syncOperations.addHandlers(HTTP1ToHTTPClientCodec())
-
-                        return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
-                            wrappingChannelSynchronously: channel,
-                            configuration: .init(isOutboundHalfClosureEnabled: true)
-                        )
-                    }
-                },
-                http2ConnectionInitializer: { channel in
-                    channel.configureAsyncHTTP2Pipeline(mode: .client) { $0.eventLoop.makeSucceededFuture($0) }
-                }
-            )
-        }.get()
+        let clientNegotiatedConnection = try await NIOSecureUpgradeClient.clientChannelInitializer(
+            clientTestChannel,
+            tlsConfig: tlsConfig
+        ).get()
 
         let connectionPromise = clientTestChannel.eventLoop.makePromise(of: Void.self)
         clientTestChannel.connect(to: try .init(ipAddress: "127.0.0.1", port: 8000), promise: connectionPromise)
         try await connectionPromise.futureResult.get()
 
         return (clientTestChannel, clientNegotiatedConnection)
-    }
-}
-
-enum NegotiatedConnection {
-    case http1(NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>)
-    case http2(HTTP2StreamManager)
-
-    init(
-        negotiationResult: NIONegotiatedHTTPVersion<
-            NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>, NIOHTTP2Handler.AsyncStreamMultiplexer<Channel>
-        >
-    ) async throws {
-        switch negotiationResult {
-        case .http1_1(let http1AsyncChannel):
-            self = .http1(http1AsyncChannel)
-
-        case .http2(let http2StreamMultiplexer):
-            self = .http2(.init(http2StreamMultiplexer: http2StreamMultiplexer))
-        }
-    }
-
-    struct HTTP2StreamManager {
-        let http2StreamMultiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<Channel>
-
-        /// A wrapper over `NIOHTTP2Handler/AsyncStreamMultiplexer/openStream(_:)` that first initializes the stream
-        /// channel with the `HTTP2FramePayloadToHTTPClientCodec` channel handler, and wraps it in a `NIOAsyncChannel`
-        /// (with outbound half closure enabled).
-        func openStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
-            try await self.http2StreamMultiplexer.openStream { channel in
-                channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(HTTP2FramePayloadToHTTPClientCodec())
-                    return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
-                        wrappingChannelSynchronously: channel,
-                        configuration: .init(isOutboundHalfClosureEnabled: true)
-                    )
-                }
-            }
-        }
     }
 }

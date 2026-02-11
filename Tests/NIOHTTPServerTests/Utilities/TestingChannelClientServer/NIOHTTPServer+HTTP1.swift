@@ -21,6 +21,8 @@ import NIOHTTPTypes
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
 extension NIOHTTPServer {
+    /// Starts serving plaintext HTTP/1.1 using the provided testing channel instead of using `ServerBootstrap` as
+    /// `NIOHTTPServer` normally does.
     func serveInsecureHTTP1_1WithTestChannel(
         testChannel: NIOAsyncTestingChannel,
         handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>
