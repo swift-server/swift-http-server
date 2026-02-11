@@ -32,7 +32,7 @@ struct NIOHTTP1Client {
     }
 
     /// Creates and connects an HTTP/1.1 client to the specified address.
-    static func setUpClient(
+    static func setUpChannel(
         at address: NIOHTTPServer.SocketAddress
     ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
         try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)

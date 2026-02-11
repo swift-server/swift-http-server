@@ -32,7 +32,7 @@ struct NIOHTTPServerEndToEndTests {
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     @Test("HTTP/1.1 request and response")
     func testHTTP1_1() async throws {
-        try await HTTP1TestingChannelClientServerProvider.withProvider(
+        try await TestingChannelServer.withPlaintextHTTP1Client(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             serverRequestHandler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 let sender = try await resSender.send(.init(status: .ok))
@@ -43,9 +43,9 @@ struct NIOHTTPServerEndToEndTests {
                     return [.serverTiming: "test"]
                 }
             }
-        ) { clientServerProvider in
-            try await clientServerProvider.withConnection { client in
-                try await client.executeThenClose { inbound, outbound in
+        ) { client in
+            try await client.withConnection { connectionChannel in
+                try await connectionChannel.executeThenClose { inbound, outbound in
                     try await outbound.write(.head(.init(method: .get, scheme: "", authority: "", path: "/")))
                     try await outbound.write(.end(nil))
 
@@ -79,7 +79,7 @@ struct NIOHTTPServerEndToEndTests {
 
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     @Test("HTTP/2 negotiation")
-    func testSecureUpgradeNegotiation() async throws {
+    func testHTTP2Negotiation() async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
         var serverTLSConfig = TLSConfiguration.makeServerConfiguration(
             certificateChain: [try .init(serverChain.leaf)],
@@ -92,7 +92,7 @@ struct NIOHTTPServerEndToEndTests {
         clientTLSConfig.certificateVerification = .noHostnameVerification
         clientTLSConfig.applicationProtocols = ["h2"]
 
-        try await HTTPSecureUpgradeClientServerProvider.withProvider(
+        try await TestingChannelServer.withSecureUpgradeClient(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             tlsConfiguration: serverTLSConfig,
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
@@ -104,10 +104,9 @@ struct NIOHTTPServerEndToEndTests {
                     return [.serverTiming: "test"]
                 }
             }
-        ) { clientServerProvider in
-            try await clientServerProvider.withConnectedClient(tlsConfig: clientTLSConfig) {
-                negotiatedConnection in
-                switch negotiatedConnection {
+        ) { client in
+            try await client.withConnection(tlsConfig: clientTLSConfig) { negotiatedConnectionChannel in
+                switch negotiatedConnectionChannel {
                 case .http1(_):
                     Issue.record("Failed to negotiate HTTP/2 despite the client requiring HTTP/2.")
 

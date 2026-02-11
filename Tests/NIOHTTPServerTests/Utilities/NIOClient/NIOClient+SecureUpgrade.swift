@@ -36,18 +36,18 @@ struct NIOSecureUpgradeClient {
     }
 
     /// Creates and connects a TLS-enabled client to the specified address with ALPN negotiation.
-    static func setUpClient(
+    static func setUpChannel(
         at address: NIOHTTPServer.SocketAddress,
         trustRoots: [Certificate],
         applicationProtocol: String
     ) async throws -> NegotiatedClientConnection {
         let tlsConfig = try self.setUpTLSConfig(trustRoots: trustRoots, applicationProtocol: applicationProtocol)
 
-        return try await self._setUpClient(at: address, tlsConfig: tlsConfig)
+        return try await self._setUpChannel(at: address, tlsConfig: tlsConfig)
     }
 
     /// Exactly like ``setUpClient(at:trustRoots:applicationProtocol:)`` but with mTLS enabled.
-    static func setUpMTLSClient(
+    static func setUpMTLSChannel(
         at address: NIOHTTPServer.SocketAddress,
         clientChain: ChainPrivateKeyPair,
         trustRoots: [Certificate],
@@ -57,11 +57,11 @@ struct NIOSecureUpgradeClient {
         tlsConfig.certificateChain = [try NIOSSLCertificateSource(clientChain.leaf)]
         tlsConfig.privateKey = .privateKey(try .init(clientChain.privateKey))
 
-        return try await self._setUpClient(at: address, tlsConfig: tlsConfig)
+        return try await self._setUpChannel(at: address, tlsConfig: tlsConfig)
     }
 
     /// Creates and connects a client to the specified address with the provided TLS configuration.
-    private static func _setUpClient(
+    private static func _setUpChannel(
         at address: NIOHTTPServer.SocketAddress,
         tlsConfig: TLSConfiguration
     ) async throws -> NegotiatedClientConnection {
