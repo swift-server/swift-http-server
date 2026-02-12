@@ -37,19 +37,19 @@ extension NIOAsyncTestingChannel {
         }
     }
 
-    /// Creates a connection channel that can be written to the server channel to simulate an incoming connection.
+    /// Returns a `NIOAsyncTestingChannel` that is set to the `active` state.
     static func createActiveChannel() async throws -> NIOAsyncTestingChannel {
-        let serverTestConnectionChannel = NIOAsyncTestingChannel()
+        let channel = NIOAsyncTestingChannel()
 
-        let connectionPromise = serverTestConnectionChannel.eventLoop.makePromise(of: Void.self)
-        // The `to` address has no significance here, it is just a random address. We are only interested in making the
+        let setToActivePromise = channel.eventLoop.makePromise(of: Void.self)
+        // The `to` address has no significance here: it is just a random address. We are only interested in making the
         // channel *active*; calling `connect` is the way to achieve that.
-        serverTestConnectionChannel.connect(
+        channel.connect(
             to: try .init(ipAddress: "127.0.0.1", port: 8000),
-            promise: connectionPromise
+            promise: setToActivePromise
         )
-        try await connectionPromise.futureResult.get()
+        try await setToActivePromise.futureResult.get()
 
-        return serverTestConnectionChannel
+        return channel
     }
 }
