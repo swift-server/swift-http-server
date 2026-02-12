@@ -12,67 +12,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPServer
-import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP2
 import NIOHTTPTypes
-import NIOHTTPTypesHTTP1
-import NIOHTTPTypesHTTP2
 import NIOSSL
 import X509
 
 @testable import NIOHTTPServer
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension TestingChannelServer {
-    /// Sets up the server with a testing channel and the provided request handler, starts the server, and provides
-    /// `Self` to the `body` closure. Call `withConnectedClient(clientTLSConfiguration:body:)` on the provided instance
-    /// to simulate incoming connections.
-    static func withSecureUpgradeClient(
-        logger: Logger,
-        tlsConfiguration: TLSConfiguration,
-        tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)? = nil,
-        http2Configuration: NIOHTTP2Handler.Configuration = .init(),
-        handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
-        body: (SecureUpgradeClient) async throws -> Void
-    ) async throws {
-        let server = NIOHTTPServer(
-            logger: logger,
-            // The server won't actually be bound to this host and port; we just have to pass this argument
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000))
-        )
-
-        // Create a test channel. We will run the server on this channel.
-        let serverTestChannel = NIOAsyncTestingChannel()
-
-        try await withThrowingTaskGroup { group in
-            // We are ready now. Start the server with the test channel.
-            group.addTask {
-                try await server.serveSecureUpgradeWithTestChannel(testChannel: serverTestChannel, handler: handler)
-            }
-
-            // Execute the provided closure with a `SecureUpgradeClient` instance
-            try await body(
-                SecureUpgradeClient(
-                    server: server,
-                    serverTestChannel: serverTestChannel,
-                    serverTLSConfiguration: tlsConfiguration,
-                    verificationCallback: tlsVerificationCallback,
-                    http2Configuration: http2Configuration
-                )
-            )
-
-            group.cancelAll()
-        }
-    }
-}
-
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
-extension TestingChannelServer {
+extension TestingChannelSecureUpgradeServer {
     // A Secure Upgrade HTTP client backed by a `NIOAsyncTestingChannel`.
-    struct SecureUpgradeClient {
+    struct Client {
         let server: NIOHTTPServer
         let serverTestChannel: NIOAsyncTestingChannel
 
@@ -88,7 +40,7 @@ extension TestingChannelServer {
             body: (NegotiatedClientConnection) async throws -> Void
         ) async throws {
             // Create a connection channel: we will write this to the server channel to simulate an incoming connection.
-            let serverTestConnectionChannel = try await TestingChannelServer.createServerConnectionChannel()
+            let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
 
             // Set up the required channel handlers on `serverTestConnectionChannel`
             let negotiatedServerConnectionFuture = try await serverTestConnectionChannel.eventLoop.flatSubmit {

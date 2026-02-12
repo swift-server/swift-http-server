@@ -32,7 +32,7 @@ struct NIOHTTPServerEndToEndTests {
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     @Test("HTTP/1.1 request and response")
     func testHTTP1_1() async throws {
-        try await TestingChannelServer.withPlaintextHTTP1Client(
+        try await TestingChannelHTTP1Server.withClient(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             serverRequestHandler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 let sender = try await resSender.send(.init(status: .ok))
@@ -92,7 +92,7 @@ struct NIOHTTPServerEndToEndTests {
         clientTLSConfig.certificateVerification = .noHostnameVerification
         clientTLSConfig.applicationProtocols = ["h2"]
 
-        try await TestingChannelServer.withSecureUpgradeClient(
+        try await TestingChannelSecureUpgradeServer.withClient(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             tlsConfiguration: serverTLSConfig,
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
