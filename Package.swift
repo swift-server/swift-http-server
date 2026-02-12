@@ -40,7 +40,7 @@ let package = Package(
         .default(enabledTraits: ["SwiftConfiguration"]),
     ],
     dependencies: [
-        .package(path: "../swift-http-api-proposal"),
+        .package(url: "https://github.com/apple/swift-http-api-proposal", branch: "main"),
         .package(
             url: "https://github.com/FranzBusch/swift-collections.git",
             branch: "fb-async"
