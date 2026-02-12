@@ -1,4 +1,4 @@
-// swift-tools-version:6.2
+// swift-tools-version:6.3
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift HTTP Server open source project
@@ -65,7 +65,6 @@ let package = Package(
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "HTTPServer", package: "swift-http-api-proposal"),
-                "Middleware",
                 "NIOHTTPServer",
             ],
             swiftSettings: extraSettings
@@ -93,14 +92,6 @@ let package = Package(
                     condition: .when(traits: ["SwiftConfiguration"])
                 ),
                 .product(name: "HTTPServer", package: "swift-http-api-proposal"),
-            ],
-            swiftSettings: extraSettings
-        ),
-        .target(
-            name: "Middleware",
-            dependencies: [
-                .product(name: "DequeModule", package: "swift-collections"),
-                .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: extraSettings
         ),
