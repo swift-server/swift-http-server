@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import AsyncStreaming
 import HTTPServer
 import HTTPTypes
 import Logging
@@ -33,7 +34,7 @@ struct NIOHTTPServiceLifecycleTests {
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
 
-    @Test("HTTP/1.1 in-flight request during graceful shutdown")
+    @Test("HTTP/1.1 in-flight request completes after graceful shutdown triggered")
     @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
     func testHTTP1ConnectionInFlightRequestCompletesDuringGracefulShutdown() async throws {
         let server = NIOHTTPServer(
@@ -138,7 +139,10 @@ struct NIOHTTPServiceLifecycleTests {
             // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
             _ = try await reader.consumeAndConclude { bodyReader in
                 var bodyReader = bodyReader
-                try await bodyReader.collect(upTo: 100) { _ in }
+                let error = try await #require(throws: EitherError<Error, Never>.self) {
+                    try await bodyReader.collect(upTo: 100) { _ in }
+                }
+                #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
             }
         }
 
