@@ -66,15 +66,17 @@ extension NIOHTTPServer {
         case .hostAndPort(let host, let port):
             let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                #if ServiceLifecycle
                 .serverChannelInitializer { channel in
+                    #if ServiceLifecycle
                     channel.eventLoop.makeCompletedFuture {
                         try channel.pipeline.syncOperations.addHandler(
                             self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                         )
                     }
+                    #else
+                    channel.eventLoop.makeSucceededVoidFuture()
+                    #endif  // ServiceLifecycle
                 }
-                #endif  // ServiceLifecycle
                 .bind(host: host, port: port) { channel in
                     self.setupSecureUpgradeConnectionChildChannel(
                         channel: channel,

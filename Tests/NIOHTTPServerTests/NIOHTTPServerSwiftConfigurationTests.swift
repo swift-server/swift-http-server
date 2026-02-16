@@ -151,7 +151,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "maxFrameSize": 1,
                 "targetWindowSize": 2,
                 "maxConcurrentStreams": 3,
-                "maxGraceTimeSeconds": 4
+                "maxGraceTimeSeconds": 4,
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
