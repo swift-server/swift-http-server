@@ -27,14 +27,10 @@ where
 {
     let server: Server
     let serverHandler: Handler
-    let gracefulShutdownHandler: @Sendable () -> Void
 
     /// - Parameters:
     ///   - server: The underlying HTTPServer instance.
     ///   - serverHandler: The request handler that `server` will use.
-    ///   - onGracefulShutdown: A closure to execute upon graceful shutdown.
-    ///
-    /// - Note: The `onGracefulShutdown` closure will be called *after* initiating graceful shutdown on `server`.
     public init(
         server: Server,
         serverHandler: Handler,
@@ -42,7 +38,6 @@ where
     ) {
         self.server = server
         self.serverHandler = serverHandler
-        self.gracefulShutdownHandler = gracefulShutdownHandler
     }
 
     /// Runs the HTTP server and handles graceful shutdown when signaled.
@@ -53,8 +48,6 @@ where
             },
             onGracefulShutdown: {
                 self.server.beginGracefulShutdown()
-                // Call the user-provided graceful shutdown handler
-                self.gracefulShutdownHandler()
             }
         )
     }

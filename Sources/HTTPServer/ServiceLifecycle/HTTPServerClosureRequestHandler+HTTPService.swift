@@ -29,7 +29,6 @@ where
     /// - Parameters:
     ///   - server: The underlying HTTPServer instance.
     ///   - serverHandler: The request handler closure.
-    ///   - gracefulShutdownHandler: A closure to execute upon graceful shutdown.
     public init(
         server: Server,
         serverHandler:
@@ -38,12 +37,10 @@ where
                 _ requestContext: HTTPRequestContext,
                 _ requestBodyAndTrailers: consuming sending Server.RequestReader,
                 _ responseSender: consuming sending HTTPResponseSender<Server.ResponseWriter>
-            ) async throws -> Void,
-        gracefulShutdownHandler: @Sendable @escaping () -> Void = {}
+            ) async throws -> Void
     ) {
         self.server = server
         self.serverHandler = HTTPServerClosureRequestHandler(handler: serverHandler)
-        self.gracefulShutdownHandler = gracefulShutdownHandler
     }
 }
 #endif  // ServiceLifecycle
