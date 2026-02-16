@@ -184,4 +184,4 @@ struct NIOHTTPServiceLifecycleTests {
         }
     }
 }
-#endif // ServiceLifecycle
+#endif  // ServiceLifecycle
