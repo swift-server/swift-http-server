@@ -16,6 +16,7 @@ import HTTPServer
 import Logging
 import NIOCore
 import NIOEmbedded
+import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
@@ -26,7 +27,6 @@ import X509
 
 #if ServiceLifecycle
 import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutdown.
-import NIOHTTP1
 #endif
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
