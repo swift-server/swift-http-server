@@ -139,8 +139,16 @@ let package = Package(
             name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
-                .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
+                .product(
+                    name: "ServiceLifecycle",
+                    package: "swift-service-lifecycle",
+                    condition: .when(traits: ["ServiceLifecycle"])
+                ),
+                .product(
+                    name: "ServiceLifecycleTestKit",
+                    package: "swift-service-lifecycle",
+                    condition: .when(traits: ["ServiceLifecycle"])
+                ),
                 "NIOHTTPServer",
             ]
         ),
