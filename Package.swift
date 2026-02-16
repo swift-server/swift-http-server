@@ -42,7 +42,7 @@ let package = Package(
     traits: [
         .trait(name: "SwiftConfiguration"),
         .trait(name: "ServiceLifecycle"),
-        .default(enabledTraits: ["SwiftConfiguration", "ServiceLifecycle"]),
+        .default(enabledTraits: ["SwiftConfiguration"]),
     ],
     dependencies: [
         .package(
