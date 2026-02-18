@@ -17,6 +17,7 @@ import HTTPTypes
 import Logging
 import NIOCore
 import NIOHTTPTypes
+import NIOPosix
 import Testing
 import X509
 
@@ -106,7 +107,9 @@ struct NIOHTTPServerTests {
                 }
             },
             body: { serverAddress in
-                let client = try await NIOHTTP1Client.setUpChannel(at: serverAddress)
+                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestHTTP1Server(at: serverAddress)
+
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(Self.reqHead)
                     try await outbound.write(Self.reqBody)
@@ -183,12 +186,13 @@ struct NIOHTTPServerTests {
                 }
             },
             body: { serverAddress in
-                let client = try await NIOSecureUpgradeClient.setUpMTLSChannel(
-                    at: serverAddress,
-                    clientChain: clientChain,
-                    trustRoots: [serverChain.ca],
-                    applicationProtocol: applicationProtocol
-                )
+                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestSecureUpgradeHTTPServerOverMTLS(
+                        at: serverAddress,
+                        clientChain: clientChain,
+                        trustRoots: [serverChain.ca],
+                        applicationProtocol: applicationProtocol
+                    )
 
                 let clientChannel: NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
                 switch client {
