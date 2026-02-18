@@ -81,10 +81,10 @@ import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutd
 ///     }
 /// }
 /// ```
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 public struct NIOHTTPServer: HTTPServer {
-    public typealias RequestReader = HTTPRequestConcludingAsyncReader
-    public typealias ResponseWriter = HTTPResponseConcludingAsyncWriter
+    public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
+    public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
 
     let logger: Logger
     private let configuration: NIOHTTPServerConfiguration
@@ -158,7 +158,9 @@ public struct NIOHTTPServer: HTTPServer {
     ///     handler: EchoHandler()
     /// )
     /// ```
-    public func serve(handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>) async throws {
+    public func serve(
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws {
         defer { self.close() }
 
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
@@ -255,7 +257,7 @@ public struct NIOHTTPServer: HTTPServer {
 
     func handleRequestChannel(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
         do {
             try await channel
@@ -343,7 +345,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTP2Handler.Configuration {
     init(httpServerHTTP2Configuration http2Config: NIOHTTPServerConfiguration.HTTP2) {
         let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)

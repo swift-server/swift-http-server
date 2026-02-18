@@ -22,7 +22,7 @@ import X509
 
 @testable import NIOHTTPServer
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 func setUpClient(host: String, port: Int) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
     try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -39,7 +39,7 @@ func setUpClient(host: String, port: Int) async throws -> NIOAsyncChannel<HTTPRe
         }
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 func setUpClientWithMTLS(
     at address: NIOHTTPServer.SocketAddress,
     chain: ChainPrivateKeyPair,

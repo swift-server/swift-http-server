@@ -49,7 +49,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
@@ -78,7 +78,7 @@ struct NIOHTTPServerTests {
     }
 
     @Test("Plaintext request-response")
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
             logger: Logger(label: "Test"),
@@ -132,7 +132,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test(
         "mTLS request-response with custom verification callback returning peer certificates",
         .serialized,
