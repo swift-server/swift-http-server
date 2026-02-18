@@ -18,20 +18,28 @@ import NIOEmbedded
 extension NIOAsyncTestingChannel {
     /// Forwards all of our outbound writes to `other` and vice-versa.
     func glueTo(_ other: NIOAsyncTestingChannel) async throws {
-        await withThrowingTaskGroup { group in
+        try await withThrowingDiscardingTaskGroup { group in
             // 1. Forward all `self` writes to `other`
             group.addTask {
                 while !Task.isCancelled {
-                    let ourPart = try await self.waitForOutboundWrite(as: ByteBuffer.self)
-                    try await other.writeInbound(ourPart)
+                    do {
+                        let ourPart = try await self.waitForOutboundWrite(as: ByteBuffer.self)
+                        try await other.writeInbound(ourPart)
+                    } catch ChannelError.ioOnClosedChannel {
+                        return
+                    }
                 }
             }
 
             // 2. Forward all `other` writes to `self`
             group.addTask {
                 while !Task.isCancelled {
-                    let otherPart = try await other.waitForOutboundWrite(as: ByteBuffer.self)
-                    try await self.writeInbound(otherPart)
+                    do {
+                        let otherPart = try await other.waitForOutboundWrite(as: ByteBuffer.self)
+                        try await self.writeInbound(otherPart)
+                    } catch ChannelError.ioOnClosedChannel {
+                        return
+                    }
                 }
             }
         }
