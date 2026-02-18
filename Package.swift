@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.2
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift HTTP Server open source project
@@ -33,7 +33,7 @@ let package = Package(
         .library(
             name: "NIOHTTPServer",
             targets: ["NIOHTTPServer"]
-        ),
+        )
     ],
     traits: [
         .trait(name: "SwiftConfiguration"),

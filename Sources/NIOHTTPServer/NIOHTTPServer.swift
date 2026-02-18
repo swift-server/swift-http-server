@@ -146,7 +146,9 @@ public struct NIOHTTPServer: HTTPServer {
     ///     handler: EchoHandler()
     /// )
     /// ```
-    public func serve(handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>) async throws {
+    public func serve(
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws {
         defer {
             switch self.listeningAddressState.withLockedValue({ $0.close() }) {
             case .failPromise(let promise, let error):
