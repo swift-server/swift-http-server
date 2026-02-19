@@ -36,9 +36,9 @@ let package = Package(
         )
     ],
     traits: [
-        .trait(name: "SwiftConfiguration"),
+        .trait(name: "Configuration"),
         .trait(name: "ServiceLifecycle"),
-        .default(enabledTraits: ["SwiftConfiguration"]),
+        .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-api-proposal", branch: "main"),
@@ -92,7 +92,7 @@ let package = Package(
                 .product(
                     name: "Configuration",
                     package: "swift-configuration",
-                    condition: .when(traits: ["SwiftConfiguration"])
+                    condition: .when(traits: ["Configuration"])
                 ),
                 .product(
                     name: "NIOExtras",

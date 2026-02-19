@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if SwiftConfiguration
+#if Configuration
 public import Configuration
 import NIOCore
 import NIOCertificateReloading
@@ -360,4 +360,4 @@ extension CertificateVerificationMode {
         }
     }
 }
-#endif  // SwiftConfiguration
+#endif  // Configuration
