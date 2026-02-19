@@ -28,7 +28,7 @@ To enable an additional trait on the package, update the package dependency:
 ```
 
 Available traits:
-- **`SwiftConfiguration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
+- **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
   `ConfigProvider`.
 - **`ServiceLifecycle`** (opt-in): Enables `HTTPService`, which allows the server to be run with `ServiceGroup` from
   `swift-service-lifecycle`, including support for graceful shutdown. 
