@@ -36,8 +36,8 @@ let package = Package(
         )
     ],
     traits: [
-        .trait(name: "SwiftConfiguration"),
-        .default(enabledTraits: ["SwiftConfiguration"]),
+        .trait(name: "Configuration"),
+        .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-api-proposal", branch: "main"),
@@ -89,7 +89,7 @@ let package = Package(
                 .product(
                     name: "Configuration",
                     package: "swift-configuration",
-                    condition: .when(traits: ["SwiftConfiguration"])
+                    condition: .when(traits: ["Configuration"])
                 ),
                 .product(name: "HTTPServer", package: "swift-http-api-proposal"),
             ],
