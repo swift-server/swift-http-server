@@ -42,7 +42,10 @@ let package = Package(
     ],
     dependencies: [
         // TODO: Update once PR #106 is merged.
-        .package(url: "https://github.com/aryan-25/swift-http-api-proposal.git", branch: "http-server-service-lifecycle"),
+        .package(
+            url: "https://github.com/aryan-25/swift-http-api-proposal.git",
+            branch: "http-server-service-lifecycle"
+        ),
         .package(
             url: "https://github.com/FranzBusch/swift-collections.git",
             branch: "fb-async"
