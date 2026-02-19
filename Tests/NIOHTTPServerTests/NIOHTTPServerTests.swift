@@ -234,7 +234,10 @@ struct NIOHTTPServerTests {
 extension NIOHTTPServerTests {
     static func withServer(
         server: NIOHTTPServer,
-        serverHandler: some HTTPServerRequestHandler<NIOHTTPServer.RequestReader, NIOHTTPServer.ResponseWriter>,
+        serverHandler: some HTTPServerRequestHandler<
+            NIOHTTPServer.RequestConcludingReader,
+            NIOHTTPServer.ResponseConcludingWriter
+        >,
         body: (NIOHTTPServer.SocketAddress) async throws -> Void
     ) async throws {
         try await withThrowingTaskGroup { group in
