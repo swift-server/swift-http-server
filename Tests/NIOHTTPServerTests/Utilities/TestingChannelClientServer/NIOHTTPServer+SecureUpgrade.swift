@@ -19,13 +19,13 @@ import NIOHTTPTypes
 @testable import HTTPServer
 @testable import NIOHTTPServer
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     /// Starts serving with the Secure Upgrade transport using the provided testing channel instead of using
     /// `ServerBootstrap` as `NIOHTTPServer` normally does.
     func serveSecureUpgradeWithTestChannel(
         testChannel: NIOAsyncTestingChannel,
-        handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
         // The server requires a NIOAsyncChannel, so we create one from the test channel
         let testAsyncChannel = try await testChannel.eventLoop.submit {

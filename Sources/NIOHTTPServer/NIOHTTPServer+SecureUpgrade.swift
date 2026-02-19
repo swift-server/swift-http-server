@@ -24,12 +24,12 @@ import NIOPosix
 import NIOSSL
 import X509
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     func serveSecureUpgrade(
         bindTarget: NIOHTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
-        handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         http2Configuration: NIOHTTP2Handler.Configuration,
         verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
@@ -121,7 +121,7 @@ extension NIOHTTPServer {
 
     func _serveSecureUpgrade(
         serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
-        handler: some HTTPServerRequestHandler<RequestReader, ResponseWriter>
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
         try await withThrowingDiscardingTaskGroup { group in
             try await serverChannel.executeThenClose { inbound in
@@ -168,7 +168,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(macOS 26.0, iOS 26.0, watchOS 26.0, tvOS 26.0, visionOS 26.0, *)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     func makeSSLServerHandler(
         _ tlsConfiguration: TLSConfiguration,

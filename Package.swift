@@ -31,19 +31,16 @@ let package = Package(
     name: "swift-http-server",
     products: [
         .library(
-            name: "HTTPServer",
-            targets: ["HTTPServer"]
-        ),
-        .library(
             name: "NIOHTTPServer",
             targets: ["NIOHTTPServer"]
-        ),
+        )
     ],
     traits: [
-        .trait(name: "SwiftConfiguration"),
-        .default(enabledTraits: ["SwiftConfiguration"]),
+        .trait(name: "Configuration"),
+        .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-http-api-proposal", branch: "main"),
         .package(
             url: "https://github.com/FranzBusch/swift-collections.git",
             branch: "fb-async"
@@ -67,24 +64,15 @@ let package = Package(
                 .product(name: "Tracing", package: "swift-distributed-tracing"),
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
                 .product(name: "Logging", package: "swift-log"),
-                "HTTPServer",
-                "Middleware",
+                .product(name: "HTTPServer", package: "swift-http-api-proposal"),
                 "NIOHTTPServer",
-            ],
-            swiftSettings: extraSettings
-        ),
-        .target(
-            name: "HTTPServer",
-            dependencies: [
-                "AsyncStreaming",
-                .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
             swiftSettings: extraSettings
         ),
         .target(
             name: "NIOHTTPServer",
             dependencies: [
-                "AsyncStreaming",
+                .product(name: "AsyncStreaming", package: "swift-http-api-proposal"),
                 .product(name: "DequeModule", package: "swift-collections"),
                 .product(name: "BasicContainers", package: "swift-collections"),
                 .product(name: "X509", package: "swift-certificates"),
@@ -101,24 +89,9 @@ let package = Package(
                 .product(
                     name: "Configuration",
                     package: "swift-configuration",
-                    condition: .when(traits: ["SwiftConfiguration"])
+                    condition: .when(traits: ["Configuration"])
                 ),
-                "HTTPServer",
-            ],
-            swiftSettings: extraSettings
-        ),
-        .target(
-            name: "Middleware",
-            dependencies: [
-                .product(name: "DequeModule", package: "swift-collections"),
-                .product(name: "HTTPTypes", package: "swift-http-types"),
-            ],
-            swiftSettings: extraSettings
-        ),
-        .target(
-            name: "AsyncStreaming",
-            dependencies: [
-                .product(name: "BasicContainers", package: "swift-collections")
+                .product(name: "HTTPServer", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings
         ),
