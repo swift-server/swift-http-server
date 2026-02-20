@@ -42,68 +42,77 @@ struct NIOHTTPServiceLifecycleTests {
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
 
-        // Create a promise that will be fulfilled when the server receives the request. When this promise is fulfilled,
-        // we can initiate the graceful shutdown.
+        // Create a promise that will be fulfilled when the server receives *part* of the request body. When this
+        // promise is fulfilled, we can initiate the graceful shutdown and then send the remaining body. If the server
+        // gracefully shuts down, we should be able to successfully complete the request. 
         let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
-        let requestReceivedPromise = elg.any().makePromise(of: Void.self)
+        let partialRequestBodyReceivedPromise = elg.any().makePromise(of: Void.self)
 
-        let serverService = HTTPService(server: server) { request, requestContext, reader, responseWriter in
-            requestReceivedPromise.succeed()
+        let serverService = ClosureService {
+            try await server.serve { request, requestContext, reader, responseWriter in
+                // The server is expecting 2 `Self.bodyData` parts. After the client sends the first body part, graceful
+                // shutdown is triggered. The client should be able to send the second body part and complete the
+                // in-flight request before the server shuts down.
+                _ = try await reader.consumeAndConclude { bodyReader in
+                    var bodyReader = bodyReader
+                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
 
-            // The server is expecting 2 `Self.bodyData` parts. After the client sends the first body part, graceful
-            // shutdown is triggered. The client should be able to send the second body part and complete the inflight
-            // request before the server shuts down.
-            _ = try await reader.consumeAndConclude { bodyReader in
-                var bodyReader = bodyReader
-                try await bodyReader.collect(upTo: Self.bodyData.readableBytes * 2) { _ in }
-            }
+                    partialRequestBodyReceivedPromise.succeed()
 
-            let responseBodyWriter = try await responseWriter.send(.init(status: .ok))
-            try await responseBodyWriter.produceAndConclude {
-                (writer: consuming HTTPResponseConcludingAsyncWriter.ResponseBodyAsyncWriter) in
-                try await writer.write([1, 2].span)
-                return .none
+                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                }
+
+                let responseBodyWriter = try await responseWriter.send(.init(status: .ok))
+                try await responseBodyWriter.produceAndConclude { writer in
+                    var writer = writer
+                    try await writer.write([1, 2].span)
+                    return .none
+                }
             }
         }
 
-        try await testGracefulShutdown { trigger in
-            try await withThrowingTaskGroup { group in
-                let serviceGroup = ServiceGroup(services: [serverService], logger: .init(label: "test"))
-                group.addTask { try await serviceGroup.run() }
+        try await confirmation { responseReceived in
+            try await testGracefulShutdown { trigger in
+                try await withThrowingTaskGroup { group in
+                    let serviceGroup = ServiceGroup(services: [serverService], logger: .init(label: "test"))
+                    group.addTask { try await serviceGroup.run() }
 
-                let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddress
 
-                let client = try await setUpClient(host: serverAddress.host, port: serverAddress.port)
+                    let client = try await setUpClient(host: serverAddress.host, port: serverAddress.port)
 
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(Self.reqHead)
+                    try await client.executeThenClose { inbound, outbound in
+                        try await outbound.write(Self.reqHead)
 
-                    // Write the first body part.
-                    try await outbound.write(Self.reqBody)
+                        // Write the first body part.
+                        try await outbound.write(Self.reqBody)
 
-                    // Wait until the server has received the request.
-                    try await requestReceivedPromise.futureResult.get()
+                        // Wait until the server has received the first body part.
+                        try await partialRequestBodyReceivedPromise.futureResult.get()
 
-                    // Start the shutdown
-                    trigger.triggerGracefulShutdown()
+                        // Start the shutdown
+                        trigger.triggerGracefulShutdown()
 
-                    // We should be able to complete our request.
-                    try await outbound.write(Self.reqBody)
-                    try await outbound.write(Self.reqEnd)
+                        // We should be able to complete our request.
+                        try await outbound.write(Self.reqBody)
+                        try await outbound.write(Self.reqEnd)
 
-                    for try await response in inbound {
-                        switch response {
-                        case .head(let head):
-                            #expect(head.status == .ok)
-                        case .body(let body):
-                            #expect(body == .init([1, 2]))
-                        case .end(let trailers):
-                            #expect(trailers == nil)
+                        for try await response in inbound {
+                            switch response {
+                            case .head(let head):
+                                #expect(head.status == .ok)
+                            case .body(let body):
+                                #expect(body == .init([1, 2]))
+                            case .end(let trailers):
+                                #expect(trailers == nil)
+                            }
                         }
-                    }
 
-                    // The server should now shut down. Wait for this.
-                    try await group.waitForAll()
+                        responseReceived()
+
+                        // The server should now shut down. Wait for this.
+                        try await group.waitForAll()
+                    }
                 }
             }
         }
@@ -132,51 +141,60 @@ struct NIOHTTPServiceLifecycleTests {
         let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
         let requestReceivedPromise = elg.any().makePromise(of: Void.self)
 
-        let serverService = HTTPService(server: server) { request, requestContext, reader, responseWriter in
-            requestReceivedPromise.succeed()
+        let serverService = ClosureService {
+            try await server.serve { request, requestContext, reader, responseWriter in
+                _ = try await reader.consumeAndConclude { bodyReader in
+                    var bodyReader = bodyReader
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
 
-            // Consume the body: this will block because the client will never send a request end part. This is
-            // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
-            _ = try await reader.consumeAndConclude { bodyReader in
-                var bodyReader = bodyReader
-                let error = try await #require(throws: EitherError<Error, Never>.self) {
-                    try await bodyReader.collect(upTo: 100) { _ in }
+                        requestReceivedPromise.succeed()
+
+                        // The following call will block: the client will never send a request end part. This is
+                        // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
+                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                    }
+                    #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
                 }
-                #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
             }
         }
 
-        try await testGracefulShutdown { trigger in
-            try await withThrowingTaskGroup { group in
-                let serviceGroup = ServiceGroup(services: [serverService], logger: .init(label: "test"))
-                group.addTask { try await serviceGroup.run() }
+        try await confirmation { connectionForcefullyShutdown in
+            try await testGracefulShutdown { trigger in
+                try await withThrowingTaskGroup { group in
+                    let serviceGroup = ServiceGroup(services: [serverService], logger: .init(label: "test"))
+                    group.addTask { try await serviceGroup.run() }
 
-                let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddress
 
-                let client = try await setUpClientWithMTLS(
-                    at: serverAddress,
-                    chain: clientChain,
-                    trustRoots: [serverChain.ca],
-                    applicationProtocol: "h2"
-                )
+                    let client = try await setUpClientWithMTLS(
+                        at: serverAddress,
+                        chain: clientChain,
+                        trustRoots: [serverChain.ca],
+                        applicationProtocol: "h2"
+                    )
 
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(Self.reqHead)
-                    try await outbound.write(Self.reqBody)
+                    try await client.executeThenClose { inbound, outbound in
+                        try await outbound.write(Self.reqHead)
+                        try await outbound.write(Self.reqBody)
 
-                    // Wait until the server has received the request.
-                    try await requestReceivedPromise.futureResult.get()
+                        // Wait until the server has received the request.
+                        try await requestReceivedPromise.futureResult.get()
 
-                    // Now trigger graceful shutdown. This should propagate down to the server. The server will start
-                    // the 500ms grace timer after which all connections that are still open will be forcefully-closed.
-                    trigger.triggerGracefulShutdown()
+                        // Now trigger graceful shutdown. This should propagate down to the server. The server will
+                        // start the 500ms grace timer after which all connections that are still open will be
+                        // forcefully closed.
+                        trigger.triggerGracefulShutdown()
 
-                    // The server should shut down after 500ms. Wait for this.
-                    try await group.waitForAll()
+                        // The server should shut down after 500ms. Wait for this.
+                        try await group.waitForAll()
 
-                    // The connection should have been closed: we should get an `ioOnClosedChannel` error.
-                    await #expect(throws: ChannelError.ioOnClosedChannel) {
-                        try await outbound.write(Self.reqEnd)
+                        // The connection should have been closed: we should get an `ioOnClosedChannel` error.
+                        await #expect(throws: ChannelError.ioOnClosedChannel) {
+                            try await outbound.write(Self.reqEnd)
+                        }
+
+                        connectionForcefullyShutdown()
                     }
                 }
             }
