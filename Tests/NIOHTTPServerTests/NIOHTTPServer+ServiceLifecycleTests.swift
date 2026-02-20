@@ -44,7 +44,7 @@ struct NIOHTTPServiceLifecycleTests {
 
         // Create a promise that will be fulfilled when the server receives *part* of the request body. When this
         // promise is fulfilled, we can initiate the graceful shutdown and then send the remaining body. If the server
-        // gracefully shuts down, we should be able to successfully complete the request. 
+        // gracefully shuts down, we should be able to successfully complete the request.
         let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
         let partialRequestBodyReceivedPromise = elg.any().makePromise(of: Void.self)
 
