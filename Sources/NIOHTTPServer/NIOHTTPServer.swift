@@ -155,8 +155,16 @@ public struct NIOHTTPServer: HTTPServer {
     public func serve(
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        defer { self.close() }
+        try await withTaskCancellationOrGracefulShutdownHandler {
+            try await self._serve(handler: handler)
+        } onCancelOrGracefulShutdown: {
+            self.close()
+        }
+    }
 
+    private func _serve(
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch self.configuration.backpressureStrategy.backing {
         case .watermark(let low, let high):
@@ -336,6 +344,8 @@ public struct NIOHTTPServer: HTTPServer {
         case .doNothing:
             ()
         }
+
+        self.serverQuiescingHelper.initiateShutdown(promise: nil)
     }
 }
 
