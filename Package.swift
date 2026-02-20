@@ -54,7 +54,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.30.0"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.40.0"),
         .package(url: "https://github.com/apple/swift-configuration.git", from: "1.0.0"),
-        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", branch: "2.10.0"),
+        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.10.0"),
     ],
     targets: [
         .executableTarget(
