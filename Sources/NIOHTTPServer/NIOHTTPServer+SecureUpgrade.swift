@@ -16,6 +16,7 @@ import HTTPServer
 import Logging
 import NIOCore
 import NIOEmbedded
+import NIOExtras
 import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPTypes
@@ -24,10 +25,6 @@ import NIOHTTPTypesHTTP2
 import NIOPosix
 import NIOSSL
 import X509
-
-#if ServiceLifecycle
-import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutdown.
-#endif
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
@@ -67,15 +64,11 @@ extension NIOHTTPServer {
             let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
                 .serverChannelInitializer { channel in
-                    #if ServiceLifecycle
                     channel.eventLoop.makeCompletedFuture {
                         try channel.pipeline.syncOperations.addHandler(
                             self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                         )
                     }
-                    #else
-                    channel.eventLoop.makeSucceededVoidFuture()
-                    #endif  // ServiceLifecycle
                 }
                 .bind(host: host, port: port) { channel in
                     self.setupSecureUpgradeConnectionChildChannel(

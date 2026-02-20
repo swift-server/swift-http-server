@@ -37,15 +37,10 @@ let package = Package(
     ],
     traits: [
         .trait(name: "Configuration"),
-        .trait(name: "ServiceLifecycle"),
         .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
-        // TODO: Update once PR #106 is merged.
-        .package(
-            url: "https://github.com/aryan-25/swift-http-api-proposal.git",
-            branch: "http-server-service-lifecycle"
-        ),
+        .package(url: "https://github.com/apple/swift-http-api-proposal.git", branch: "main"),
         .package(
             url: "https://github.com/FranzBusch/swift-collections.git",
             branch: "fb-async"
@@ -97,11 +92,7 @@ let package = Package(
                     package: "swift-configuration",
                     condition: .when(traits: ["Configuration"])
                 ),
-                .product(
-                    name: "NIOExtras",
-                    package: "swift-nio-extras",
-                    condition: .when(traits: ["ServiceLifecycle"])
-                ),
+                .product(name: "NIOExtras", package: "swift-nio-extras"),
                 .product(name: "HTTPServer", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings
@@ -110,16 +101,8 @@ let package = Package(
             name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
-                .product(
-                    name: "ServiceLifecycle",
-                    package: "swift-service-lifecycle",
-                    condition: .when(traits: ["ServiceLifecycle"])
-                ),
-                .product(
-                    name: "ServiceLifecycleTestKit",
-                    package: "swift-service-lifecycle",
-                    condition: .when(traits: ["ServiceLifecycle"])
-                ),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
                 "NIOHTTPServer",
             ]
         ),

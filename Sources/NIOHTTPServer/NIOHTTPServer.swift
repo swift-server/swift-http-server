@@ -18,6 +18,7 @@ public import Logging
 import NIOCertificateReloading
 import NIOConcurrencyHelpers
 import NIOCore
+import NIOExtras
 import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPTypes
@@ -25,13 +26,10 @@ import NIOHTTPTypesHTTP1
 import NIOHTTPTypesHTTP2
 import NIOPosix
 import NIOSSL
+import ServiceLifecycle
 import SwiftASN1
 import Synchronization
 import X509
-
-#if ServiceLifecycle
-import NIOExtras  // For ServerQuiescingHelper, which is used for graceful shutdown.
-#endif
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
@@ -89,9 +87,7 @@ public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
     private let configuration: NIOHTTPServerConfiguration
 
-    #if ServiceLifecycle
     let serverQuiescingHelper: ServerQuiescingHelper
-    #endif
 
     var listeningAddressState: NIOLockedValueBox<State>
 
@@ -115,9 +111,7 @@ public struct NIOHTTPServer: HTTPServer {
         let eventLoopGroup: MultiThreadedEventLoopGroup = .singletonMultiThreadedEventLoopGroup
         self.listeningAddressState = .init(.idle(eventLoopGroup.any().makePromise()))
 
-        #if ServiceLifecycle
         self.serverQuiescingHelper = .init(group: eventLoopGroup)
-        #endif
     }
 
     /// Starts an HTTP server with the specified request handler.

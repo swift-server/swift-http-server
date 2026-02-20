@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if ServiceLifecycle
 import AsyncStreaming
 import HTTPServer
 import HTTPTypes
@@ -184,4 +183,3 @@ struct NIOHTTPServiceLifecycleTests {
         }
     }
 }
-#endif  // ServiceLifecycle
