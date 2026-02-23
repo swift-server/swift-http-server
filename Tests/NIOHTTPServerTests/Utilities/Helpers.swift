@@ -26,6 +26,9 @@ extension NIOAsyncTestingChannel {
                         let ourPart = try await self.waitForOutboundWrite(as: ByteBuffer.self)
                         try await other.writeInbound(ourPart)
                     } catch ChannelError.ioOnClosedChannel {
+                        // We only reach here if the channel has closed. `waitForOutboundWrite` uses a continuation
+                        // without `withTaskCancellationHandler`, so this error is the only shutdown signal; returning
+                        // allows the task group and `glueTo` to complete cleanly.
                         return
                     }
                 }
@@ -38,6 +41,8 @@ extension NIOAsyncTestingChannel {
                         let otherPart = try await other.waitForOutboundWrite(as: ByteBuffer.self)
                         try await self.writeInbound(otherPart)
                     } catch ChannelError.ioOnClosedChannel {
+                        // Same reasoning as above: the channel has closed, and returning allows the task group and
+                        // `glueTo` to complete cleanly.
                         return
                     }
                 }
