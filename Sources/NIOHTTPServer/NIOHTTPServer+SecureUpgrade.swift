@@ -16,6 +16,8 @@ import HTTPServer
 import Logging
 import NIOCore
 import NIOEmbedded
+import NIOExtras
+import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
@@ -26,100 +28,12 @@ import X509
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
-    func serveSecureUpgrade(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        tlsConfiguration: TLSConfiguration,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTP2Handler.Configuration,
-        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
-    ) async throws {
-        let serverChannel = try await self.setupSecureUpgradeServerChannel(
-            bindTarget: bindTarget,
-            tlsConfiguration: tlsConfiguration,
-            asyncChannelConfiguration: asyncChannelConfiguration,
-            http2Configuration: http2Configuration,
-            verificationCallback: verificationCallback
-        )
-
-        try await self._serveSecureUpgrade(serverChannel: serverChannel, handler: handler)
-    }
-
     typealias NegotiatedChannel = NIONegotiatedHTTPVersion<
         NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
     >
 
-    private func setupSecureUpgradeServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        tlsConfiguration: TLSConfiguration,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTP2Handler.Configuration,
-        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
-    ) async throws -> NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never> {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .bind(host: host, port: port) { channel in
-                    self.setupSecureUpgradeConnectionChildChannel(
-                        channel: channel,
-                        tlsConfiguration: tlsConfiguration,
-                        asyncChannelConfiguration: asyncChannelConfiguration,
-                        http2Configuration: http2Configuration,
-                        verificationCallback: verificationCallback
-                    )
-                }
-
-            try self.addressBound(serverChannel.channel.localAddress)
-
-            return serverChannel
-        }
-    }
-
-    func setupSecureUpgradeConnectionChildChannel(
-        channel: any Channel,
-        tlsConfiguration: TLSConfiguration,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTP2Handler.Configuration,
-        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
-    ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
-        channel.eventLoop.makeCompletedFuture {
-            try channel.pipeline.syncOperations.addHandler(
-                self.makeSSLServerHandler(tlsConfiguration, verificationCallback)
-            )
-        }.flatMap {
-            channel.configureAsyncHTTPServerPipeline(
-                http2Configuration: http2Configuration,
-                http1ConnectionInitializer: { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
-
-                        return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                            wrappingChannelSynchronously: channel,
-                            configuration: asyncChannelConfiguration
-                        )
-                    }
-                },
-                http2ConnectionInitializer: { channel in channel.eventLoop.makeCompletedFuture(.success(channel)) },
-                http2StreamInitializer: { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations
-                            .addHandler(
-                                HTTP2FramePayloadToHTTPServerCodec()
-                            )
-
-                        return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                            wrappingChannelSynchronously: channel,
-                            configuration: asyncChannelConfiguration
-                        )
-                    }
-                }
-            )
-        }
-    }
-
-    func _serveSecureUpgrade(
+    func serveSecureUpgrade(
         serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
@@ -164,6 +78,100 @@ extension NIOHTTPServer {
                     }
                 }
             }
+        }
+    }
+
+    func setupSecureUpgradeServerChannel(
+        bindTarget: NIOHTTPServerConfiguration.BindTarget,
+        tlsConfiguration: TLSConfiguration,
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2,
+        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
+    ) async throws -> NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never> {
+        switch bindTarget.backing {
+        case .hostAndPort(let host, let port):
+            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .serverChannelInitializer { channel in
+                    channel.eventLoop.makeCompletedFuture {
+                        try channel.pipeline.syncOperations.addHandler(
+                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
+                        )
+                    }
+                }
+                .bind(host: host, port: port) { channel in
+                    self.setupSecureUpgradeConnectionChildChannel(
+                        channel: channel,
+                        tlsConfiguration: tlsConfiguration,
+                        asyncChannelConfiguration: asyncChannelConfiguration,
+                        http2Configuration: http2Configuration,
+                        verificationCallback: verificationCallback
+                    )
+                }
+
+            try self.addressBound(serverChannel.channel.localAddress)
+
+            return serverChannel
+        }
+    }
+
+    func setupSecureUpgradeConnectionChildChannel(
+        channel: any Channel,
+        tlsConfiguration: TLSConfiguration,
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2,
+        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
+    ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
+        channel.eventLoop.makeCompletedFuture {
+            try channel.pipeline.syncOperations.addHandler(
+                self.makeSSLServerHandler(tlsConfiguration, verificationCallback)
+            )
+        }.flatMap {
+            channel.configureHTTP2AsyncSecureUpgrade(
+                http1ConnectionInitializer: { http1Channel in
+                    http1Channel.pipeline.configureHTTPServerPipeline().flatMap { _ in
+                        http1Channel.eventLoop.makeCompletedFuture {
+                            try http1Channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
+
+                            return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                                wrappingChannelSynchronously: http1Channel,
+                                configuration: asyncChannelConfiguration
+                            )
+                        }
+                    }
+                },
+                http2ConnectionInitializer: { http2Channel in
+                    http2Channel.eventLoop.makeCompletedFuture {
+                        try http2Channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
+                            mode: .server,
+                            connectionManagerConfiguration: .init(
+                                maxIdleTime: nil,
+                                maxAge: nil,
+                                maxGraceTime: http2Configuration.gracefulShutdown.maximumGracefulShutdownDuration
+                                    .map { TimeAmount($0) },
+                                keepalive: nil
+                            ),
+                            http2HandlerConfiguration: .init(httpServerHTTP2Configuration: http2Configuration),
+                            streamInitializer: { http2StreamChannel in
+                                http2StreamChannel.eventLoop.makeCompletedFuture {
+                                    try http2StreamChannel.pipeline.syncOperations
+                                        .addHandler(
+                                            HTTP2FramePayloadToHTTPServerCodec()
+                                        )
+
+                                    return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                                        wrappingChannelSynchronously: http2StreamChannel,
+                                        configuration: asyncChannelConfiguration
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    .flatMap { multiplexer in
+                        http2Channel.eventLoop.makeCompletedFuture(.success((http2Channel, multiplexer)))
+                    }
+                }
+            )
         }
     }
 }

@@ -203,14 +203,42 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// The number of concurrent streams on the HTTP/2 connection.
         public var maxConcurrentStreams: Int?
 
+        /// The graceful shutdown configuration.
+        public var gracefulShutdown: GracefulShutdownConfiguration
+
+        /// Configuration options for HTTP/2 graceful shutdown behavior.
+        public struct GracefulShutdownConfiguration: Sendable, Hashable {
+            /// The maximum amount of time that the connection has to close gracefully.
+            /// If set to `nil`, no time limit is enforced on the graceful shutdown process.
+            public var maximumGracefulShutdownDuration: Duration?
+
+            /// Creates a graceful shutdown configuration with the specified timeout value.
+            ///
+            /// - Parameters:
+            ///   - maximumGracefulShutdownDuration: The maximum amount of time that the connection has to close
+            ///     gracefully. When `nil`, no time limit is enforced for active streams to finish during graceful
+            ///     shutdown.
+            public init(maximumGracefulShutdownDuration: Duration? = nil) {
+                self.maximumGracefulShutdownDuration = maximumGracefulShutdownDuration
+            }
+        }
+
+        /// - Parameters:
+        ///   - maxFrameSize: The maximum frame size to be used in connections.
+        ///   - targetWindowSize: The target window size for connections. This will also be set as the initial window
+        ///     size.
+        ///   - maxConcurrentStreams: The maximum number of concurrent streams permitted on connections.
+        ///   - gracefulShutdown: The graceful shutdown configuration.
         public init(
-            maxFrameSize: Int,
-            targetWindowSize: Int,
-            maxConcurrentStreams: Int?
+            maxFrameSize: Int = Self.defaultMaxFrameSize,
+            targetWindowSize: Int = Self.defaultTargetWindowSize,
+            maxConcurrentStreams: Int? = Self.defaultMaxConcurrentStreams,
+            gracefulShutdown: GracefulShutdownConfiguration = .init()
         ) {
             self.maxFrameSize = maxFrameSize
             self.targetWindowSize = targetWindowSize
             self.maxConcurrentStreams = maxConcurrentStreams
+            self.gracefulShutdown = gracefulShutdown
         }
 
         @inlinable
@@ -228,7 +256,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
             Self(
                 maxFrameSize: Self.defaultMaxFrameSize,
                 targetWindowSize: Self.defaultTargetWindowSize,
-                maxConcurrentStreams: Self.defaultMaxConcurrentStreams
+                maxConcurrentStreams: Self.defaultMaxConcurrentStreams,
+                gracefulShutdown: GracefulShutdownConfiguration()
             )
         }
     }

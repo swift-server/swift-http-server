@@ -15,6 +15,7 @@
 import HTTPServer
 import NIOCore
 import NIOEmbedded
+import NIOExtras
 import NIOHTTP1
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
@@ -23,19 +24,24 @@ import NIOPosix
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     func serveInsecureHTTP1_1(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
+        serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        let serverChannel = try await self.setupHTTP1_1ServerChannel(
-            bindTarget: bindTarget,
-            asyncChannelConfiguration: asyncChannelConfiguration
-        )
-
-        try await _serveInsecureHTTP1_1(serverChannel: serverChannel, handler: handler)
+        try await withThrowingDiscardingTaskGroup { group in
+            try await serverChannel.executeThenClose { inbound in
+                for try await http1Channel in inbound {
+                    group.addTask {
+                        try await self.handleRequestChannel(
+                            channel: http1Channel,
+                            handler: handler
+                        )
+                    }
+                }
+            }
+        }
     }
 
-    private func setupHTTP1_1ServerChannel(
+    func setupHTTP1_1ServerChannel(
         bindTarget: NIOHTTPServerConfiguration.BindTarget,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) async throws -> NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never> {
@@ -43,6 +49,13 @@ extension NIOHTTPServer {
         case .hostAndPort(let host, let port):
             let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                .serverChannelInitializer { channel in
+                    channel.eventLoop.makeCompletedFuture {
+                        try channel.pipeline.syncOperations.addHandler(
+                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
+                        )
+                    }
+                }
                 .bind(host: host, port: port) { channel in
                     self.setupHTTP1_1ConnectionChildChannel(
                         channel: channel,
@@ -67,24 +80,6 @@ extension NIOHTTPServer {
                 wrappingChannelSynchronously: channel,
                 configuration: asyncChannelConfiguration
             )
-        }
-    }
-
-    func _serveInsecureHTTP1_1(
-        serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await http1Channel in inbound {
-                    group.addTask {
-                        try await self.handleRequestChannel(
-                            channel: http1Channel,
-                            handler: handler
-                        )
-                    }
-                }
-            }
         }
     }
 }

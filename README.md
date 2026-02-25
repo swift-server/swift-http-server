@@ -12,3 +12,12 @@ All feedback is welcome: please open issues!
 ## Getting started
 
 To get started, please refer to the project's documentation and the Example located under `Sources`.
+
+## Package traits
+
+This package offers additional integrations you can enable using
+[package traits](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies#Packages-with-Traits).
+
+Available traits:
+- **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
+  `ConfigProvider`.

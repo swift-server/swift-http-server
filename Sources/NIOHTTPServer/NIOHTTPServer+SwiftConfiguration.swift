@@ -14,7 +14,9 @@
 
 #if Configuration
 public import Configuration
+import NIOCore
 import NIOCertificateReloading
+import NIOHTTP2
 import SwiftASN1
 public import X509
 
@@ -280,7 +282,7 @@ extension NIOHTTPServerConfiguration.HTTP2 {
     /// Initialize a HTTP/2 configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `maxFrameSize` (int, optional, default: 2^14):  The maximum frame size to be used in an HTTP/2 connection.
+    /// - `maxFrameSize` (int, optional, default: 2^14): The maximum frame size to be used in an HTTP/2 connection.
     /// - `targetWindowSize` (int, optional, default: 2^16 - 1): The target window size to be used in an HTTP/2
     ///    connection.
     /// - `maxConcurrentStreams` (int, optional, default: 100): The maximum number of concurrent streams in an HTTP/2
@@ -300,7 +302,24 @@ extension NIOHTTPServerConfiguration.HTTP2 {
             /// The default value, ``NIOHTTPServerConfiguration.HTTP2.DEFAULT_TARGET_WINDOW_SIZE``, is `nil`. However,
             /// we can only specify a non-nil `default` argument to `config.int(...)`. But `config.int(...)` already
             /// defaults to `nil` if it can't find the `"maxConcurrentStreams"` key, so that works for us.
-            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams")
+            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams"),
+            gracefulShutdown: .init(config: config)
+        )
+    }
+}
+
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
+    /// Initialize a HTTP/2 graceful shutdown configuration from a config reader.
+    ///
+    /// ## Configuration keys:
+    /// - `maximumGracefulShutdownDuration` (int, optional, default: nil): The maximum amount of time (in seconds) that
+    ///   the connection has to close gracefully.
+    ///
+    /// - Parameter config: The configuration reader.
+    public init(config: ConfigSnapshotReader) {
+        self.init(
+            maximumGracefulShutdownDuration: config.int(forKey: "maximumGracefulShutdownDuration").map { .seconds($0) }
         )
     }
 }

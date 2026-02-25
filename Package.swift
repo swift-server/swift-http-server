@@ -40,7 +40,7 @@ let package = Package(
         .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-http-api-proposal", branch: "main"),
+        .package(url: "https://github.com/apple/swift-http-api-proposal.git", branch: "main"),
         .package(
             url: "https://github.com/FranzBusch/swift-collections.git",
             branch: "fb-async"
@@ -52,8 +52,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.92.2"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.36.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.30.0"),
-        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.0.0"),
-        .package(url: "https://github.com/apple/swift-configuration", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.40.0"),
+        .package(url: "https://github.com/apple/swift-configuration.git", from: "1.0.0"),
+        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.10.0"),
     ],
     targets: [
         .executableTarget(
@@ -91,6 +92,7 @@ let package = Package(
                     package: "swift-configuration",
                     condition: .when(traits: ["Configuration"])
                 ),
+                .product(name: "NIOExtras", package: "swift-nio-extras"),
                 .product(name: "HTTPServer", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings
@@ -99,6 +101,8 @@ let package = Package(
             name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
                 "NIOHTTPServer",
             ]
         ),
