@@ -31,7 +31,7 @@ struct TestingChannelSecureUpgradeServer {
 
     let tlsConfiguration: TLSConfiguration
     let tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)?
-    let http2Configuration: NIOHTTP2Handler.Configuration
+    let http2Configuration: NIOHTTPServerConfiguration.HTTP2
 
     /// Sets up the server with a testing channel and the provided request handler, starts the server, and provides
     /// `Self` to the `body` closure. Call `withConnection(clientTLSConfiguration:body:)` on the provided instance to
@@ -40,7 +40,7 @@ struct TestingChannelSecureUpgradeServer {
         logger: Logger,
         tlsConfiguration: TLSConfiguration,
         tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)? = nil,
-        http2Configuration: NIOHTTP2Handler.Configuration = .init(),
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2 = .init(),
         handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
         body: (Self) async throws -> Void
     ) async throws {

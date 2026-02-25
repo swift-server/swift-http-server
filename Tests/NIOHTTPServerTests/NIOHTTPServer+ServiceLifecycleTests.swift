@@ -79,7 +79,8 @@ struct NIOHTTPServiceLifecycleTests {
 
                     let serverAddress = try await server.listeningAddress
 
-                    let client = try await setUpClient(host: serverAddress.host, port: serverAddress.port)
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
 
                     try await client.executeThenClose { inbound, outbound in
                         try await outbound.write(Self.reqHead)
@@ -160,7 +161,8 @@ struct NIOHTTPServiceLifecycleTests {
 
                 let serverAddress = try await server.listeningAddress
 
-                let client = try await setUpClient(host: serverAddress.host, port: serverAddress.port)
+                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestHTTP1Server(at: serverAddress)
 
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(Self.reqHead)
@@ -235,34 +237,41 @@ struct NIOHTTPServiceLifecycleTests {
 
                     let serverAddress = try await server.listeningAddress
 
-                    let client = try await setUpClientWithMTLS(
-                        at: serverAddress,
-                        chain: clientChain,
-                        trustRoots: [serverChain.ca],
-                        applicationProtocol: "h2"
-                    )
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestSecureUpgradeHTTPServer(
+                            at: serverAddress,
+                            trustRoots: [serverChain.ca],
+                            applicationProtocol: "h2"
+                        )
 
-                    try await client.executeThenClose { inbound, outbound in
-                        try await outbound.write(Self.reqHead)
-                        try await outbound.write(Self.reqBody)
+                    switch client {
+                    case .http1:
+                        Issue.record("Unexpectedly negotiated a HTTP/2 connection")
 
-                        // Wait until the server has received the request.
-                        try await firstChunkReadPromise.futureResult.get()
+                    case .http2(let streamManager):
+                        let streamChannel = try await streamManager.openStream()
+                        try await streamChannel.executeThenClose { inbound, outbound in
+                            try await outbound.write(Self.reqHead)
+                            try await outbound.write(Self.reqBody)
 
-                        // Now trigger graceful shutdown. This should propagate down to the server. The server will
-                        // start the 500ms grace timer after which all connections that are still open will be
-                        // forcefully closed.
-                        trigger.triggerGracefulShutdown()
+                            // Wait until the server has received the request.
+                            try await firstChunkReadPromise.futureResult.get()
 
-                        // The server should shut down after 500ms. Wait for this.
-                        try await group.waitForAll()
+                            // Now trigger graceful shutdown. This should propagate down to the server. The server will
+                            // start the 500ms grace timer after which all connections that are still open will be
+                            // forcefully closed.
+                            trigger.triggerGracefulShutdown()
 
-                        // The connection should have been closed: we should get an `ioOnClosedChannel` error.
-                        await #expect(throws: ChannelError.ioOnClosedChannel) {
-                            try await outbound.write(Self.reqEnd)
+                            // The server should shut down after 500ms. Wait for this.
+                            try await group.waitForAll()
+
+                            // The connection should have been closed: we should get an `ioOnClosedChannel` error.
+                            await #expect(throws: ChannelError.ioOnClosedChannel) {
+                                try await outbound.write(Self.reqEnd)
+                            }
+
+                            connectionForcefullyShutdown()
                         }
-
-                        connectionForcefullyShutdown()
                     }
                 }
             }
