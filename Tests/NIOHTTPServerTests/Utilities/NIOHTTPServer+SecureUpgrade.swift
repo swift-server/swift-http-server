@@ -39,6 +39,6 @@ extension NIOHTTPServer {
         try self.addressBound(.init(ipAddress: "127.0.0.1", port: 8000))
         _ = try await self.listeningAddress
 
-        try await self._serveSecureUpgrade(serverChannel: testAsyncChannel, handler: handler)
+        try await self.serveSecureUpgrade(serverChannel: testAsyncChannel, handler: handler)
     }
 }

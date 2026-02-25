@@ -141,7 +141,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == NIOHTTPServerConfiguration.HTTP2.defaultMaxFrameSize)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
             #expect(http2.maxConcurrentStreams == nil)
-            #expect(http2.gracefulShutdown == .init(maxGraceTime: nil))
+            #expect(http2.gracefulShutdown == .init(maximumGracefulShutdownDuration: nil))
         }
 
         @Test("Custom values")
@@ -151,7 +151,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "maxFrameSize": 1,
                 "targetWindowSize": 2,
                 "maxConcurrentStreams": 3,
-                "maxGraceTimeSeconds": 4,
+                "maximumGracefulShutdownDuration": 4,
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
@@ -161,7 +161,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == 1)
             #expect(http2.targetWindowSize == 2)
             #expect(http2.maxConcurrentStreams == 3)
-            #expect(http2.gracefulShutdown.maxGraceTime == .seconds(4))
+            #expect(http2.gracefulShutdown.maximumGracefulShutdownDuration == .seconds(4))
         }
 
         @Test("Partial custom values")
@@ -176,7 +176,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == 5)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
             #expect(http2.maxConcurrentStreams == nil)
-            #expect(http2.gracefulShutdown.maxGraceTime == nil)
+            #expect(http2.gracefulShutdown.maximumGracefulShutdownDuration == nil)
         }
     }
 

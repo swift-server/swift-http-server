@@ -313,12 +313,14 @@ extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
     /// Initialize a HTTP/2 graceful shutdown configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `maxGraceTimeSeconds` (int, optional, default: nil): The maximum amount of time (in seconds) that the
-    ///   connection has to close gracefully.
+    /// - `maximumGracefulShutdownDuration` (int, optional, default: nil): The maximum amount of time (in seconds) that
+    ///   the connection has to close gracefully.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
-        self.init(maxGraceTime: config.int(forKey: "maxGraceTimeSeconds").map { .seconds(Int64($0)) })
+        self.init(
+            maximumGracefulShutdownDuration: config.int(forKey: "maximumGracefulShutdownDuration").map { .seconds($0) }
+        )
     }
 }
 

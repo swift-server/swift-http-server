@@ -28,31 +28,60 @@ import X509
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
-    func serveSecureUpgrade(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        tlsConfiguration: TLSConfiguration,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
-        http2Configuration: NIOHTTPServerConfiguration.HTTP2,
-        verificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)? = nil
-    ) async throws {
-        let serverChannel = try await self.setupSecureUpgradeServerChannel(
-            bindTarget: bindTarget,
-            tlsConfiguration: tlsConfiguration,
-            asyncChannelConfiguration: asyncChannelConfiguration,
-            http2Configuration: http2Configuration,
-            verificationCallback: verificationCallback
-        )
-
-        try await self._serveSecureUpgrade(serverChannel: serverChannel, handler: handler)
-    }
-
     typealias NegotiatedChannel = NIONegotiatedHTTPVersion<
         NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
     >
 
-    private func setupSecureUpgradeServerChannel(
+    func serveSecureUpgrade(
+        serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws {
+        try await withThrowingDiscardingTaskGroup { group in
+            try await serverChannel.executeThenClose { inbound in
+                for try await upgradeResult in inbound {
+                    group.addTask {
+                        do {
+                            try await withThrowingDiscardingTaskGroup { connectionGroup in
+                                switch try await upgradeResult.get() {
+                                case .http1_1(let http1Channel):
+                                    let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
+                                    Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                                        connectionGroup.addTask {
+                                            try await self.handleRequestChannel(
+                                                channel: http1Channel,
+                                                handler: handler
+                                            )
+                                        }
+                                    }
+                                case .http2((let http2Connection, let http2Multiplexer)):
+                                    do {
+                                        let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
+                                        try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                                            for try await http2StreamChannel in http2Multiplexer.inbound {
+                                                connectionGroup.addTask {
+                                                    try await self.handleRequestChannel(
+                                                        channel: http2StreamChannel,
+                                                        handler: handler
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } catch {
+                                        self.logger.debug("HTTP2 connection closed: \(error)")
+                                    }
+                                }
+                            }
+                        } catch {
+                            self.logger.debug("Negotiating ALPN failed: \(error)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func setupSecureUpgradeServerChannel(
         bindTarget: NIOHTTPServerConfiguration.BindTarget,
         tlsConfiguration: TLSConfiguration,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
@@ -118,7 +147,8 @@ extension NIOHTTPServer {
                             connectionManagerConfiguration: .init(
                                 maxIdleTime: nil,
                                 maxAge: nil,
-                                maxGraceTime: http2Configuration.gracefulShutdown.maxGraceTime,
+                                maxGraceTime: http2Configuration.gracefulShutdown.maximumGracefulShutdownDuration
+                                    .map { TimeAmount($0) },
                                 keepalive: nil
                             ),
                             http2HandlerConfiguration: .init(httpServerHTTP2Configuration: http2Configuration),
@@ -142,54 +172,6 @@ extension NIOHTTPServer {
                     }
                 }
             )
-        }
-    }
-
-    func _serveSecureUpgrade(
-        serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await upgradeResult in inbound {
-                    group.addTask {
-                        do {
-                            try await withThrowingDiscardingTaskGroup { connectionGroup in
-                                switch try await upgradeResult.get() {
-                                case .http1_1(let http1Channel):
-                                    let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
-                                    Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                        connectionGroup.addTask {
-                                            try await self.handleRequestChannel(
-                                                channel: http1Channel,
-                                                handler: handler
-                                            )
-                                        }
-                                    }
-                                case .http2((let http2Connection, let http2Multiplexer)):
-                                    do {
-                                        let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
-                                        try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                            for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                connectionGroup.addTask {
-                                                    try await self.handleRequestChannel(
-                                                        channel: http2StreamChannel,
-                                                        handler: handler
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        self.logger.debug("HTTP2 connection closed: \(error)")
-                                    }
-                                }
-                            }
-                        } catch {
-                            self.logger.debug("Negotiating ALPN failed: \(error)")
-                        }
-                    }
-                }
-            }
         }
     }
 }

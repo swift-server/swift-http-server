@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import NIOCertificateReloading
-public import NIOCore
+import NIOCore
 import NIOSSL
 public import X509
 
@@ -210,14 +210,16 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public struct GracefulShutdownConfiguration: Sendable, Hashable {
             /// The maximum amount of time that the connection has to close gracefully.
             /// If set to `nil`, no time limit is enforced on the graceful shutdown process.
-            public var maxGraceTime: TimeAmount?
+            public var maximumGracefulShutdownDuration: Duration?
 
             /// Creates a graceful shutdown configuration with the specified timeout value.
+            ///
             /// - Parameters:
-            ///   - maxGraceTime: The maximum amount of time that the connection has to close gracefully. When `nil`, no
-            ///     time limit is enforced for active streams to finish during graceful shutdown.
-            public init(maxGraceTime: TimeAmount? = nil) {
-                self.maxGraceTime = maxGraceTime
+            ///   - maximumGracefulShutdownDuration: The maximum amount of time that the connection has to close
+            ///     gracefully. When `nil`, no time limit is enforced for active streams to finish during graceful
+            ///     shutdown.
+            public init(maximumGracefulShutdownDuration: Duration? = nil) {
+                self.maximumGracefulShutdownDuration = maximumGracefulShutdownDuration
             }
         }
 

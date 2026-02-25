@@ -155,16 +155,22 @@ public struct NIOHTTPServer: HTTPServer {
     public func serve(
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        try await withTaskCancellationOrGracefulShutdownHandler {
-            try await self._serve(handler: handler)
-        } onCancelOrGracefulShutdown: {
-            self.close()
+        let serverChannel = try await self.makeServerChannel()
+
+        return try await withTaskCancellationHandler {
+            try await withGracefulShutdownHandler {
+                try await self._serve(serverChannel: serverChannel, handler: handler)
+            } onGracefulShutdown: {
+                self.beginGracefulShutdown()
+            }
+        } onCancel: {
+            // Forcefully close down the server channel
+            self.close(serverChannel: serverChannel)
         }
     }
 
-    private func _serve(
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+    /// Creates and returns a server channel based on the configured transport security.
+    private func makeServerChannel() async throws -> ServerChannel {
         let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
         switch self.configuration.backpressureStrategy.backing {
         case .watermark(let low, let high):
@@ -176,10 +182,11 @@ public struct NIOHTTPServer: HTTPServer {
 
         switch self.configuration.transportSecurity.backing {
         case .plaintext:
-            try await self.serveInsecureHTTP1_1(
-                bindTarget: self.configuration.bindTarget,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration
+            return .plaintextHTTP1(
+                try await self.setupHTTP1_1ServerChannel(
+                    bindTarget: self.configuration.bindTarget,
+                    asyncChannelConfiguration: asyncChannelConfiguration
+                )
             )
 
         case .tls(let certificateChain, let privateKey):
@@ -192,12 +199,14 @@ public struct NIOHTTPServer: HTTPServer {
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await self.serveSecureUpgrade(
-                bindTarget: self.configuration.bindTarget,
-                tlsConfiguration: tlsConfiguration,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: self.configuration.http2
+            return .secureUpgrade(
+                try await self.setupSecureUpgradeServerChannel(
+                    bindTarget: self.configuration.bindTarget,
+                    tlsConfiguration: tlsConfiguration,
+                    asyncChannelConfiguration: asyncChannelConfiguration,
+                    http2Configuration: self.configuration.http2,
+                    verificationCallback: nil
+                )
             )
 
         case .reloadingTLS(let certificateReloader):
@@ -206,12 +215,14 @@ public struct NIOHTTPServer: HTTPServer {
             )
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await self.serveSecureUpgrade(
-                bindTarget: self.configuration.bindTarget,
-                tlsConfiguration: tlsConfiguration,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: self.configuration.http2
+            return .secureUpgrade(
+                try await self.setupSecureUpgradeServerChannel(
+                    bindTarget: self.configuration.bindTarget,
+                    tlsConfiguration: tlsConfiguration,
+                    asyncChannelConfiguration: asyncChannelConfiguration,
+                    http2Configuration: self.configuration.http2,
+                    verificationCallback: nil
+                )
             )
 
         case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationMode, let verificationCallback):
@@ -227,13 +238,14 @@ public struct NIOHTTPServer: HTTPServer {
             tlsConfiguration.certificateVerification = .init(verificationMode)
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await self.serveSecureUpgrade(
-                bindTarget: self.configuration.bindTarget,
-                tlsConfiguration: tlsConfiguration,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: self.configuration.http2,
-                verificationCallback: verificationCallback
+            return .secureUpgrade(
+                try await self.setupSecureUpgradeServerChannel(
+                    bindTarget: self.configuration.bindTarget,
+                    tlsConfiguration: tlsConfiguration,
+                    asyncChannelConfiguration: asyncChannelConfiguration,
+                    http2Configuration: self.configuration.http2,
+                    verificationCallback: verificationCallback
+                )
             )
 
         case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationMode, let verificationCallback):
@@ -246,14 +258,28 @@ public struct NIOHTTPServer: HTTPServer {
             tlsConfiguration.certificateVerification = .init(verificationMode)
             tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
 
-            try await self.serveSecureUpgrade(
-                bindTarget: self.configuration.bindTarget,
-                tlsConfiguration: tlsConfiguration,
-                handler: handler,
-                asyncChannelConfiguration: asyncChannelConfiguration,
-                http2Configuration: self.configuration.http2,
-                verificationCallback: verificationCallback
+            return .secureUpgrade(
+                try await self.setupSecureUpgradeServerChannel(
+                    bindTarget: self.configuration.bindTarget,
+                    tlsConfiguration: tlsConfiguration,
+                    asyncChannelConfiguration: asyncChannelConfiguration,
+                    http2Configuration: self.configuration.http2,
+                    verificationCallback: verificationCallback
+                )
             )
+        }
+    }
+
+    private func _serve(
+        serverChannel: ServerChannel,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws {
+        switch serverChannel {
+        case .plaintextHTTP1(let http1Channel):
+            try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
+
+        case .secureUpgrade(let secureUpgradeChannel):
+            try await self.serveSecureUpgrade(serverChannel: secureUpgradeChannel, handler: handler)
         }
     }
 
@@ -337,15 +363,34 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
-    func close() {
+    /// Fail the listening address promise if the server is shutting down before it began listening.
+    private func finishListeningAddressPromise() {
         switch self.listeningAddressState.withLockedValue({ $0.close() }) {
         case .failPromise(let promise, let error):
             promise.fail(error)
+
         case .doNothing:
             ()
         }
+    }
 
+    /// Initiates a graceful shutdown, allowing existing connections to drain before closing.
+    private func beginGracefulShutdown() {
+        self.finishListeningAddressPromise()
         self.serverQuiescingHelper.initiateShutdown(promise: nil)
+    }
+
+    /// Forcefully closes the server channel without waiting for existing connections to drain.
+    private func close(serverChannel: ServerChannel) {
+        self.finishListeningAddressPromise()
+
+        switch serverChannel {
+        case .plaintextHTTP1(let http1Channel):
+            http1Channel.channel.close(promise: nil)
+
+        case .secureUpgrade(let secureUpgradeChannel):
+            secureUpgradeChannel.channel.close(promise: nil)
+        }
     }
 }
 

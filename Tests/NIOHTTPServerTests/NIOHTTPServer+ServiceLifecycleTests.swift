@@ -132,7 +132,7 @@ struct NIOHTTPServiceLifecycleTests {
                     certificateChain: serverChain.chain,
                     privateKey: serverChain.privateKey
                 ),
-                http2: .init(gracefulShutdown: .init(maxGraceTime: .milliseconds(500)))
+                http2: .init(gracefulShutdown: .init(maximumGracefulShutdownDuration: .milliseconds(500)))
             )
         )
 
