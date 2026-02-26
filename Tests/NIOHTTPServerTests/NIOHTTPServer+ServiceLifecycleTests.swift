@@ -240,7 +240,7 @@ struct NIOHTTPServiceLifecycleTests {
                         .connectToTestSecureUpgradeHTTPServer(
                             at: serverAddress,
                             trustRoots: [serverChain.ca],
-                            applicationProtocol: "h2"
+                            applicationProtocol: HTTPVersion.http2.alpnIdentifier
                         )
 
                     switch client {
