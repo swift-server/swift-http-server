@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOHTTP1
 import NIOHTTPServer
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
@@ -21,10 +22,23 @@ import NIOPosix
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension Channel {
     /// Adds HTTP/1.1 client handlers to the pipeline.
-    func configureTestHTTP1ClientPipeline() -> EventLoopFuture<NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>> {
+    func configureTestHTTP1ClientPipeline(
+        responseLeftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes,
+        informationalResponseStrategy: NIOInformationalResponseStrategy = .forward
+    ) -> EventLoopFuture<NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>> {
         self.eventLoop.makeCompletedFuture {
-            try self.pipeline.syncOperations.addHTTPClientHandlers()
-            try self.pipeline.syncOperations.addHandler(HTTP1ToHTTPClientCodec())
+            let handlers: [ChannelHandler] = [
+                HTTPRequestEncoder(configuration: .init()),
+                ByteToMessageHandler(
+                    HTTPResponseDecoder(
+                        leftOverBytesStrategy: responseLeftOverBytesStrategy,
+                        informationalResponseStrategy: informationalResponseStrategy
+                    )
+                ),
+                NIOHTTPRequestHeadersValidator(),
+                HTTP1ToHTTPClientCodec(),
+            ]
+            try self.pipeline.syncOperations.addHandlers(handlers)
 
             return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
                 wrappingChannelSynchronously: self,
