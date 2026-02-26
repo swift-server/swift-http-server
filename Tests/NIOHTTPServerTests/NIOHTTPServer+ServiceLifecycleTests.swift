@@ -193,7 +193,6 @@ struct NIOHTTPServiceLifecycleTests {
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testActiveHTTP2ConnectionIsShutDownAfterGraceTimeout() async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
-        let clientChain = try TestCA.makeSelfSignedChain()
 
         let server = NIOHTTPServer(
             logger: self.serverLogger,
