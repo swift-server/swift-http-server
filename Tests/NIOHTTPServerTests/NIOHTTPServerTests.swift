@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift HTTP Server open source project
 //
-// Copyright (c) 2025 Apple Inc. and the Swift HTTP Server project authors
+// Copyright (c) 2026 Apple Inc. and the Swift HTTP Server project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -23,39 +23,15 @@ import X509
 
 @testable import NIOHTTPServer
 
-#if canImport(Dispatch)
-import Dispatch
-#endif
-
 @Suite
 struct NIOHTTPServerTests {
-    static let reqHead = HTTPRequestPart.head(.init(method: .post, scheme: "http", authority: "", path: "/"))
-    static let bodyData = ByteBuffer(repeating: 5, count: 100)
-    static let reqBody = HTTPRequestPart.body(Self.bodyData)
-    static let trailer: HTTPFields = [.trailer: "test_trailer"]
-    static let reqEnd = HTTPRequestPart.end(trailer)
-
-    static func clientResponseHandler(
-        _ response: HTTPResponsePart,
-        expectedStatus: HTTPResponse.Status,
-        expectedBody: ByteBuffer,
-        expectedTrailers: HTTPFields? = nil
-    ) async throws {
-        switch response {
-        case .head(let head):
-            try #require(head.status == expectedStatus)
-        case .body(let body):
-            try #require(body == expectedBody)
-        case .end(let trailers):
-            try #require(trailers == expectedTrailers)
-        }
-    }
+    let serverLogger = Logger(label: "NIOHTTPServerTests")
 
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 1234))
         )
 
@@ -79,15 +55,14 @@ struct NIOHTTPServerTests {
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
         )
 
         try await Self.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
-                #expect(request.method == .post)
-                #expect(request.path == "/")
+                #expect(request == Self.makeRequest(method: .post, scheme: "http", for: .http1_1))
 
                 var buffer = ByteBuffer()
                 let (_, finalElement) = try await reader.consumeAndConclude { bodyReader in
@@ -102,7 +77,7 @@ struct NIOHTTPServerTests {
                 let responseBodySender = try await responseWriter.send(.init(status: .ok))
                 try await responseBodySender.produceAndConclude { responseBodyWriter in
                     var responseBodyWriter = responseBodyWriter
-                    try await responseBodyWriter.write([1, 2].span)
+                    try await responseBodyWriter.write(Self.bodyData.readableBytesUInt8Span)
                     return Self.trailer
                 }
             },
@@ -111,18 +86,16 @@ struct NIOHTTPServerTests {
                     .connectToTestHTTP1Server(at: serverAddress)
 
                 try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(Self.reqHead)
+                    try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
                     try await outbound.write(Self.reqBody)
                     try await outbound.write(Self.reqEnd)
 
-                    for try await response in inbound {
-                        try await Self.clientResponseHandler(
-                            response,
-                            expectedStatus: .ok,
-                            expectedBody: .init([1, 2]),
-                            expectedTrailers: Self.trailer
-                        )
-                    }
+                    try await Self.validateResponse(
+                        inbound,
+                        expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                        expectedBody: [Self.bodyData],
+                        expectedTrailers: Self.trailer
+                    )
                 }
             }
         )
@@ -131,15 +104,14 @@ struct NIOHTTPServerTests {
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test(
         "mTLS request-response with custom verification callback returning peer certificates",
-        .serialized,
-        arguments: ["http/1.1", "h2"]
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
     )
-    func testMTLS(applicationProtocol: String) async throws {
+    func testMTLS(httpVersion: HTTPVersion) async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
         let clientChain = try TestCA.makeSelfSignedChain()
 
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 transportSecurity: .mTLS(
@@ -154,84 +126,172 @@ struct NIOHTTPServerTests {
             )
         )
 
-        try await Self.withServer(
-            server: server,
-            serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
-                #expect(request.method == .post)
-                #expect(request.path == "/")
+        try await confirmation { responseReceived in
+            try await Self.withServer(
+                server: server,
+                serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
+                    #expect(request == Self.makeRequest(method: .post, for: httpVersion))
 
-                do {
                     let peerChain = try #require(try await NIOHTTPServer.connectionContext.peerCertificateChain)
                     #expect(Array(peerChain) == [clientChain.leaf])
-                } catch {
-                    Issue.record("Could not obtain the peer's certificate chain: \(error)")
-                }
 
-                let (buffer, finalElement) = try await reader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    var buffer = ByteBuffer()
-                    _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                        buffer.writeBytes(body.bytes)
+                    let (buffer, finalElement) = try await reader.consumeAndConclude { bodyReader in
+                        var bodyReader = bodyReader
+                        var buffer = ByteBuffer()
+                        _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
+                            buffer.writeBytes(body.bytes)
+                        }
+                        return buffer
                     }
-                    return buffer
-                }
-                #expect(buffer == Self.bodyData)
-                #expect(finalElement == Self.trailer)
+                    #expect(buffer == Self.bodyData)
+                    #expect(finalElement == Self.trailer)
 
-                let sender = try await responseWriter.send(.init(status: .ok))
-                try await sender.produceAndConclude { bodyWriter in
-                    var bodyWriter = bodyWriter
-                    try await bodyWriter.write([1, 2].span)
-                    return Self.trailer
-                }
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestSecureUpgradeHTTPServerOverMTLS(
-                        at: serverAddress,
-                        clientChain: clientChain,
-                        trustRoots: [serverChain.ca],
-                        applicationProtocol: applicationProtocol
-                    )
-
-                let clientChannel: NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
-                switch client {
-                case .http1(let http1ClientChannel):
-                    guard applicationProtocol == "http/1.1" else {
-                        Issue.record("Unexpectedly negotiated a HTTP/1.1 connection")
-                        return
+                    let sender = try await responseWriter.send(.init(status: .ok))
+                    try await sender.produceAndConclude { bodyWriter in
+                        var bodyWriter = bodyWriter
+                        try await bodyWriter.write(Self.bodyData.readableBytesUInt8Span)
+                        return Self.trailer
                     }
-                    clientChannel = http1ClientChannel
+                },
+                body: { serverAddress in
+                    let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestSecureUpgradeHTTPServerOverMTLS(
+                            at: serverAddress,
+                            clientChain: clientChain,
+                            trustRoots: [serverChain.ca],
+                            applicationProtocol: httpVersion.alpnIdentifier
+                        )
+                    let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
 
-                case .http2(let streamManager):
-                    guard applicationProtocol == "h2" else {
-                        Issue.record("Unexpectedly negotiated a HTTP/2 connection")
-                        return
-                    }
-                    clientChannel = try await streamManager.openStream()
-                }
+                    try await client.executeThenClose { inbound, outbound in
+                        try await outbound.write(.head(.init(method: .post, scheme: "https", authority: "", path: "/")))
+                        try await outbound.write(Self.reqBody)
+                        try await outbound.write(Self.reqEnd)
 
-                try await clientChannel.executeThenClose { inbound, outbound in
-                    try await outbound.write(Self.reqHead)
-                    try await outbound.write(Self.reqBody)
-                    try await outbound.write(Self.reqEnd)
-
-                    for try await response in inbound {
-                        try await Self.clientResponseHandler(
-                            response,
-                            expectedStatus: .ok,
-                            expectedBody: .init([1, 2]),
+                        try await Self.validateResponse(
+                            inbound,
+                            expectedHead: [Self.responseHead(status: .ok, for: httpVersion)],
+                            expectedBody: [Self.bodyData],
                             expectedTrailers: Self.trailer
                         )
+
+                        responseReceived()
                     }
                 }
-            }
-        )
+            )
+        }
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServerTests {
+    static let bodyData = ByteBuffer(repeating: 5, count: 100)
+    static let reqBody = HTTPRequestPart.body(Self.bodyData)
+
+    static let trailer: HTTPFields = [.trailer: "test_trailer"]
+    static let reqEnd = HTTPRequestPart.end(trailer)
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    func makeSecureUpgradeServer() throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
+        let serverChain = try TestCA.makeSelfSignedChain()
+
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                transportSecurity: .tls(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+            )
+        )
+
+        return (server, serverChain)
+    }
+
+    /// Reads from `responseStream` and asserts each part matches the expected head, body, and trailers in order.
+    static func validateResponse(
+        _ responseStream: NIOAsyncChannelInboundStream<HTTPResponsePart>,
+        expectedHead: [HTTPResponse],
+        expectedBody: [ByteBuffer],
+        expectedTrailers: HTTPFields? = nil,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+        var responseIterator = responseStream.makeAsyncIterator()
+
+        for expectedHeadPart in expectedHead {
+            let headResponsePart = try await responseIterator.next()
+            #expect(headResponsePart == .head(expectedHeadPart), sourceLocation: sourceLocation)
+        }
+
+        for expectedBodyBuffer in expectedBody {
+            let bodyResponsePart = try await responseIterator.next()
+            #expect(bodyResponsePart == .body(expectedBodyBuffer), sourceLocation: sourceLocation)
+        }
+
+        let endResponsePart = try await responseIterator.next()
+        #expect(endResponsePart == .end(expectedTrailers), sourceLocation: sourceLocation)
+
+        #expect(
+            try await responseIterator.next() == nil,
+            "Received another response part when the response stream should have finished.",
+            sourceLocation: sourceLocation
+        )
+    }
+
+    /// Unwraps a negotiated channel, asserting it matches the expected `httpVersion`. For HTTP/2, opens and returns a
+    /// new stream channel.
+    static func unwrapNegotiatedChannel(
+        _ negotiatedChannel: NegotiatedClientConnection,
+        _ httpVersion: HTTPVersion,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
+        switch negotiatedChannel {
+        case .http1(let http1Channel):
+            #expect(
+                httpVersion == .http1_1,
+                "Unexpectedly established an HTTP/1 connection.",
+                sourceLocation: sourceLocation
+            )
+            return http1Channel
+
+        case .http2(let http2StreamManager):
+            #expect(
+                httpVersion == .http2,
+                "Unexpectedly established an HTTP/2 connection.",
+                sourceLocation: sourceLocation
+            )
+            return try await http2StreamManager.openStream()
+        }
+    }
+
+    /// Returns the body encoding header fields required for the given HTTP version.
+    static func makeBodyEncodingHeaders(for httpVersion: HTTPVersion) -> HTTPFields {
+        switch httpVersion {
+        case .http1_1:
+            [.transferEncoding: "chunked"]
+        case .http2:
+            [:]
+        }
+    }
+
+    /// Creates an ``HTTPRequest`` with the appropriate headers for the given `httpVersion`.
+    static func makeRequest(
+        method: HTTPRequest.Method,
+        scheme: String = "https",
+        authority: String = "",
+        path: String = "/",
+        for httpVersion: HTTPVersion
+    ) -> HTTPRequest {
+        let headers = self.makeBodyEncodingHeaders(for: httpVersion)
+        return HTTPRequest(method: method, scheme: scheme, authority: authority, path: path, headerFields: headers)
+    }
+
+    /// Creates an ``HTTPResponse`` with the given status and the appropriate headers for the given `httpVersion`.
+    static func responseHead(status: HTTPResponse.Status, for httpVersion: HTTPVersion) -> HTTPResponse {
+        let headers = self.makeBodyEncodingHeaders(for: httpVersion)
+        return HTTPResponse(status: status, headerFields: headers)
+    }
+
+    /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with the listening address,
+    /// then cancels the server task.
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
