@@ -65,7 +65,7 @@ let package = Package(
                 .product(name: "Tracing", package: "swift-distributed-tracing"),
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "HTTPServer", package: "swift-http-api-proposal"),
+                .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
                 "NIOHTTPServer",
             ],
             swiftSettings: extraSettings
