@@ -75,11 +75,6 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
                 byteBuffer.writeInteger(buffer[index])
             }
 
-            //            buffer.span.withUnsafeBufferPointer { buffer in
-            //                <#code#>
-            //            }
-            //            var byteBuffer = ByteBuffer()
-
             do {
                 try await self.writer.write(.body(byteBuffer))
             } catch {
@@ -87,18 +82,6 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
             }
 
             return result
-
-            //            let pointer = buffer.withUnsafeMutableBufferPointer { $0 }
-            //            var span = OutputSpan<WriteElement>(
-            //                buffer: pointer,
-            //                initializedCount: 0
-            //            )
-            //            do {
-            //                let bodyResult = try await body(&span)
-            //
-            //            } catch {
-            //                throw .second(error)
-            //            }
         }
     }
 
