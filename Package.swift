@@ -93,7 +93,7 @@ let package = Package(
                     condition: .when(traits: ["Configuration"])
                 ),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
-                .product(name: "HTTPServer", package: "swift-http-api-proposal"),
+                .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings
         ),
