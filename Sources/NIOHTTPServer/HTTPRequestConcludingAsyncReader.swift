@@ -197,7 +197,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     /// The type of errors that can occur during reading operations.
     public typealias Failure = any Error
 
-    private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    private var iterator: Disconnected<NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?>
 
     internal var state: ReaderState
 
@@ -208,7 +208,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         readerState: ReaderState
     ) {
-        self.iterator = iterator
+        self.iterator = Disconnected(value: iterator)
         self.state = readerState
     }
 
@@ -240,7 +240,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
     public consuming func consumeAndConclude<Return, Failure: Error>(
         body: nonisolated(nonsending) (consuming sending RequestBodyAsyncReader) async throws(Failure) -> Return
     ) async throws(Failure) -> (Return, HTTPFields?) {
-        if let iterator = self.iterator.sendingTake() {
+        if let iterator = self.iterator.take() {
             let partsReader = RequestBodyAsyncReader(iterator: iterator, readerState: self.state)
             let result = try await body(partsReader)
             let trailers = self.state.wrapped.withLock { $0.trailers }
@@ -256,11 +256,3 @@ extension HTTPRequestConcludingAsyncReader: Sendable {}
 
 @available(*, unavailable)
 extension HTTPRequestConcludingAsyncReader.RequestBodyAsyncReader: Sendable {}
-
-extension Optional {
-    mutating func sendingTake() -> sending Self {
-        let result = consume self
-        self = nil
-        return result
-    }
-}
