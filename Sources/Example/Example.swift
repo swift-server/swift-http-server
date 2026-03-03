@@ -15,7 +15,7 @@
 import AsyncStreaming
 import Crypto
 import Foundation
-import HTTPServer
+import HTTPAPIs
 import HTTPTypes
 import Instrumentation
 import Logging

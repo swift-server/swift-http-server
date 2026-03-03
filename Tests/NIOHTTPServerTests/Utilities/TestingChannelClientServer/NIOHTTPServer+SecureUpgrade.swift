@@ -16,7 +16,7 @@ import NIOCore
 import NIOEmbedded
 import NIOHTTPTypes
 
-@testable import HTTPServer
+@testable import HTTPAPIs
 @testable import NIOHTTPServer
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)

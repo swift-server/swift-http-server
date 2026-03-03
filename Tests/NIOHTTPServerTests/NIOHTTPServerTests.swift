@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import AsyncStreaming
-import HTTPServer
+import HTTPAPIs
 import HTTPTypes
 import Logging
 import NIOCore

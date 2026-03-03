@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPServer
+import HTTPAPIs
 import NIOCore
 import NIOEmbedded
 import NIOExtras

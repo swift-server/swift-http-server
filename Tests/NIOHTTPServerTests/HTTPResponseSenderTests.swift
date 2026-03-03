@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPServer
+import HTTPAPIs
 import HTTPTypes
 import NIOCore
 import NIOHTTPTypes

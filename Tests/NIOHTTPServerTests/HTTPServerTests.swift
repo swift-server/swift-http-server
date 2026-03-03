@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPServer
 import HTTPTypes
 import Logging
 import NIOHTTPServer
