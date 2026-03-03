@@ -21,7 +21,6 @@ import NIOPosix
 import ServiceLifecycle
 import ServiceLifecycleTestKit
 import Testing
-import X509
 
 @testable import NIOHTTPServer
 

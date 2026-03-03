@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
 import Crypto
 import Foundation
 import HTTPAPIs

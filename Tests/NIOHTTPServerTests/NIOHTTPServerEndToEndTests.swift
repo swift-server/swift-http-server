@@ -14,15 +14,8 @@
 
 import HTTPAPIs
 import Logging
-import NIOCore
-import NIOEmbedded
-import NIOHTTP1
-import NIOHTTP2
-import NIOHTTPTypes
-import NIOHTTPTypesHTTP2
 import NIOSSL
 import Testing
-import X509
 
 @testable import NIOHTTPServer
 

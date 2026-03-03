@@ -14,7 +14,6 @@
 
 import HTTPAPIs
 import NIOCore
-import NIOEmbedded
 import NIOExtras
 import NIOHTTP1
 import NIOHTTPTypes

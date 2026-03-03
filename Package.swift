@@ -41,10 +41,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-api-proposal.git", branch: "main"),
-        .package(
-            url: "https://github.com/FranzBusch/swift-collections.git",
-            branch: "fb-async"
-        ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.16.0"),
@@ -60,7 +56,6 @@ let package = Package(
         .executableTarget(
             name: "Example",
             dependencies: [
-                .product(name: "DequeModule", package: "swift-collections"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Tracing", package: "swift-distributed-tracing"),
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
@@ -74,8 +69,6 @@ let package = Package(
             name: "NIOHTTPServer",
             dependencies: [
                 .product(name: "AsyncStreaming", package: "swift-http-api-proposal"),
-                .product(name: "DequeModule", package: "swift-collections"),
-                .product(name: "BasicContainers", package: "swift-collections"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
