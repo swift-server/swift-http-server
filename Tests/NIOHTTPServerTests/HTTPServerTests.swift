@@ -24,7 +24,11 @@ struct HTTPServerTests {
     func testConsumingServe() async throws {
         let server = NIOHTTPServer(
             logger: Logger(label: "Test"),
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
 
         try await withThrowingTaskGroup { group in

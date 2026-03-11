@@ -51,10 +51,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
-            let error = #expect(throws: Error.self) {
+            let configError = try #require(throws: Error.self) {
                 try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
             }
-            let configError = try #require(error)
 
             #expect("Missing required config value for key: host." == "\(configError)")
         }
@@ -66,10 +65,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
-            let error = #expect(throws: Error.self) {
+            let configError = try #require(throws: Error.self) {
                 try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
             }
-            let configError = try #require(error)
 
             #expect("Missing required config value for key: port." == "\(configError)")
         }
@@ -124,6 +122,57 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 #expect(low == 3)
                 #expect(high == NIOHTTPServerConfiguration.BackPressureStrategy.defaultWatermarkHigh)
             }
+        }
+    }
+
+    @Suite("SupportedHTTPVersions")
+    struct SupportedHTTPVersionsTests {
+        @Test("Empty supported version set is invalid")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testEmptySupportedHTTPVersionSetFails() async {
+            await #expect(processExitsWith: .failure) {
+                let provider = InMemoryProvider(values: [
+                    "supportedHTTPVersions": .init(.stringArray([]), isSecret: false)
+                ])
+
+                let config = ConfigReader(provider: provider)
+                let snapshot = config.snapshot()
+                _ = try Set<NIOHTTPServerConfiguration.HTTPVersion>(config: snapshot)
+            }
+        }
+
+        @Test("Unrecognized versions are ignored")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testUnrecognizedHTTPVersionIgnored() throws {
+            let provider = InMemoryProvider(values: [
+                "supportedHTTPVersions": .init(.stringArray(["unrecognized_version"]), isSecret: false)
+            ])
+
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            let configError = try #require(throws: Error.self) {
+                _ = try Set<NIOHTTPServerConfiguration.HTTPVersion>(config: snapshot)
+            }
+
+            #expect(
+                "Config value for key 'supportedHTTPVersions' failed to cast to type HTTPVersionKind."
+                    == "\(configError)"
+            )
+        }
+
+        @Test("Default HTTP/2 configuration used when not specified")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testDefaultHTTP2ConfigurationUsed() throws {
+            let provider = InMemoryProvider(values: [
+                "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false)
+            ])
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            let supportedVersions = try Set<NIOHTTPServerConfiguration.HTTPVersion>(config: snapshot)
+            #expect(supportedVersions.contains(.http1_1))
+            #expect(supportedVersions.http2ConfigIfSupported == .defaults)
         }
     }
 
@@ -189,10 +238,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
-            let error = #expect(throws: Error.self) {
+            let configError = try #require(throws: Error.self) {
                 try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
             }
-            let configError = try #require(error)
 
             #expect("Config value for key 'security' failed to cast to type TransportSecurityKind." == "\(configError)")
         }
@@ -239,13 +287,18 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
 
-                switch transportSecurity.backing {
-                case .tls(let certificateChain, let privateKey):
-                    #expect(certificateChain == chain.chain)
-                    #expect(privateKey == chain.privateKey)
-                default:
-                    Issue.record("Expected TLS backing, got different type")
+                guard case .tls(let credentials) = transportSecurity.backing else {
+                    Issue.record("Expected TLS transport security, got \(transportSecurity.backing) instead.")
+                    return
                 }
+
+                guard case .inMemory(let certificateChain, let privateKey) = credentials.backing else {
+                    Issue.record("Expected in-memory TLS credentials, got \(credentials.backing) instead.")
+                    return
+                }
+
+                #expect(certificateChain == chain.chain)
+                #expect(privateKey == chain.privateKey)
             }
 
             @Test("Init fails with missing certificate")
@@ -263,10 +316,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 let config = ConfigReader(provider: provider)
                 let snapshot = config.snapshot()
 
-                let error = #expect(throws: Error.self) {
+                let configError = try #require(throws: Error.self) {
                     try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
                 }
-                let configError = try #require(error)
 
                 #expect("Missing required config value for key: certificateChainPEMString." == "\(configError)")
             }
@@ -286,10 +338,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 let config = ConfigReader(provider: provider)
                 let snapshot = config.snapshot()
 
-                let error = #expect(throws: Error.self) {
+                let configError = try #require(throws: Error.self) {
                     try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
                 }
-                let configError = try #require(error)
 
                 #expect("Missing required config value for key: privateKeyPEMString." == "\(configError)")
             }
@@ -313,8 +364,13 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
 
-                guard case .reloadingTLS = transportSecurity.backing else {
-                    Issue.record("Expected reloadingTLS backing, got \(transportSecurity.backing)")
+                guard case .tls(let credentials) = transportSecurity.backing else {
+                    Issue.record("Expected TLS transport security, got \(transportSecurity.backing) instead.")
+                    return
+                }
+
+                guard case .reloading = credentials.backing else {
+                    Issue.record("Expected reloading TLS credentials, got \(credentials.backing) instead.")
                     return
                 }
             }
@@ -326,18 +382,15 @@ struct NIOHTTPServerSwiftConfigurationTests {
             @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
             func testValidConfigWithCustomVerificationCallback() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
-                let clientChain = try TestCA.makeSelfSignedChain()
 
                 let certsPEM = try serverChain.chainPEMString
                 let keyPEM = try serverChain.privateKey.serializeAsPEM().pemString
-                let trustRootPEM = try clientChain.ca.serializeAsPEM().pemString
 
                 let provider = InMemoryProvider(
                     values: [
                         "security": "mTLS",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
-                        "trustRoots": .init(.stringArray([trustRootPEM]), isSecret: false),
                         "certificateVerificationMode": "noHostnameVerification",
                     ]
                 )
@@ -352,16 +405,27 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     }
                 )
 
-                switch transportSecurity.backing {
-                case .mTLS(let certificateChain, let privateKey, let trustRoots, let verification, let callback):
-                    #expect(certificateChain == [serverChain.leaf, serverChain.ca])
-                    #expect(privateKey == serverChain.privateKey)
-                    #expect(trustRoots == [clientChain.ca])
-                    #expect(verification.mode == .noHostnameVerification)
-                    #expect(callback != nil)
-                default:
-                    Issue.record("Expected mTLS backing, got \(transportSecurity.backing)")
+                guard case .mTLS(let tlsCredentials, let mTLSTrustConfiguration) = transportSecurity.backing else {
+                    Issue.record("Expected mTLS transport security, got \(transportSecurity.backing) instead.")
+                    return
                 }
+
+                guard case .inMemory(let certificateChain, let privateKey) = tlsCredentials.backing else {
+                    Issue.record("Expected in-memory TLS credentials, got \(tlsCredentials.backing) instead.")
+                    return
+                }
+
+                #expect(certificateChain == [serverChain.leaf, serverChain.ca])
+                #expect(privateKey == serverChain.privateKey)
+
+                guard case .customCertificateVerificationCallback = mTLSTrustConfiguration.backing else {
+                    Issue.record(
+                        "Expected a custom verification callback, got \(mTLSTrustConfiguration.backing) instead."
+                    )
+                    return
+                }
+
+                #expect(mTLSTrustConfiguration.certificateVerification.mode == .noHostnameVerification)
             }
 
             @Test("Optional verification mode")
@@ -384,14 +448,24 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
 
-                switch transportSecurity.backing {
-                case .mTLS(let certificateChain, let privateKey, _, let verification, _):
-                    #expect(certificateChain == [serverChain.leaf, serverChain.ca])
-                    #expect(privateKey == serverChain.privateKey)
-                    #expect(verification.mode == .optionalVerification)
-                default:
-                    Issue.record("Expected mTLS backing, got \(transportSecurity.backing)")
+                guard case .mTLS(let tlsCredentials, let mTLSTrustConfiguration) = transportSecurity.backing else {
+                    Issue.record("Expected mTLS transport security, got \(transportSecurity.backing) instead.")
+                    return
                 }
+
+                guard case .inMemory(let certificateChain, let privateKey) = tlsCredentials.backing else {
+                    Issue.record("Expected in-memory TLS credentials, got \(tlsCredentials.backing) instead.")
+                    return
+                }
+
+                #expect(certificateChain == [serverChain.leaf, serverChain.ca])
+                #expect(privateKey == serverChain.privateKey)
+
+                guard case .systemDefaults = mTLSTrustConfiguration.backing else {
+                    Issue.record("Expected system default trust roots, got \(mTLSTrustConfiguration.backing) instead.")
+                    return
+                }
+                #expect(mTLSTrustConfiguration.certificateVerification.mode == .optionalVerification)
             }
 
             @Test("Invalid verification mode")
@@ -413,10 +487,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 let config = ConfigReader(provider: provider)
                 let snapshot = config.snapshot()
 
-                let error = #expect(throws: Error.self) {
+                let configError = try #require(throws: Error.self) {
                     try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
                 }
-                let configError = try #require(error)
 
                 #expect(
                     "Config value for key 'certificateVerificationMode' failed to cast to type VerificationMode."
@@ -445,15 +518,24 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
 
-                switch transportSecurity.backing {
-                case .mTLS(_, _, let trustRoots, _, _):
-                    // trustRoots should be nil
-                    #expect(trustRoots == nil)
-                default:
-                    Issue.record("Expected mTLS backing, got \(transportSecurity.backing)")
+                guard case .mTLS(let tlsCredentials, let mTLSTrustConfiguration) = transportSecurity.backing else {
+                    Issue.record("Expected mTLS transport security, got \(transportSecurity.backing) instead.")
+                    return
+                }
+
+                guard case .inMemory(let certificateChain, let privateKey) = tlsCredentials.backing else {
+                    Issue.record("Expected in-memory TLS credentials, got \(tlsCredentials.backing) instead.")
+                    return
+                }
+
+                #expect(certificateChain == [serverChain.leaf, serverChain.ca])
+                #expect(privateKey == serverChain.privateKey)
+
+                guard case .systemDefaults = mTLSTrustConfiguration.backing else {
+                    Issue.record("Expected system default trust roots, got \(mTLSTrustConfiguration.backing) instead.")
+                    return
                 }
             }
-
         }
 
         @Suite
@@ -469,7 +551,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                         "security": "reloadingMTLS",
                         "certificateChainPEMPath": .init(.string("certs.pem"), isSecret: false),
                         "privateKeyPEMPath": .init(.string("key.pem"), isSecret: false),
-                        "trustRoots": .init(.stringArray([trustRootPEM]), isSecret: false),
+                        "trustRootsPEMString": .init(.string(trustRootPEM), isSecret: false),
                         "certificateVerificationMode": "noHostnameVerification",
                         "refreshInterval": 45,
                     ]
@@ -479,12 +561,107 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
 
-                switch transportSecurity.backing {
-                case .reloadingMTLS(_, let trustRoots, _, _):
-                    #expect(trustRoots == [chain.ca])
-                default:
-                    Issue.record("Expected reloadingMTLS backing, got different type")
+                guard case .mTLS(let tlsCredentials, let mTLSTrustConfiguration) = transportSecurity.backing else {
+                    Issue.record("Expected mTLS transport security, got \(transportSecurity.backing) instead.")
+                    return
                 }
+
+                guard case .reloading = tlsCredentials.backing else {
+                    Issue.record("Expected reloading TLS credentials, got \(tlsCredentials.backing) instead.")
+                    return
+                }
+
+                guard case .inMemory(let trustRoots) = mTLSTrustConfiguration.backing else {
+                    Issue.record("Expected in-memory trust roots, got \(mTLSTrustConfiguration.backing) instead.")
+                    return
+                }
+                #expect(trustRoots == [chain.ca])
+            }
+        }
+    }
+
+    @Suite("End-to-End")
+    struct EndToEndConfigurationTests {
+        @Test("Configure all possible values")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func fullConfiguration() throws {
+            let chain = try TestCA.makeSelfSignedChain()
+            let certsPEM = try chain.chainPEMString
+            let keyPEM = try chain.privateKey.serializeAsPEM().pemString
+
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTarget.host": "127.0.0.1",
+                    "bindTarget.port": 8000,
+                    "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
+                    "http2.maxFrameSize": 1,
+                    "http2.targetWindowSize": 2,
+                    "http2.maxConcurrentStreams": 3,
+                    "http2.maximumGracefulShutdownDuration": 4,
+                    "transportSecurity.security": .init(.string("mTLS"), isSecret: false),
+                    "transportSecurity.certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
+                    "transportSecurity.privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                    "transportSecurity.trustRootsPEMString": .init(.string(certsPEM), isSecret: false),
+                    "transportSecurity.certificateVerificationMode": "optionalVerification",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            let serverConfig = try NIOHTTPServerConfiguration(config: config)
+
+            guard case .hostAndPort(host: "127.0.0.1", port: 8000) = serverConfig.bindTarget.backing else {
+                Issue.record(
+                    "Expected bind target to be 127.0.0.1:8000, got \(serverConfig.bindTarget.backing) instead."
+                )
+                return
+            }
+
+            #expect(serverConfig.supportedHTTPVersions.contains(.http1_1))
+            #expect(
+                serverConfig.supportedHTTPVersions.http2ConfigIfSupported
+                    == .init(
+                        maxFrameSize: 1,
+                        targetWindowSize: 2,
+                        maxConcurrentStreams: 3,
+                        gracefulShutdown: .init(maximumGracefulShutdownDuration: .seconds(4))
+                    )
+            )
+
+            guard case .mTLS(let tlsCredentials, let trustConfig) = serverConfig.transportSecurity.backing else {
+                Issue.record("Expected mTLS transport security, got \(serverConfig.transportSecurity.backing) instead.")
+                return
+            }
+
+            guard case .inMemory(let certificateChain, let privateKey) = tlsCredentials.backing else {
+                Issue.record("Expected in-memory TLS credentials, got \(tlsCredentials.backing) instead.")
+                return
+            }
+
+            guard case .inMemory(let trustRoots) = trustConfig.backing else {
+                Issue.record("Expected in-memory trust roots, got \(trustConfig.backing) instead.")
+                return
+            }
+
+            #expect(trustRoots == chain.chain)
+            #expect(certificateChain == chain.chain)
+            #expect(privateKey == chain.privateKey)
+        }
+
+        @Test("Only HTTP/1.1 supported over plaintext")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func onlyHTTP1_1SupportedOverPlaintext() async {
+            await #expect(processExitsWith: .failure) {
+                let provider = InMemoryProvider(
+                    values: [
+                        "bindTarget.host": "127.0.0.1",
+                        "bindTarget.port": 8000,
+                        "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
+                        "transportSecurity.security": .init(.string("plaintext"), isSecret: false),
+                    ]
+                )
+                let config = ConfigReader(provider: provider)
+
+                _ = try NIOHTTPServerConfiguration(config: config)
             }
         }
     }

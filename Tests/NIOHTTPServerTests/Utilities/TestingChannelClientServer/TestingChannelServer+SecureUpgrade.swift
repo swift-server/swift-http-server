@@ -29,25 +29,24 @@ struct TestingChannelSecureUpgradeServer {
     let server: NIOHTTPServer
     let serverTestChannel: NIOAsyncTestingChannel
 
-    let tlsConfiguration: TLSConfiguration
-    let tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)?
-    let http2Configuration: NIOHTTPServerConfiguration.HTTP2
-
     /// Sets up the server with a testing channel and the provided request handler, starts the server, and provides
     /// `Self` to the `body` closure. Call `withConnection(clientTLSConfiguration:body:)` on the provided instance to
     /// simulate incoming connections.
     static func serve(
         logger: Logger,
-        tlsConfiguration: TLSConfiguration,
-        tlsVerificationCallback: (@Sendable ([Certificate]) async throws -> CertificateVerificationResult)? = nil,
-        http2Configuration: NIOHTTPServerConfiguration.HTTP2 = .init(),
+        transportSecurity: NIOHTTPServerConfiguration.TransportSecurity,
+        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
         handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
         body: (Self) async throws -> Void
     ) async throws {
         let server = NIOHTTPServer(
             logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000))
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000),
+                supportedHTTPVersions: supportedHTTPVersions,
+                transportSecurity: transportSecurity,
+            )
         )
 
         // Create a test channel. We will run the server on this channel.
@@ -60,15 +59,7 @@ struct TestingChannelSecureUpgradeServer {
             }
 
             // Execute the provided closure.
-            try await body(
-                Self(
-                    server: server,
-                    serverTestChannel: serverTestChannel,
-                    tlsConfiguration: tlsConfiguration,
-                    tlsVerificationCallback: tlsVerificationCallback,
-                    http2Configuration: http2Configuration
-                )
-            )
+            try await body(Self(server: server, serverTestChannel: serverTestChannel))
 
             group.cancelAll()
         }
@@ -83,14 +74,28 @@ struct TestingChannelSecureUpgradeServer {
         // Create a connection channel: we will write this to the server channel to simulate an incoming connection.
         let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
 
+        let tlsConfiguration: TLSConfiguration
+
+        switch self.server.configuration.transportSecurity.backing {
+        case .plaintext:
+            fatalError("Plaintext transport security is not supported for Secure Upgrade transport.")
+
+        case .tls(let credentials):
+            tlsConfiguration = try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
+
+        case .mTLS(let credentials, let trustConfiguration):
+            tlsConfiguration = try .makeServerConfiguration(
+                tlsCredentials: credentials,
+                mTLSConfiguration: trustConfiguration
+            )
+        }
+
         // Set up the required channel handlers on `serverTestConnectionChannel`
         let negotiatedServerConnectionFuture = try await serverTestConnectionChannel.eventLoop.flatSubmit {
             self.server.setupSecureUpgradeConnectionChildChannel(
                 channel: serverTestConnectionChannel,
-                tlsConfiguration: self.tlsConfiguration,
-                asyncChannelConfiguration: .init(),
-                http2Configuration: self.http2Configuration,
-                verificationCallback: self.tlsVerificationCallback
+                supportedHTTPVersions: self.server.configuration.supportedHTTPVersions,
+                tlsConfiguration: tlsConfiguration
             )
         }.get()
 

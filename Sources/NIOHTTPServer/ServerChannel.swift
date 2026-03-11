@@ -20,7 +20,7 @@ extension NIOHTTPServer {
     /// Abstracts over the two types of server channels ``NIOHTTPServer`` can create: plaintext HTTP/1.1 and Secure
     /// Upgrade.
     enum ServerChannel {
-        case plaintextHTTP1(NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>)
+        case plaintextHTTP1_1(NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>)
         case secureUpgrade(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>)
     }
 }

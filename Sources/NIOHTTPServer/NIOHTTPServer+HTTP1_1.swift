@@ -41,8 +41,7 @@ extension NIOHTTPServer {
     }
 
     func setupHTTP1_1ServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
+        bindTarget: NIOHTTPServerConfiguration.BindTarget
     ) async throws -> NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never> {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):
@@ -58,7 +57,10 @@ extension NIOHTTPServer {
                 .bind(host: host, port: port) { channel in
                     self.setupHTTP1_1ConnectionChildChannel(
                         channel: channel,
-                        asyncChannelConfiguration: asyncChannelConfiguration
+                        asyncChannelConfiguration: .init(
+                            backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                            isOutboundHalfClosureEnabled: true
+                        )
                     )
                 }
 

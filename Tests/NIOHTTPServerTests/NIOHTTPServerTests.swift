@@ -39,8 +39,12 @@ struct NIOHTTPServerTests {
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 1234))
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 1234),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
 
         try await Self.withServer(
@@ -63,8 +67,12 @@ struct NIOHTTPServerTests {
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
 
         try await Self.withServer(
@@ -122,11 +130,13 @@ struct NIOHTTPServerTests {
             logger: self.serverLogger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1, .http2(config: .init())],
                 transportSecurity: .mTLS(
-                    certificateChain: [serverChain.leaf],
-                    privateKey: serverChain.privateKey,
-                    trustRoots: [clientChain.ca],
-                    customCertificateVerificationCallback: { certificates in
+                    credentials: .inMemory(
+                        certificateChain: [serverChain.leaf],
+                        privateKey: serverChain.privateKey,
+                    ),
+                    trustConfiguration: .customCertificateVerificationCallback { certificates in
                         // Return the peer's certificate chain; this must then be accessible in the request handler
                         .certificateVerified(.init(.init(uncheckedCertificateChain: certificates)))
                     }
@@ -515,7 +525,10 @@ extension NIOHTTPServerTests {
             logger: self.serverLogger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                transportSecurity: .tls(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+                supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
+                transportSecurity: .tls(
+                    credentials: .inMemory(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+                )
             )
         )
 

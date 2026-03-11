@@ -73,20 +73,20 @@ struct NIOHTTPServerEndToEndTests {
     @Test("HTTP/2 negotiation")
     func testHTTP2Negotiation() async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
-        var serverTLSConfig = TLSConfiguration.makeServerConfiguration(
-            certificateChain: [try .init(serverChain.leaf)],
-            privateKey: try .init(serverChain.privateKey)
-        )
-        serverTLSConfig.applicationProtocols = ["h2", "http/1.1"]
-
         var clientTLSConfig = TLSConfiguration.makeClientConfiguration()
         clientTLSConfig.trustRoots = try .init(treatingNilAsSystemTrustRoots: [serverChain.ca])
         clientTLSConfig.certificateVerification = .noHostnameVerification
-        clientTLSConfig.applicationProtocols = ["h2"]
+        clientTLSConfig.applicationProtocols = ["http/1.1", "h2"]
 
         try await TestingChannelSecureUpgradeServer.serve(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
-            tlsConfiguration: serverTLSConfig,
+            transportSecurity: .tls(
+                credentials: .inMemory(
+                    certificateChain: serverChain.chain,
+                    privateKey: serverChain.privateKey
+                )
+            ),
+            supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 let sender = try await resSender.send(.init(status: .ok))
 

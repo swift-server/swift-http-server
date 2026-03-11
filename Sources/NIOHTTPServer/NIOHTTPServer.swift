@@ -85,7 +85,7 @@ public struct NIOHTTPServer: HTTPServer {
     public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
 
     let logger: Logger
-    private let configuration: NIOHTTPServerConfiguration
+    let configuration: NIOHTTPServerConfiguration
 
     let serverQuiescingHelper: ServerQuiescingHelper
 
@@ -171,100 +171,30 @@ public struct NIOHTTPServer: HTTPServer {
 
     /// Creates and returns a server channel based on the configured transport security.
     private func makeServerChannel() async throws -> ServerChannel {
-        let asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
-        switch self.configuration.backpressureStrategy.backing {
-        case .watermark(let low, let high):
-            asyncChannelConfiguration = .init(
-                backPressureStrategy: .init(lowWatermark: low, highWatermark: high),
-                isOutboundHalfClosureEnabled: true
-            )
-        }
-
         switch self.configuration.transportSecurity.backing {
         case .plaintext:
-            return .plaintextHTTP1(
-                try await self.setupHTTP1_1ServerChannel(
-                    bindTarget: self.configuration.bindTarget,
-                    asyncChannelConfiguration: asyncChannelConfiguration
-                )
+            return .plaintextHTTP1_1(
+                try await self.setupHTTP1_1ServerChannel(bindTarget: self.configuration.bindTarget)
             )
 
-        case .tls(let certificateChain, let privateKey):
-            let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
-            let privateKey = try NIOSSLPrivateKeySource(privateKey)
-
-            var tlsConfiguration: TLSConfiguration = .makeServerConfiguration(
-                certificateChain: certificateChain,
-                privateKey: privateKey
-            )
-            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
+        case .tls(let credentials):
             return .secureUpgrade(
                 try await self.setupSecureUpgradeServerChannel(
                     bindTarget: self.configuration.bindTarget,
-                    tlsConfiguration: tlsConfiguration,
-                    asyncChannelConfiguration: asyncChannelConfiguration,
-                    http2Configuration: self.configuration.http2,
-                    verificationCallback: nil
+                    supportedHTTPVersions: self.configuration.supportedHTTPVersions,
+                    tlsConfiguration: try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
                 )
             )
 
-        case .reloadingTLS(let certificateReloader):
-            var tlsConfiguration: TLSConfiguration = try .makeServerConfiguration(
-                certificateReloader: certificateReloader
-            )
-            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
+        case .mTLS(let credentials, let mTLSConfiguration):
             return .secureUpgrade(
                 try await self.setupSecureUpgradeServerChannel(
                     bindTarget: self.configuration.bindTarget,
-                    tlsConfiguration: tlsConfiguration,
-                    asyncChannelConfiguration: asyncChannelConfiguration,
-                    http2Configuration: self.configuration.http2,
-                    verificationCallback: nil
-                )
-            )
-
-        case .mTLS(let certificateChain, let privateKey, let trustRoots, let verificationMode, let verificationCallback):
-            let certificateChain = try certificateChain.map { try NIOSSLCertificateSource($0) }
-            let privateKey = try NIOSSLPrivateKeySource(privateKey)
-            let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
-
-            var tlsConfiguration: TLSConfiguration = .makeServerConfigurationWithMTLS(
-                certificateChain: certificateChain,
-                privateKey: privateKey,
-                trustRoots: nioTrustRoots
-            )
-            tlsConfiguration.certificateVerification = .init(verificationMode)
-            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
-            return .secureUpgrade(
-                try await self.setupSecureUpgradeServerChannel(
-                    bindTarget: self.configuration.bindTarget,
-                    tlsConfiguration: tlsConfiguration,
-                    asyncChannelConfiguration: asyncChannelConfiguration,
-                    http2Configuration: self.configuration.http2,
-                    verificationCallback: verificationCallback
-                )
-            )
-
-        case .reloadingMTLS(let certificateReloader, let trustRoots, let verificationMode, let verificationCallback):
-            let nioTrustRoots = try NIOSSLTrustRoots(treatingNilAsSystemTrustRoots: trustRoots)
-
-            var tlsConfiguration: TLSConfiguration = try .makeServerConfigurationWithMTLS(
-                certificateReloader: certificateReloader,
-                trustRoots: nioTrustRoots
-            )
-            tlsConfiguration.certificateVerification = .init(verificationMode)
-            tlsConfiguration.applicationProtocols = ["h2", "http/1.1"]
-
-            return .secureUpgrade(
-                try await self.setupSecureUpgradeServerChannel(
-                    bindTarget: self.configuration.bindTarget,
-                    tlsConfiguration: tlsConfiguration,
-                    asyncChannelConfiguration: asyncChannelConfiguration,
-                    http2Configuration: self.configuration.http2,
-                    verificationCallback: verificationCallback
+                    supportedHTTPVersions: self.configuration.supportedHTTPVersions,
+                    tlsConfiguration: try .makeServerConfiguration(
+                        tlsCredentials: credentials,
+                        mTLSConfiguration: mTLSConfiguration
+                    )
                 )
             )
         }
@@ -275,7 +205,7 @@ public struct NIOHTTPServer: HTTPServer {
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
         switch serverChannel {
-        case .plaintextHTTP1(let http1Channel):
+        case .plaintextHTTP1_1(let http1Channel):
             try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
 
         case .secureUpgrade(let secureUpgradeChannel):
@@ -385,7 +315,7 @@ public struct NIOHTTPServer: HTTPServer {
         self.finishListeningAddressPromise()
 
         switch serverChannel {
-        case .plaintextHTTP1(let http1Channel):
+        case .plaintextHTTP1_1(let http1Channel):
             http1Channel.channel.close(promise: nil)
 
         case .secureUpgrade(let secureUpgradeChannel):

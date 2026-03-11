@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import NIOCertificateReloading
 import NIOCore
 import NIOSSL
 public import X509
@@ -57,27 +56,10 @@ public struct NIOHTTPServerConfiguration: Sendable {
     public struct TransportSecurity: Sendable {
         enum Backing {
             case plaintext
-            case tls(
-                certificateChain: [Certificate],
-                privateKey: Certificate.PrivateKey
-            )
-            case reloadingTLS(certificateReloader: any CertificateReloader)
+            case tls(credentials: TLSCredentials)
             case mTLS(
-                certificateChain: [Certificate],
-                privateKey: Certificate.PrivateKey,
-                trustRoots: [Certificate]?,
-                certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-                customCertificateVerificationCallback: (
-                    @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-                )? = nil
-            )
-            case reloadingMTLS(
-                certificateReloader: any CertificateReloader,
-                trustRoots: [Certificate]?,
-                certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-                customCertificateVerificationCallback: (
-                    @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-                )? = nil
+                credentials: TLSCredentials,
+                trustConfiguration: MTLSTrustConfiguration
             )
         }
 
@@ -86,107 +68,55 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// Configures the server for plaintext HTTP without TLS encryption.
         public static let plaintext: Self = Self(backing: .plaintext)
 
-        /// Configures the server for TLS with the provided certificate chain and private key.
-        /// - Parameters:
-        ///   - certificateChain: The certificate chain to present during negotiation.
-        ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
-        public static func tls(
-            certificateChain: [Certificate],
-            privateKey: Certificate.PrivateKey
-        ) -> Self {
-            Self(
-                backing: .tls(
-                    certificateChain: certificateChain,
-                    privateKey: privateKey
-                )
-            )
+        /// Configures the server for TLS with the provided credentials.
+        ///
+        /// - Parameter credentials: The TLS credentials containing the certificate chain and private key
+        ///   to present during the TLS handshake.
+        public static func tls(credentials: TLSCredentials) -> Self {
+            Self(backing: .tls(credentials: credentials))
         }
 
-        /// Configures the server for TLS with automatic certificate reloading.
-        /// - Parameters:
-        ///   - certificateReloader: The certificate reloader instance.
-        public static func tls(certificateReloader: any CertificateReloader) throws -> Self {
-            Self(backing: .reloadingTLS(certificateReloader: certificateReloader))
-        }
-
-        /// Configures the server for mTLS with support for customizing client certificate verification logic.
+        /// Configures the server for mTLS with the provided credentials and trust configuration.
         ///
         /// - Parameters:
-        ///   - certificateChain: The certificate chain to present during negotiation.
-        ///   - privateKey: The private key corresponding to the leaf certificate in `certificateChain`.
-        ///   - trustRoots: The root certificates to trust when verifying client certificates.
-        ///   - certificateVerification: Configures the client certificate validation behaviour. Defaults to
-        ///      ``CertificateVerificationMode/noHostnameVerification``.
-        ///   - customCertificateVerificationCallback: If specified, this callback *overrides* the default NIOSSL client
-        ///     certificate verification logic. The callback receives the certificates presented by the peer. Within the
-        ///     callback, you must validate these certificates against your trust roots and derive a validated chain of
-        ///     trust per [RFC 4158](https://datatracker.ietf.org/doc/html/rfc4158). Return
-        ///     ``CertificateVerificationResult/certificateVerified(_:)`` from the callback if verification succeeds,
-        ///     optionally including the validated certificate chain you derived. Returning the validated certificate
-        ///     chain allows ``NIOHTTPServer`` to provide access to it in the request handler through
-        ///     ``NIOHTTPServer/ConnectionContext/peerCertificateChain``, accessed via the task-local
-        ///     ``NIOHTTPServer/connectionContext`` property. Otherwise, return
-        ///     ``CertificateVerificationResult/failed(_:)`` if verification fails.
-        ///
-        /// - Warning: If `customCertificateVerificationCallback` is set, it will **override** NIOSSL's default
-        ///   certificate verification logic.
+        ///   - credentials: The TLS credentials containing the certificate chain and private key
+        ///     to present during the TLS handshake.
+        ///   - trustConfiguration: The trust roots and certificate verification mode to use when
+        ///     validating client certificates.
         public static func mTLS(
-            certificateChain: [Certificate],
-            privateKey: Certificate.PrivateKey,
-            trustRoots: [Certificate]?,
-            certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-            customCertificateVerificationCallback: (
-                @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-            )? = nil
+            credentials: TLSCredentials,
+            trustConfiguration: MTLSTrustConfiguration
         ) -> Self {
             Self(
                 backing: .mTLS(
-                    certificateChain: certificateChain,
-                    privateKey: privateKey,
-                    trustRoots: trustRoots,
-                    certificateVerification: certificateVerification,
-                    customCertificateVerificationCallback: customCertificateVerificationCallback
+                    credentials: credentials,
+                    trustConfiguration: trustConfiguration
                 )
             )
         }
 
-        /// Configures the server for mTLS with automatic certificate reloading and support for customizing client
-        /// certificate verification logic.
+        /// The custom mTLS certificate verification callback, if one was configured.
         ///
-        /// - Parameters:
-        ///   - certificateReloader: The certificate reloader instance.
-        ///   - trustRoots: The root certificates to trust when verifying client certificates.
-        ///   - certificateVerification: Configures the client certificate validation behaviour. Defaults to
-        ///     ``CertificateVerification/noHostnameVerification``.
-        ///   - customCertificateVerificationCallback: If specified, this callback *overrides* the default NIOSSL client
-        ///     certificate verification logic. The callback receives the certificates presented by the peer. Within the
-        ///     callback, you must validate these certificates against your trust roots and derive a validated chain of
-        ///     trust per [RFC 4158](https://datatracker.ietf.org/doc/html/rfc4158). Return
-        ///     ``CertificateVerificationResult/certificateVerified(_:)`` from the callback if verification succeeds,
-        ///     optionally including the validated certificate chain you derived. Returning the validated certificate
-        ///     chain allows ``NIOHTTPServer`` to provide access to it in the request handler through
-        ///     ``NIOHTTPServer/ConnectionContext/peerCertificateChain``, accessed via the task-local
-        ///     ``NIOHTTPServer/connectionContext`` property. Otherwise, return
-        ///     ``CertificateVerificationResult/failed(_:)`` if verification fails.
-        ///
-        /// - Warning: If `customCertificateVerificationCallback` is set, it will **override** NIOSSL's default
-        ///   certificate verification logic.
-        public static func mTLS(
-            certificateReloader: any CertificateReloader,
-            trustRoots: [Certificate]?,
-            certificateVerification: CertificateVerificationMode = .noHostnameVerification,
-            customCertificateVerificationCallback: (
-                @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-            )? = nil
-        ) throws -> Self {
-            Self(
-                backing: .reloadingMTLS(
-                    certificateReloader: certificateReloader,
-                    trustRoots: trustRoots,
-                    certificateVerification: certificateVerification,
-                    customCertificateVerificationCallback: customCertificateVerificationCallback
-                )
-            )
+        /// Returns the callback when the transport security is configured for mTLS with a
+        /// ``MTLSTrustConfiguration/customCertificateVerificationCallback(_:certificateVerification:)``,
+        /// or `nil` otherwise.
+        var customVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
+        {
+            switch self.backing {
+            case .tls, .plaintext:
+                // A custom certificate verification callback is an mTLS concept (the callback verifies the certificates
+                // presented by the client); it doesn't apply for plaintext and TLS.
+                return nil
+
+            case .mTLS(_, let trustRoots):
+                switch trustRoots.backing {
+                case .customCertificateVerificationCallback(let callback):
+                    return callback
+
+                case .systemDefaults, .inMemory, .pemFile:
+                    return nil
+                }
+            }
         }
     }
 
@@ -306,29 +236,41 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// TLS configuration for the server.
     public var transportSecurity: TransportSecurity
 
-    /// Backpressure strategy to use in the server.
-    public var backpressureStrategy: BackPressureStrategy
+    /// The HTTP protocol versions the server advertises and accepts connections for.
+    public var supportedHTTPVersions: Set<HTTPVersion>
 
     /// Backpressure strategy to use in the server.
-    public var http2: HTTP2
+    public var backpressureStrategy: BackPressureStrategy
 
     /// Create a new configuration.
     /// - Parameters:
     ///   - bindTarget: A ``BindTarget``.
-    ///   - transportSecurity: A ``TransportSecurity``. Defaults to ``TransportSecurity/plaintext``.
+    ///   - supportedHTTPVersions: The HTTP protocol versions the server should support.
+    ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
     ///   - backpressureStrategy: A ``BackPressureStrategy``.
     ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
-    ///   - http2: A ``HTTP2``. Defaults to ``HTTP2/defaults``.
     public init(
         bindTarget: BindTarget,
-        transportSecurity: TransportSecurity = .plaintext,
-        backpressureStrategy: BackPressureStrategy = .defaults,
-        http2: HTTP2 = .defaults
+        supportedHTTPVersions: Set<HTTPVersion>,
+        transportSecurity: TransportSecurity,
+        backpressureStrategy: BackPressureStrategy = .defaults
     ) {
+        // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1. To support HTTP/2,
+        // `transportSecurity` must be set to `.tls` or `.mTLS`.
+        if case .plaintext = transportSecurity.backing, supportedHTTPVersions != [.http1_1] {
+            fatalError(
+                "Only HTTP/1.1 can be served over plaintext. transportSecurity must be set to (m)TLS for serving HTTP/2."
+            )
+        }
+
+        if supportedHTTPVersions.isEmpty {
+            fatalError("Invalid configuration: at least one supported HTTP version must be specified.")
+        }
+
         self.bindTarget = bindTarget
+        self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = backpressureStrategy
-        self.http2 = http2
     }
 }
 
@@ -374,7 +316,7 @@ public enum CertificateVerificationResult: Sendable, Hashable {
     case failed(VerificationError)
 }
 
-/// Represents the certificate verification behaviour.
+/// Represents the certificate verification behavior.
 public struct CertificateVerificationMode: Sendable {
     enum VerificationMode {
         case optionalVerification
@@ -410,5 +352,98 @@ extension NIOSSL.CertificateVerification {
         case .optionalVerification:
             self = .optionalVerification
         }
+    }
+}
+
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension NIOHTTPServerConfiguration {
+    /// Represents an HTTP version.
+    public struct HTTPVersion: Sendable, Hashable {
+        enum Version {
+            case http1_1
+            case http2(config: HTTP2)
+
+            /// The HTTP/2 configuration if this version is HTTP/2, or `nil` if it is HTTP/1.1.
+            var http2Config: HTTP2? {
+                switch self {
+                case .http1_1:
+                    return nil
+                case .http2(let config):
+                    return config
+                }
+            }
+        }
+
+        let version: Version
+
+        /// The HTTP/1.1 protocol version.
+        public static var http1_1: Self {
+            Self(version: .http1_1)
+        }
+
+        /// The HTTP/2 protocol version.
+        ///
+        /// - Parameter config: The configuration to use for HTTP/2.
+        public static func http2(config: HTTP2) -> Self {
+            Self(version: .http2(config: config))
+        }
+
+        /// Two values are equal if they represent the same protocol version, regardless of any differences in HTTP/2
+        /// configuration.
+        public static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs.version, rhs.version) {
+            case (.http1_1, .http1_1), (.http2, .http2):
+                return true
+
+            default:
+                return false
+            }
+        }
+
+        /// Hashes by protocol version only. Consistent with the ``Equatable`` conformance.
+        public func hash(into hasher: inout Hasher) {
+            switch self.version {
+            case .http1_1:
+                hasher.combine(1)
+
+            case .http2:
+                hasher.combine(2)
+            }
+        }
+    }
+}
+
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension NIOAsyncSequenceProducerBackPressureStrategies.HighLowWatermark {
+    init(_ backpressureStrategy: NIOHTTPServerConfiguration.BackPressureStrategy) {
+        switch backpressureStrategy.backing {
+        case .watermark(let low, let high):
+            self.init(lowWatermark: low, highWatermark: high)
+        }
+    }
+}
+
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
+    /// The ALPN protocol identifiers to advertise during the TLS handshake, derived from the supported HTTP versions.
+    ///
+    /// Returns `"h2"` if HTTP/2 is supported, and `"http/1.1"` if HTTP/1.1 is supported, in that order of preference.
+    var alpnIdentifiers: [String] {
+        var identifiers = [String]()
+
+        if self.http2ConfigIfSupported != nil {
+            identifiers.append("h2")
+        }
+
+        if self.contains(.http1_1) {
+            identifiers.append("http/1.1")
+        }
+
+        return identifiers
+    }
+
+    /// The HTTP/2 configuration if HTTP/2 is among the supported versions, or `nil` if only HTTP/1.1 is supported.
+    var http2ConfigIfSupported: NIOHTTPServerConfiguration.HTTP2? {
+        self.compactMap({ $0.version.http2Config }).first
     }
 }

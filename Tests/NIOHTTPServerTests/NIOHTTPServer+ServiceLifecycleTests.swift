@@ -40,7 +40,11 @@ struct NIOHTTPServiceLifecycleTests {
     func activeHTTP1ConnectionCanCompleteWhenGracefulShutdown() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
 
         // This promise will be fulfilled when the server receives the first part of the body. Once this happens, we can
@@ -122,7 +126,11 @@ struct NIOHTTPServiceLifecycleTests {
     func activeHTTP1ConnectionForcefullyShutdownWhenServerTaskCancelled() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 0))
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
 
         // This promise will be fulfilled when the server receives the first part of the request body. Once this
@@ -196,8 +204,13 @@ struct NIOHTTPServiceLifecycleTests {
             logger: self.serverLogger,
             configuration: .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                transportSecurity: .tls(certificateChain: serverChain.chain, privateKey: serverChain.privateKey),
-                http2: .init(gracefulShutdown: .init(maximumGracefulShutdownDuration: .milliseconds(500)))
+                supportedHTTPVersions: [
+                    .http1_1,
+                    .http2(config: .init(gracefulShutdown: .init(maximumGracefulShutdownDuration: .milliseconds(500)))),
+                ],
+                transportSecurity: .tls(
+                    credentials: .inMemory(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+                )
             )
         )
 

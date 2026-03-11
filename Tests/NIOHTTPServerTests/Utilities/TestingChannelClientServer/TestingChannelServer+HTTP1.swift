@@ -47,7 +47,11 @@ struct TestingChannelHTTP1Server {
         let server = NIOHTTPServer(
             logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument.
-            configuration: .init(bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000))
+            configuration: .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
         )
         // Create a test channel. We will run the server on this channel.
         let serverTestChannel = NIOAsyncTestingChannel()
