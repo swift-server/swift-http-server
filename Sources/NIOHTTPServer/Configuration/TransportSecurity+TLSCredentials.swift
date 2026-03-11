@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift HTTP Server open source project
 //
-// Copyright (c) 2025 Apple Inc. and the Swift HTTP Server project authors
+// Copyright (c) 2026 Apple Inc. and the Swift HTTP Server project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
