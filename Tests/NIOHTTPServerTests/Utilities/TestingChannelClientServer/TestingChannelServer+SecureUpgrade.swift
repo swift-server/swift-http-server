@@ -42,7 +42,7 @@ struct TestingChannelSecureUpgradeServer {
         let server = NIOHTTPServer(
             logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000),
                 supportedHTTPVersions: supportedHTTPVersions,
                 transportSecurity: transportSecurity,
@@ -78,7 +78,7 @@ struct TestingChannelSecureUpgradeServer {
 
         switch self.server.configuration.transportSecurity.backing {
         case .plaintext:
-            fatalError("Plaintext transport security is not supported for Secure Upgrade transport.")
+            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
 
         case .tls(let credentials):
             tlsConfiguration = try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)

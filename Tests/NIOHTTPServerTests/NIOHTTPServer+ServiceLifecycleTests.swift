@@ -40,7 +40,7 @@ struct NIOHTTPServiceLifecycleTests {
     func activeHTTP1ConnectionCanCompleteWhenGracefulShutdown() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext
@@ -126,7 +126,7 @@ struct NIOHTTPServiceLifecycleTests {
     func activeHTTP1ConnectionForcefullyShutdownWhenServerTaskCancelled() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext
@@ -202,7 +202,7 @@ struct NIOHTTPServiceLifecycleTests {
 
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [
                     .http1_1,

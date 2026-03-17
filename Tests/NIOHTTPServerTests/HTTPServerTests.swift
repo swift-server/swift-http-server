@@ -24,7 +24,7 @@ struct HTTPServerTests {
     func testConsumingServe() async throws {
         let server = NIOHTTPServer(
             logger: Logger(label: "Test"),
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext

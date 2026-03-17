@@ -254,17 +254,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity,
         backpressureStrategy: BackPressureStrategy = .defaults
-    ) {
-        // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1. To support HTTP/2,
-        // `transportSecurity` must be set to `.tls` or `.mTLS`.
-        if case .plaintext = transportSecurity.backing, supportedHTTPVersions != [.http1_1] {
-            fatalError(
-                "Only HTTP/1.1 can be served over plaintext. transportSecurity must be set to (m)TLS for serving HTTP/2."
-            )
+    ) throws {
+        // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1.
+        // To support HTTP/2, `transportSecurity` must be set to `.tls` or `.mTLS`.
+        if case .plaintext = transportSecurity.backing {
+            guard supportedHTTPVersions == [.http1_1] else {
+                throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
+            }
         }
 
         if supportedHTTPVersions.isEmpty {
-            fatalError("Invalid configuration: at least one supported HTTP version must be specified.")
+            throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
         self.bindTarget = bindTarget

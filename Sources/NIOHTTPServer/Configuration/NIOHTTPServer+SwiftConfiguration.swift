@@ -20,21 +20,6 @@ import NIOHTTP2
 import SwiftASN1
 public import X509
 
-enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
-    case customVerificationCallbackAndTrustRootsProvided
-    case customVerificationCallbackProvidedWhenNotUsingMTLS
-
-    var description: String {
-        switch self {
-        case .customVerificationCallbackAndTrustRootsProvided:
-            "Invalid configuration. Both a custom certificate verification callback and a set of trust roots were provided. When a custom verification callback is provided, trust must be established directly within the callback."
-
-        case .customVerificationCallbackProvidedWhenNotUsingMTLS:
-            "Invalid configuration. A custom certificate verification callback was provided despite the server not being configured for mTLS."
-        }
-    }
-}
-
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServerConfiguration {
     /// Initialize the server configuration from a config reader.
@@ -59,7 +44,7 @@ extension NIOHTTPServerConfiguration {
     ///   - customCertificateVerificationCallback: An optional client certificate verification callback to use when
     ///     mTLS is configured (i.e., when `"transportSecurity.security"` is `"mTLS"` or `"reloadingMTLS"`). If provided
     ///     when mTLS is *not* configured, this initializer throws
-    ///     ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
+    ///     ``NIOHTTPServerSwiftConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
     ///     mTLS *is* configured, the default client certificate verification logic of the underlying SSL implementation
     ///     is used.
     public init(
@@ -70,7 +55,7 @@ extension NIOHTTPServerConfiguration {
     ) throws {
         let snapshot = config.snapshot()
 
-        self.init(
+        try self.init(
             bindTarget: try .init(config: snapshot.scoped(to: "bindTarget")),
             supportedHTTPVersions: try .init(config: snapshot),
             transportSecurity: try .init(
@@ -128,7 +113,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
         )
 
         if versions.isEmpty {
-            fatalError("Invalid configuration: at least one supported HTTP version must be specified.")
+            throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
         for version in versions {
@@ -185,7 +170,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     ///   - customCertificateVerificationCallback: An optional client certificate verification callback to use when
     ///     mTLS is configured (i.e., when `"transportSecurity.security"` is `"mTLS"` or `"reloadingMTLS"`). If provided
     ///     when mTLS is *not* configured, this initializer throws
-    ///     ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
+    ///     ``NIOHTTPServerSwiftConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
     ///     mTLS *is* configured, the default client certificate verification logic of the underlying SSL implementation
     ///     is used.
     public init(
@@ -198,7 +183,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
 
         // A custom verification callback can only be used when the server is configured for mTLS.
         if let _ = customCertificateVerificationCallback, !security.isMTLS() {
-            throw NIOHTTPServerConfigurationError.customVerificationCallbackProvidedWhenNotUsingMTLS
+            throw NIOHTTPServerSwiftConfigurationError.customVerificationCallbackProvidedWhenNotUsingMTLS
         }
 
         switch security {
@@ -320,7 +305,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     ///
     /// - Note: It is invalid to pass both a custom verification callback and a set of trust roots. If using a custom
     ///   verification callback, trust must be established within the callback itself. Providing both will result in a
-    ///   `NIOHTTPServerConfigurationError.customVerificationCallbackAndTrustRootsProvided` error.
+    ///   `NIOHTTPServerSwiftConfigurationError.customVerificationCallbackAndTrustRootsProvided` error.
     public init(
         config: ConfigSnapshotReader,
         customCertificateVerificationCallback: (
@@ -335,7 +320,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
 
         if trustRootsPEMString != nil, customCertificateVerificationCallback != nil {
             // Throw if both `trustRoots` and `customCertificateVerificationCallback` are provided.
-            throw NIOHTTPServerConfigurationError.customVerificationCallbackAndTrustRootsProvided
+            throw NIOHTTPServerSwiftConfigurationError.customVerificationCallbackAndTrustRootsProvided
         }
 
         if let trustRootsPEMString {

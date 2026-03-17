@@ -38,7 +38,7 @@ struct Example {
         let privateKey = P256.Signing.PrivateKey()
         let server = NIOHTTPServer(
             logger: logger,
-            configuration: .init(
+            configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 12345),
                 supportedHTTPVersions: [.http1_1, .http2(config: .init())],
                 transportSecurity: .tls(
