@@ -263,7 +263,9 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 )
             }
 
-            #expect(error as? NIOHTTPServerSwiftConfigurationError == .customVerificationCallbackProvidedWhenNotUsingMTLS)
+            #expect(
+                error as? NIOHTTPServerSwiftConfigurationError == .customVerificationCallbackProvidedWhenNotUsingMTLS
+            )
         }
 
         @Suite
