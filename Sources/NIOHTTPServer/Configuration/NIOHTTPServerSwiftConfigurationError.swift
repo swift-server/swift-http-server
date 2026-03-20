@@ -18,6 +18,7 @@
 enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
     case customVerificationCallbackAndTrustRootsProvided
     case customVerificationCallbackProvidedWhenNotUsingMTLS
+    case trustRootsSourceAndVerificationCallbackMismatch
 
     var description: String {
         switch self {
@@ -26,6 +27,9 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
 
         case .customVerificationCallbackProvidedWhenNotUsingMTLS:
             "Invalid configuration: a custom certificate verification callback was provided despite the server not being configured for mTLS."
+
+        case .trustRootsSourceAndVerificationCallbackMismatch:
+            "Invalid configuration: there is a mismatch between the trustRootsSource key and the provided customCertificateVerificationCallback."
         }
     }
 }

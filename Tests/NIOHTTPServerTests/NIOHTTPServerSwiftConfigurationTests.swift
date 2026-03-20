@@ -95,7 +95,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Test("Custom values")
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
         func testCustomValues() throws {
-            let provider = InMemoryProvider(values: ["low": 5, "high": 20])
+            let provider = InMemoryProvider(values: ["lowWatermark": 5, "highWatermark": 20])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
@@ -111,7 +111,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Test("Partial custom values")
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
         func testPartialCustomValues() throws {
-            let provider = InMemoryProvider(values: ["low": 3])
+            let provider = InMemoryProvider(values: ["lowWatermark": 3])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
@@ -132,7 +132,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         func testEmptySupportedHTTPVersionSetFails() async {
             await #expect(processExitsWith: .failure) {
                 let provider = InMemoryProvider(values: [
-                    "supportedHTTPVersions": .init(.stringArray([]), isSecret: false)
+                    "versions": .init(.stringArray([]), isSecret: false)
                 ])
 
                 let config = ConfigReader(provider: provider)
@@ -145,7 +145,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
         func testUnrecognizedHTTPVersionIgnored() throws {
             let provider = InMemoryProvider(values: [
-                "supportedHTTPVersions": .init(.stringArray(["unrecognized_version"]), isSecret: false)
+                "versions": .init(.stringArray(["unrecognized_version"]), isSecret: false)
             ])
 
             let config = ConfigReader(provider: provider)
@@ -155,17 +155,14 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 _ = try Set<NIOHTTPServerConfiguration.HTTPVersion>(config: snapshot)
             }
 
-            #expect(
-                "Config value for key 'supportedHTTPVersions' failed to cast to type HTTPVersionKind."
-                    == "\(configError)"
-            )
+            #expect("Config value for key 'versions' failed to cast to type HTTPVersionKind." == "\(configError)")
         }
 
         @Test("Default HTTP/2 configuration used when not specified")
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
         func testDefaultHTTP2ConfigurationUsed() throws {
             let provider = InMemoryProvider(values: [
-                "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false)
+                "versions": .init(.stringArray(["http1_1", "http2"]), isSecret: false)
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
@@ -200,7 +197,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "maxFrameSize": 1,
                 "targetWindowSize": 2,
                 "maxConcurrentStreams": 3,
-                "maximumGracefulShutdownDuration": 4,
+                "gracefulShutdown.maximumGracefulShutdownDuration": 4,
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
@@ -231,10 +228,10 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
     @Suite("TransportSecurity")
     struct TransportSecurityTests {
-        @Test("Invalid security type")
+        @Test("Invalid security mode")
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-        func testInvalidSecurityType() throws {
-            let provider = InMemoryProvider(values: ["security": "<this_security_type_does_not_exist>"])
+        func testInvalidSecurityMode() throws {
+            let provider = InMemoryProvider(values: ["mode": "<this_mode_does_not_exist>"])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
@@ -242,19 +239,19 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
             }
 
-            #expect("Config value for key 'security' failed to cast to type TransportSecurityKind." == "\(configError)")
+            #expect("Config value for key 'mode' failed to cast to type TransportSecurityMode." == "\(configError)")
         }
 
         @Test("Custom verification callback without mTLS being enabled")
         @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
         func testCannotInitializeWithCustomCallbackWhenMTLSNotEnabled() throws {
-            let provider = InMemoryProvider(values: ["security": "tls"])
+            let provider = InMemoryProvider(values: ["mode": "tls", "credentialSource": "inline"])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
 
             let error = #expect(throws: Error.self) {
-                // The custom verification callback will not be used when mTLS is not enabled. This is therefore an invalid
-                // config, and we should expect an error.
+                // The custom verification callback will not be used when mTLS is not enabled. This is therefore an
+                // invalid config, and we should expect an error.
                 try NIOHTTPServerConfiguration.TransportSecurity(
                     config: snapshot,
                     customCertificateVerificationCallback: { peerCertificates in
@@ -270,16 +267,17 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
         @Suite
         struct TLS {
-            @Test("Valid config")
+            @Test("Valid config using inline credentials")
             @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-            func testValidConfig() throws {
+            func testValidConfigUsingInlineCredentials() throws {
                 let chain = try TestCA.makeSelfSignedChain()
                 let certsPEM = try chain.chainPEMString
                 let keyPEM = try chain.privateKey.serializeAsPEM().pemString
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "tls",
+                        "mode": "tls",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
                     ]
@@ -303,6 +301,61 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 #expect(privateKey == chain.privateKey)
             }
 
+            @Test("Valid file-based credentials with reloading")
+            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            func testValidFileConfigWithReloading() async throws {
+                let provider = InMemoryProvider(
+                    values: [
+                        "mode": "tls",
+                        "credentialSource": "file",
+                        "certificateChainPEMPath": .init(.string("cert.pem"), isSecret: false),
+                        "privateKeyPEMPath": .init(.string("key.pem"), isSecret: false),
+                        "refreshInterval": 60,
+                    ]
+                )
+                let config = ConfigReader(provider: provider)
+                let snapshot = config.snapshot()
+
+                let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
+
+                guard case .tls(let credentials) = transportSecurity.backing else {
+                    Issue.record("Expected TLS transport security, got \(transportSecurity.backing) instead.")
+                    return
+                }
+
+                guard case .reloading = credentials.backing else {
+                    Issue.record("Expected reloading TLS credentials, got \(credentials.backing) instead.")
+                    return
+                }
+            }
+
+            @Test("Valid file-based credentials without reloading")
+            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            func testValidFileConfigWithoutReloading() throws {
+                let provider = InMemoryProvider(
+                    values: [
+                        "mode": "tls",
+                        "credentialSource": "file",
+                        "certificateChainPEMPath": .init(.string("cert.pem"), isSecret: false),
+                        "privateKeyPEMPath": .init(.string("key.pem"), isSecret: false),
+                    ]
+                )
+                let config = ConfigReader(provider: provider)
+                let snapshot = config.snapshot()
+
+                let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
+
+                guard case .tls(let credentials) = transportSecurity.backing else {
+                    Issue.record("Expected TLS transport security, got \(transportSecurity.backing) instead.")
+                    return
+                }
+
+                guard case .pemFile = credentials.backing else {
+                    Issue.record("Expected PEM file TLS credentials, got \(credentials.backing) instead.")
+                    return
+                }
+            }
+
             @Test("Init fails with missing certificate")
             @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
             func testMissingCertificate() throws {
@@ -311,7 +364,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "tls",
+                        "mode": "tls",
+                        "credentialSource": "inline",
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
                     ]
                 )
@@ -333,7 +387,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "tls",
+                        "mode": "tls",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                     ]
                 )
@@ -349,36 +404,6 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Suite
-        struct ReloadingTLS {
-            @Test("Valid config")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-            func testValidConfig() async throws {
-                let provider = InMemoryProvider(
-                    values: [
-                        "security": "reloadingTLS",
-                        "certificateChainPEMPath": .init(.string("cert.pem"), isSecret: false),
-                        "privateKeyPEMPath": .init(.string("key.pem"), isSecret: false),
-                        "refreshInterval": 60,
-                    ]
-                )
-                let config = ConfigReader(provider: provider)
-                let snapshot = config.snapshot()
-
-                let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
-
-                guard case .tls(let credentials) = transportSecurity.backing else {
-                    Issue.record("Expected TLS transport security, got \(transportSecurity.backing) instead.")
-                    return
-                }
-
-                guard case .reloading = credentials.backing else {
-                    Issue.record("Expected reloading TLS credentials, got \(credentials.backing) instead.")
-                    return
-                }
-            }
-        }
-
-        @Suite
         struct MTLS {
             @Test("Custom verification callback")
             @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
@@ -390,9 +415,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "mTLS",
+                        "mode": "mTLS",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                        "trustRootsSource": "customCertificateVerificationCallback",
                         "certificateVerificationMode": "noHostnameVerification",
                     ]
                 )
@@ -439,9 +466,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "mTLS",
+                        "mode": "mTLS",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                        "trustRootsSource": "systemDefaults",
                         "certificateVerificationMode": "optionalVerification",
                     ]
                 )
@@ -480,9 +509,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "mTLS",
+                        "mode": "mTLS",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                        "trustRootsSource": "systemDefaults",
                         "certificateVerificationMode": "<this_mode_does_not_exist>",
                     ]
                 )
@@ -509,9 +540,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "mTLS",
+                        "mode": "mTLS",
+                        "credentialSource": "inline",
                         "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                         "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                        "trustRootsSource": "systemDefaults",
                         "certificateVerificationMode": "noHostnameVerification",
                     ]
                 )
@@ -538,11 +571,51 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     return
                 }
             }
+
+            @Test("Trust roots from PEM file path")
+            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            func testTrustRootsFromPEMFilePath() throws {
+                let serverChain = try TestCA.makeSelfSignedChain()
+
+                let certsPEM = try serverChain.chainPEMString
+                let keyPEM = try serverChain.privateKey.serializeAsPEM().pemString
+
+                let provider = InMemoryProvider(
+                    values: [
+                        "mode": "mTLS",
+                        "credentialSource": "inline",
+                        "certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
+                        "privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                        "trustRootsSource": "file",
+                        "trustRootsPEMPath": .init(.string("/path/to/trust-roots.pem"), isSecret: false),
+                        "certificateVerificationMode": "noHostnameVerification",
+                    ]
+                )
+                let config = ConfigReader(provider: provider)
+                let snapshot = config.snapshot()
+
+                let transportSecurity = try NIOHTTPServerConfiguration.TransportSecurity(config: snapshot)
+
+                guard case .mTLS(_, let mTLSTrustConfiguration) = transportSecurity.backing else {
+                    Issue.record("Expected mTLS transport security, got \(transportSecurity.backing) instead.")
+                    return
+                }
+
+                guard case .pemFile(let path) = mTLSTrustConfiguration.backing else {
+                    Issue.record(
+                        "Expected pemFile trust configuration, got \(mTLSTrustConfiguration.backing) instead."
+                    )
+                    return
+                }
+
+                #expect(path == "/path/to/trust-roots.pem")
+            }
+
         }
 
         @Suite
         struct ReloadingMTLS {
-            @Test("Valid config")
+            @Test("Valid config with file credentials and reloading")
             @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
             func testValidConfig() async throws {
                 let chain = try TestCA.makeSelfSignedChain()
@@ -550,9 +623,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
                 let provider = InMemoryProvider(
                     values: [
-                        "security": "reloadingMTLS",
+                        "mode": "mTLS",
+                        "credentialSource": "file",
                         "certificateChainPEMPath": .init(.string("certs.pem"), isSecret: false),
                         "privateKeyPEMPath": .init(.string("key.pem"), isSecret: false),
+                        "trustRootsSource": "inline",
                         "trustRootsPEMString": .init(.string(trustRootPEM), isSecret: false),
                         "certificateVerificationMode": "noHostnameVerification",
                         "refreshInterval": 45,
@@ -595,14 +670,16 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 values: [
                     "bindTarget.host": "127.0.0.1",
                     "bindTarget.port": 8000,
-                    "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
-                    "http2.maxFrameSize": 1,
-                    "http2.targetWindowSize": 2,
-                    "http2.maxConcurrentStreams": 3,
-                    "http2.maximumGracefulShutdownDuration": 4,
-                    "transportSecurity.security": .init(.string("mTLS"), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
+                    "http.http2.maxFrameSize": 1,
+                    "http.http2.targetWindowSize": 2,
+                    "http.http2.maxConcurrentStreams": 3,
+                    "http.http2.gracefulShutdown.maximumGracefulShutdownDuration": 4,
+                    "transportSecurity.mode": .init(.string("mTLS"), isSecret: false),
+                    "transportSecurity.credentialSource": .init(.string("inline"), isSecret: false),
                     "transportSecurity.certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
                     "transportSecurity.privateKeyPEMString": .init(.string(keyPEM), isSecret: true),
+                    "transportSecurity.trustRootsSource": .init(.string("inline"), isSecret: false),
                     "transportSecurity.trustRootsPEMString": .init(.string(certsPEM), isSecret: false),
                     "transportSecurity.certificateVerificationMode": "optionalVerification",
                 ]
@@ -657,8 +734,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     values: [
                         "bindTarget.host": "127.0.0.1",
                         "bindTarget.port": 8000,
-                        "supportedHTTPVersions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
-                        "transportSecurity.security": .init(.string("plaintext"), isSecret: false),
+                        "http.versions": .init(.stringArray(["http1_1", "http2"]), isSecret: false),
+                        "transportSecurity.mode": "plaintext",
                     ]
                 )
                 let config = ConfigReader(provider: provider)

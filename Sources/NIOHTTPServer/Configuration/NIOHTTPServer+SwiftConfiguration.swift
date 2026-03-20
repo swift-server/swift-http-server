@@ -30,7 +30,7 @@ extension NIOHTTPServerConfiguration {
     /// specified key:
     /// - ``BindTarget`` - Provide under key `"bindTarget"` (keys listed in ``BindTarget/init(config:)``).
     ///
-    /// - ``SupportedHTTPVersions`` - Provide under key `"supportedHTTPVersions"` (keys listed in
+    /// - ``SupportedHTTPVersions`` - Provide under key `"http.versions"` (supported values listed in
     ///   ``SupportedHTTPVersions/init(config:)``).
     ///
     /// - ``TransportSecurity`` - Provide under key `"transportSecurity"` (keys listed in
@@ -41,12 +41,14 @@ extension NIOHTTPServerConfiguration {
     ///
     /// - Parameters:
     ///   - config: The configuration reader to read configuration values from.
-    ///   - customCertificateVerificationCallback: An optional client certificate verification callback to use when
-    ///     mTLS is configured (i.e., when `"transportSecurity.security"` is `"mTLS"` or `"reloadingMTLS"`). If provided
-    ///     when mTLS is *not* configured, this initializer throws
-    ///     ``NIOHTTPServerSwiftConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
-    ///     mTLS *is* configured, the default client certificate verification logic of the underlying SSL implementation
-    ///     is used.
+    ///   - customCertificateVerificationCallback: A custom client certificate verification callback. This must be
+    ///     provided when `transportSecurity.trustRootsSource` is `"customCertificateVerificationCallback"`, and must be
+    ///     `nil` otherwise.
+    ///     - Throws ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS`` if provided
+    ///       when `transportSecurity.mode` is not `"mTLS"`.
+    ///     - Throws ``NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if there
+    ///       is a mismatch between `transportSecurity.trustRootsSource` and whether a custom certificate verification
+    ///       callback is provided.
     public init(
         config: ConfigReader,
         customCertificateVerificationCallback: (
@@ -57,7 +59,7 @@ extension NIOHTTPServerConfiguration {
 
         try self.init(
             bindTarget: try .init(config: snapshot.scoped(to: "bindTarget")),
-            supportedHTTPVersions: try .init(config: snapshot),
+            supportedHTTPVersions: try .init(config: snapshot.scoped(to: "http")),
             transportSecurity: try .init(
                 config: snapshot.scoped(to: "transportSecurity"),
                 customCertificateVerificationCallback: customCertificateVerificationCallback
@@ -96,20 +98,19 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     /// Initialize a supported HTTP versions configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `supportedHTTPVersions` (string array, required): A set of HTTP versions the server should support (permitted
-    ///    values: `"http1_1"`, `"http2"`). If `"http2"` is contained in this array, then HTTP/2 configuration can be
-    ///    specified under the `"http2"` key. See ``NIOHTTPServerConfiguration/HTTP2/init(config:)`` for the supported
-    ///    keys under `"http2"`.
+    /// - `versions` (string array, required): A set of HTTP versions the server should support (permitted values:
+    ///    `"http1_1"`, `"http2"`).
+    ///    - If `"http2"` is contained in this array, then HTTP/2 configuration can be specified under the `"http2"`
+    ///      key. See ``NIOHTTPServerConfiguration/HTTP2/init(config:)`` for the supported keys under `"http2"`.
     ///
+    /// - Throws ``NIOHTTPServerConfigurationError/noSupportedHTTPVersionsSpecified`` if no supported HTTP versions are
+    ///   specified under the "versions" key.
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) throws {
         self = .init()
 
         let versions = Set<HTTPVersionKind>(
-            try config.requiredStringArray(
-                forKey: "supportedHTTPVersions",
-                as: HTTPVersionKind.self
-            )
+            try config.requiredStringArray(forKey: "versions", as: HTTPVersionKind.self)
         )
 
         if versions.isEmpty {
@@ -134,156 +135,115 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Initialize a transport security configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `security` (string, required): The transport security for the server (permitted values: `"plaintext"`,
-    ///   `"tls"`, `"reloadingTLS"`, `"mTLS"`, `"reloadingMTLS"`).
+    /// - `mode` (string, required): The transport security mode for the server (permitted values: `"plaintext"`,
+    ///   `"tls"`, `"mTLS"`).
+    /// - `credentialSource` (string, required for `"tls"` and `"mTLS"`): How TLS credentials are provided (permitted
+    ///   values: `"inline"`, `"file"`).
     ///
-    /// ### Configuration keys for `"tls"`:
+    /// ### Configuration keys for `credentialSource: "inline"`:
     /// - `certificateChainPEMString` (string, required): PEM-formatted certificate chain content.
     /// - `privateKeyPEMString` (string, required, secret): PEM-formatted private key content.
     ///
-    /// ### Configuration keys for `"reloadingTLS"`:
-    /// - `refreshInterval` (int, optional, default: 30): The interval (in seconds) at which the certificate chain and
-    ///    private key will be reloaded.
+    /// ### Configuration keys for `credentialSource: "file"`:
     /// - `certificateChainPEMPath` (string, required): Path to the certificate chain PEM file.
     /// - `privateKeyPEMPath` (string, required): Path to the private key PEM file.
+    /// - `refreshInterval` (int, optional): The interval (in seconds) at which the certificate chain and private key
+    ///    will be reloaded. If omitted, credentials are loaded from the file only once at startup.
     ///
-    /// ### Configuration keys for `"mTLS"`:
-    /// - `certificateChainPEMString` (string, required): PEM-formatted certificate chain content.
-    /// - `privateKeyPEMString` (string, required, secret): PEM-formatted private key content.
-    /// - `trustRootsPEMString` (string, optional, default: system trust roots):  The root certificates to trust when
-    ///    verifying client certificates.
-    /// - `certificateVerificationMode` (string, required): The client certificate validation behavior (permitted
-    ///    values: "optionalVerification" or "noHostnameVerification").
-    ///
-    /// ### Configuration keys for `"reloadingMTLS"`:
-    /// - `refreshInterval` (int, optional, default: 30): The interval (in seconds) at which the certificate chain and
-    ///    private key will be reloaded.
-    /// - `certificateChainPEMPath` (string, required): Path to the certificate chain PEM file.
-    /// - `privateKeyPEMPath` (string, required): Path to the private key PEM file.
-    /// - `trustRootsPEMString` (string, optional, default: system trust roots):  The root certificates to trust when
-    ///    verifying client certificates.
+    /// ### Configuration keys for `mode: "mTLS"`:
+    /// - `trustRootsSource` (string, required): How trust roots are provided (permitted values: `"inline"`, `"file"`,
+    ///    `"systemDefaults"`, `"customCertificateVerificationCallback"`).
+    /// - `trustRootsPEMString` (string, required for `trustRootsSource: "inline"`): The root certificates as a
+    ///    PEM-encoded string.
+    /// - `trustRootsPEMPath` (string, required for `trustRootsSource: "file"`): Path to a PEM file containing root
+    ///    certificates.
     /// - `certificateVerificationMode` (string, required): The client certificate validation behavior (permitted
     ///    values: "optionalVerification" or "noHostnameVerification").
     ///
     /// - Parameters:
     ///   - config: The configuration reader.
-    ///   - customCertificateVerificationCallback: An optional client certificate verification callback to use when
-    ///     mTLS is configured (i.e., when `"transportSecurity.security"` is `"mTLS"` or `"reloadingMTLS"`). If provided
-    ///     when mTLS is *not* configured, this initializer throws
-    ///     ``NIOHTTPServerSwiftConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS``. If set to `nil` when
-    ///     mTLS *is* configured, the default client certificate verification logic of the underlying SSL implementation
-    ///     is used.
+    ///   - customCertificateVerificationCallback: A custom client certificate verification callback. This argument must
+    ///     be provided when `trustRootsSource` is `"customCertificateVerificationCallback"`, and must be `nil`
+    ///     otherwise.
+    ///     - Throws ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS`` if the
+    ///       callback is provided when `mode` is not `"mTLS"`.
+    ///     - Throws ``NIOHTTPServerConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if there is a
+    ///       mismatch between `trustRootsSource` and whether the callback is provided.
     public init(
         config: ConfigSnapshotReader,
         customCertificateVerificationCallback: (
             @Sendable ([Certificate]) async throws -> CertificateVerificationResult
         )? = nil
     ) throws {
-        let security = try config.requiredString(forKey: "security", as: TransportSecurityKind.self)
+        let mode = try config.requiredString(forKey: "mode", as: TransportSecurityMode.self)
 
         // A custom verification callback can only be used when the server is configured for mTLS.
-        if let _ = customCertificateVerificationCallback, !security.isMTLS() {
+        if let _ = customCertificateVerificationCallback, mode != .mTLS {
             throw NIOHTTPServerSwiftConfigurationError.customVerificationCallbackProvidedWhenNotUsingMTLS
         }
 
-        switch security {
+        switch mode {
         case .plaintext:
             self = .plaintext
 
         case .tls:
-            self = try .tls(config: config)
-
-        case .reloadingTLS:
-            self = try .reloadingTLS(config: config)
+            self = .tls(credentials: try .init(config: config))
 
         case .mTLS:
-            self = try .mTLS(
-                config: config,
-                customCertificateVerificationCallback: customCertificateVerificationCallback
-            )
-
-        case .reloadingMTLS:
-            self = try .reloadingMTLS(
-                config: config,
-                customCertificateVerificationCallback: customCertificateVerificationCallback
+            self = .mTLS(
+                credentials: try .init(config: config),
+                trustConfiguration: try .init(
+                    config: config,
+                    customCertificateVerificationCallback: customCertificateVerificationCallback
+                )
             )
         }
     }
+}
 
-    private static func tls(config: ConfigSnapshotReader) throws -> Self {
-        let certificateChainPEMString = try config.requiredString(forKey: "certificateChainPEMString")
-        let privateKeyPEMString = try config.requiredString(forKey: "privateKeyPEMString", isSecret: true)
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
+    /// Initialize TLS credentials (certificate chain and private key) from a config reader.
+    ///
+    /// When `credentialSource` is `"inline"`, the certificate chain and private key are read as PEM strings from the
+    /// configuration. When `"file"`, they are loaded from disk, optionally reloading at a configured interval.
+    fileprivate init(config: ConfigSnapshotReader) throws {
+        let credentialSource = try config.requiredString(
+            forKey: "credentialSource",
+            as: NIOHTTPServerConfiguration.TransportSecurity.CredentialSource.self
+        )
 
-        return Self.tls(
-            credentials: .inMemory(
+        switch credentialSource {
+        case .inline:
+            let certificateChainPEMString = try config.requiredString(forKey: "certificateChainPEMString")
+            let privateKeyPEMString = try config.requiredString(forKey: "privateKeyPEMString", isSecret: true)
+
+            self = .inMemory(
                 certificateChain: try PEMDocument.parseMultiple(pemString: certificateChainPEMString)
                     .map { try Certificate(pemEncoded: $0.pemString) },
                 privateKey: try .init(pemEncoded: privateKeyPEMString)
             )
-        )
-    }
 
-    private static func reloadingTLS(config: ConfigSnapshotReader) throws -> Self {
-        let refreshInterval = config.int(forKey: "refreshInterval", default: 30)
-        let certificateChainPEMPath = try config.requiredString(forKey: "certificateChainPEMPath")
-        let privateKeyPEMPath = try config.requiredString(forKey: "privateKeyPEMPath")
+        case .file:
+            let certificateChainPEMPath = try config.requiredString(forKey: "certificateChainPEMPath")
+            let privateKeyPEMPath = try config.requiredString(forKey: "privateKeyPEMPath")
+            let refreshInterval = config.int(forKey: "refreshInterval")
 
-        return Self.tls(
-            credentials: .reloading(
-                certificateReloader: TimedCertificateReloader(
-                    refreshInterval: .seconds(refreshInterval),
-                    certificateSource: .init(location: .file(path: certificateChainPEMPath), format: .pem),
-                    privateKeySource: .init(location: .file(path: privateKeyPEMPath), format: .pem)
+            if let refreshInterval {
+                self = .reloading(
+                    certificateReloader: TimedCertificateReloader(
+                        refreshInterval: .seconds(refreshInterval),
+                        certificateSource: .init(location: .file(path: certificateChainPEMPath), format: .pem),
+                        privateKeySource: .init(location: .file(path: privateKeyPEMPath), format: .pem)
+                    )
                 )
-            )
-        )
-    }
-
-    private static func mTLS(
-        config: ConfigSnapshotReader,
-        customCertificateVerificationCallback: (
-            @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-        )? = nil
-    ) throws -> Self {
-        let certificateChainPEMString = try config.requiredString(forKey: "certificateChainPEMString")
-        let privateKeyPEMString = try config.requiredString(forKey: "privateKeyPEMString", isSecret: true)
-
-        return Self.mTLS(
-            credentials: .inMemory(
-                certificateChain: try PEMDocument.parseMultiple(pemString: certificateChainPEMString)
-                    .map { try Certificate(pemEncoded: $0.pemString) },
-                privateKey: try .init(pemEncoded: privateKeyPEMString)
-            ),
-            trustConfiguration: try .init(
-                config: config,
-                customCertificateVerificationCallback: customCertificateVerificationCallback
-            )
-        )
-    }
-
-    private static func reloadingMTLS(
-        config: ConfigSnapshotReader,
-        customCertificateVerificationCallback: (
-            @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
-        )? = nil
-    ) throws -> Self {
-        let refreshInterval = config.int(forKey: "refreshInterval", default: 30)
-        let certificateChainPEMPath = try config.requiredString(forKey: "certificateChainPEMPath")
-        let privateKeyPEMPath = try config.requiredString(forKey: "privateKeyPEMPath")
-
-        return try Self.mTLS(
-            credentials: .reloading(
-                certificateReloader: TimedCertificateReloader(
-                    refreshInterval: .seconds(refreshInterval),
-                    certificateSource: .init(location: .file(path: certificateChainPEMPath), format: .pem),
-                    privateKeySource: .init(location: .file(path: privateKeyPEMPath), format: .pem)
+            } else {
+                self = .pemFile(
+                    certificateChainPath: certificateChainPEMPath,
+                    privateKeyPath: privateKeyPEMPath
                 )
-            ),
-            trustConfiguration: .init(
-                config: config,
-                customCertificateVerificationCallback: customCertificateVerificationCallback
-            )
-        )
+            }
+        }
     }
 }
 
@@ -292,50 +252,69 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     /// Initialize an mTLS trust configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `trustRootsPEMString` (string, optional, default: system trust roots):  The root certificates to trust when
-    ///    verifying client certificates.
+    /// - `trustRootsSource` (string, required): How trust roots are provided (permitted values: `"inline"`, `"file"`,
+    ///    `"systemDefaults"`, `"customCertificateVerificationCallback"`).
+    /// - `trustRootsPEMString` (string, required for `trustRootsSource: "inline"`): The trusted root certificates as a
+    ///    PEM-encoded string.
+    /// - `trustRootsPEMPath` (string, required for `trustRootsSource: "file"`): Path to a PEM file containing trusted
+    ///    root certificates.
     /// - `certificateVerificationMode` (string, required): The client certificate validation behavior (permitted
     ///    values: "optionalVerification" or "noHostnameVerification")
     ///
     /// - Parameters:
     ///   - config: The configuration reader.
-    ///   - customCertificateVerificationCallback: An optional client certificate verification callback to use when
-    ///     mTLS is configured (i.e., when `"transportSecurity.security"` is `"mTLS"` or `"reloadingMTLS"`). If set to
-    ///     `nil`, the default client certificate verification logic of the underlying SSL implementation is used.
+    ///   - customCertificateVerificationCallback: A client certificate verification callback. Must be provided when
+    ///     `trustRootsSource` is `"customCertificateVerificationCallback"`, and must be `nil` otherwise.
     ///
-    /// - Note: It is invalid to pass both a custom verification callback and a set of trust roots. If using a custom
-    ///   verification callback, trust must be established within the callback itself. Providing both will result in a
-    ///   `NIOHTTPServerSwiftConfigurationError.customVerificationCallbackAndTrustRootsProvided` error.
+    /// - Throws: ``NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if:
+    ///   - A verification callback is provided when `trustRootsSource != "customCertificateVerificationCallback"`, or;
+    ///   - A verification callback is *not* provided when `trustRootsSource == "customCertificateVerificationCallback"`.
     public init(
         config: ConfigSnapshotReader,
         customCertificateVerificationCallback: (
             @Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult
         )?
     ) throws {
-        let trustRootsPEMString = config.string(forKey: "trustRootsPEMString")
+        let trustRootsSource = try config.requiredString(forKey: "trustRootsSource", as: TrustRootsSource.self)
         let certificateVerificationMode = try config.requiredString(
             forKey: "certificateVerificationMode",
             as: VerificationMode.self
         )
 
-        if trustRootsPEMString != nil, customCertificateVerificationCallback != nil {
-            // Throw if both `trustRoots` and `customCertificateVerificationCallback` are provided.
-            throw NIOHTTPServerSwiftConfigurationError.customVerificationCallbackAndTrustRootsProvided
+        if let _ = customCertificateVerificationCallback, trustRootsSource != .customCertificateVerificationCallback {
+            throw NIOHTTPServerSwiftConfigurationError.trustRootsSourceAndVerificationCallbackMismatch
         }
 
-        if let trustRootsPEMString {
+        switch trustRootsSource {
+        case .inline:
+            let trustRootsPEMString = try config.requiredString(forKey: "trustRootsPEMString")
             self = .inMemory(
                 trustRoots: try PEMDocument.parseMultiple(pemString: trustRootsPEMString)
                     .map { try Certificate(pemEncoded: $0.pemString) },
                 certificateVerification: .init(certificateVerificationMode)
             )
-        } else if let customCertificateVerificationCallback {
+
+        case .file:
+            let trustRootsPEMPath = try config.requiredString(forKey: "trustRootsPEMPath")
+            self = .pemFile(
+                path: trustRootsPEMPath,
+                certificateVerification: .init(certificateVerificationMode)
+            )
+
+        case .systemDefaults:
+            self = .systemDefaults(certificateVerification: .init(certificateVerificationMode))
+
+        case .customCertificateVerificationCallback:
+            guard let customCertificateVerificationCallback else {
+                // No custom verification callback provided despite the "trustRootsSource" key being set to
+                // "customCertificateVerificationCallback".
+                throw NIOHTTPServerSwiftConfigurationError.trustRootsSourceAndVerificationCallbackMismatch
+            }
+
             self = .customCertificateVerificationCallback(
                 customCertificateVerificationCallback,
                 certificateVerification: .init(certificateVerificationMode)
             )
-        } else {
-            self = .systemDefaults(certificateVerification: .init(certificateVerificationMode))
         }
     }
 }
@@ -345,20 +324,21 @@ extension NIOHTTPServerConfiguration.BackPressureStrategy {
     /// Initialize the backpressure strategy configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `low` (int, optional, default: 2): The threshold below which the consumer will ask the producer to produce
-    ///    more elements.
-    /// - `high` (int, optional, default: 10): The threshold above which the producer will stop producing elements.
+    /// - `lowWatermark` (int, optional, default: 2): The threshold below which the consumer will ask the producer to
+    ///    produce more elements.
+    /// - `highWatermark` (int, optional, default: 10): The threshold above which the producer will stop producing
+    ///    elements.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
             backing: .watermark(
                 low: config.int(
-                    forKey: "low",
+                    forKey: "lowWatermark",
                     default: NIOHTTPServerConfiguration.BackPressureStrategy.defaultWatermarkLow
                 ),
                 high: config.int(
-                    forKey: "high",
+                    forKey: "highWatermark",
                     default: NIOHTTPServerConfiguration.BackPressureStrategy.defaultWatermarkHigh
                 )
             )
@@ -374,8 +354,10 @@ extension NIOHTTPServerConfiguration.HTTP2 {
     /// - `maxFrameSize` (int, optional, default: 2^14): The maximum frame size to be used in an HTTP/2 connection.
     /// - `targetWindowSize` (int, optional, default: 2^16 - 1): The target window size to be used in an HTTP/2
     ///    connection.
-    /// - `maxConcurrentStreams` (int, optional, default: 100): The maximum number of concurrent streams in an HTTP/2
+    /// - `maxConcurrentStreams` (int, optional, default: nil): The maximum number of concurrent streams in an HTTP/2
     ///    connection.
+    /// - `gracefulShutdown.maximumGracefulShutdownDuration` (int, optional, default: nil): The maximum amount of time
+    ///    (in seconds) that the connection has to close gracefully.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
@@ -392,7 +374,7 @@ extension NIOHTTPServerConfiguration.HTTP2 {
             /// we can only specify a non-nil `default` argument to `config.int(...)`. But `config.int(...)` already
             /// defaults to `nil` if it can't find the `"maxConcurrentStreams"` key, so that works for us.
             maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams"),
-            gracefulShutdown: .init(config: config)
+            gracefulShutdown: .init(config: config.scoped(to: "gracefulShutdown"))
         )
     }
 }
@@ -414,28 +396,37 @@ extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
 }
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
+    fileprivate enum HTTPVersionKind: String {
+        case http1_1
+        case http2
+    }
+}
+
+@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
-    fileprivate enum TransportSecurityKind: String {
+    fileprivate enum TransportSecurityMode: String {
         case plaintext
         case tls
-        case reloadingTLS
         case mTLS
-        case reloadingMTLS
+    }
 
-        func isMTLS() -> Bool {
-            switch self {
-            case .mTLS, .reloadingMTLS:
-                return true
-
-            default:
-                return false
-            }
-        }
+    fileprivate enum CredentialSource: String {
+        case inline
+        case file
     }
 }
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
+    /// The supported sources for trust roots.
+    fileprivate enum TrustRootsSource: String {
+        case inline
+        case file
+        case systemDefaults
+        case customCertificateVerificationCallback
+    }
+
     /// A wrapper over ``CertificateVerificationMode``.
     fileprivate enum VerificationMode: String {
         case optionalVerification
