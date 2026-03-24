@@ -110,7 +110,7 @@ extension NIOHTTPServer {
         let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
 
         await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-            await self.handleRequestChannel(
+            await self.handleHTTP1RequestChannel(
                 channel: requestChannel,
                 handler: handler
             )
@@ -137,7 +137,7 @@ extension NIOHTTPServer {
                 try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
                     for try await streamChannel in multiplexer.inbound {
                         streamGroup.addTask {
-                            await self.handleRequestChannel(
+                            await self.handleHTTP2StreamChannel(
                                 channel: streamChannel,
                                 handler: handler
                             )
@@ -295,6 +295,45 @@ extension NIOHTTPServer {
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.
                 return channel.close().flatMap { channel.eventLoop.makeFailedFuture(NIOHTTP2Errors.invalidALPNToken()) }
             }
+        }
+    }
+
+    /// Handles an HTTP/2 stream channel, which carries exactly one request per stream.
+    func handleHTTP2StreamChannel(
+        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        do {
+            try await channel
+                .executeThenClose { inbound, outbound in
+                    var iterator = inbound.makeAsyncIterator()
+
+                    guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                        outbound.finish()
+                        return
+                    }
+
+                    _ = try await self.invokeHandler(
+                        request: httpRequest,
+                        iterator: iterator,
+                        outbound: outbound,
+                        handler: handler
+                    )
+
+                    // TODO: handle other state scenarios.
+                    // For example, if we didn't finish reading but we wrote back a response, we
+                    // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
+                    // didn't write back a response, then RST_STREAM is also likely appropriate but
+                    // unclear about the error.
+
+                    // Finish the outbound and wait on the close future to make sure all pending
+                    // writes are actually written.
+                    outbound.finish()
+                    try await channel.channel.closeFuture.get()
+                }
+        } catch {
+            self.logger.debug("Error thrown while handling HTTP/2 stream: \(error)")
+            try? await channel.channel.close()
         }
     }
 }

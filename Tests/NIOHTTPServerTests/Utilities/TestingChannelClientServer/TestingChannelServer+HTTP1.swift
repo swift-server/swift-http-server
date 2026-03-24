@@ -98,7 +98,7 @@ struct TestingChannelHTTP1Server {
 
             try await body(clientAsyncChannel)
 
-            try await serverTestConnectionChannel.close()
+            try? await serverTestConnectionChannel.close()
         }
     }
 }

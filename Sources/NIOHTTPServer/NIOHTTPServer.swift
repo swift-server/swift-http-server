@@ -213,103 +213,67 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
-    /// Handles a single HTTP request.
-    ///
-    /// - Note: Errors do not propagate to the caller. When an error occurs, it is logged and the channel is closed.
-    ///
-    /// - Parameters:
-    ///   - channel: The async channel to read the request from and write the response to.
-    ///   - handler: The request handler.
-    func handleRequestChannel(
-        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async {
-        do {
-            try await channel.executeThenClose { inbound, outbound in
-                var iterator = inbound.makeAsyncIterator()
-
-                let nextPart: HTTPRequestPart?
-                do {
-                    nextPart = try await iterator.next()
-                } catch {
-                    self.logger.error(
-                        "Error thrown while advancing the request iterator",
-                        metadata: ["error": "\(error)"]
-                    )
-                    throw error
-                }
-
-                let httpRequest: HTTPRequest
-                switch nextPart {
-                case .head(let request):
-                    httpRequest = request
-                case .body:
-                    self.logger.debug("Unexpectedly received body on connection. Closing now")
-                    outbound.finish()
-                    return
-                case .end:
-                    self.logger.debug("Unexpectedly received end on connection. Closing now")
-                    outbound.finish()
-                    return
-                case .none:
-                    self.logger.trace("No more requests parts on connection")
-                    return
-                }
-
-                let readerState = HTTPRequestConcludingAsyncReader.ReaderState()
-                let writerState = HTTPResponseConcludingAsyncWriter.WriterState()
-
-                do {
-                    try await handler.handle(
-                        request: httpRequest,
-                        requestContext: HTTPRequestContext(),
-                        requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
-                            iterator: iterator,
-                            readerState: readerState
-                        ),
-                        responseSender: HTTPResponseSender { response in
-                            try await outbound.write(.head(response))
-                            return HTTPResponseConcludingAsyncWriter(
-                                writer: outbound,
-                                writerState: writerState
-                            )
-                        } sendInformational: { response in
-                            try await outbound.write(.head(response))
-                        }
-                    )
-                } catch {
-                    if !readerState.wrapped.withLock({ $0.finishedReading }) {
-                        self.logger.error("Did not finish reading but error thrown.")
-                        // TODO: if h2 reset stream; if h1 try draining request?
-                    }
-
-                    if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-                        self.logger.error("Did not write response but error thrown.")
-                        // TODO: we need to do something, possibly just close the connection or
-                        // reset the stream with the appropriate error.
-                    }
-
-                    throw error
-                }
-
-                // TODO: handle other state scenarios.
-                // For example, if we're using h2 and we didn't finish reading but we wrote back
-                // a response, we should send a RST_STREAM with NO_ERROR set.
-                // If we finished reading but we didn't write back a response, then RST_STREAM
-                // is also likely appropriate but unclear about the error.
-                // For h1, we should close the connection.
-
-                // Finish the outbound and wait on the close future to make sure all pending
-                // writes are actually written.
-                outbound.finish()
-                try await channel.channel.closeFuture.get()
-            }
-        } catch {
-            // TODO: We need to send a response head here potentially
-            self.logger.error("Error thrown while handling connection", metadata: ["error": "\(error)"])
-
-            try? await channel.channel.close()
+    /// Reads the next request head from the iterator. Returns `nil` if the connection is done or
+    /// an unexpected part is received.
+    func nextRequestHead(
+        from iterator: inout NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+    ) async throws -> HTTPRequest? {
+        switch try await iterator.next(isolation: #isolation) {
+        case .head(let request):
+            return request
+        case .body:
+            self.logger.debug("Unexpectedly received body on connection. Closing now.")
+            return nil
+        case .end:
+            self.logger.debug("Unexpectedly received end on connection. Closing now.")
+            return nil
+        case .none:
+            self.logger.trace("No more request parts on connection")
+            return nil
         }
+    }
+
+    /// Shared core: invokes the request handler with the appropriate reader/writer state.
+    /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
+    /// or `nil` if the request could not be fully consumed.
+    func invokeHandler(
+        request: HTTPRequest,
+        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator? {
+        let readerState = HTTPRequestConcludingAsyncReader.ReaderState(iterator: iterator)
+        let writerState = HTTPResponseConcludingAsyncWriter.WriterState()
+
+        do {
+            try await handler.handle(
+                request: request,
+                requestContext: HTTPRequestContext(),
+                requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
+                    readerState: readerState
+                ),
+                responseSender: HTTPResponseSender { response in
+                    try await outbound.write(.head(response))
+                    return HTTPResponseConcludingAsyncWriter(
+                        writer: outbound,
+                        writerState: writerState
+                    )
+                } sendInformational: { response in
+                    try await outbound.write(.head(response))
+                }
+            )
+        } catch {
+            logger.error("Error thrown while handling request: \(error)")
+            if !readerState.wrapped.withLock({ $0.finishedReading }) {
+                logger.error("Did not finish reading but error thrown.")
+            }
+            if !writerState.wrapped.withLock({ $0.finishedWriting }) {
+                logger.error("Did not write response but error thrown.")
+            }
+            throw error
+        }
+
+        return readerState.takeIterator()
     }
 
     /// Fail the listening address promise if the server is shutting down before it began listening.

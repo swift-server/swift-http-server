@@ -110,7 +110,8 @@ struct NIOHTTPServerTests {
                         inbound,
                         expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
                         expectedBody: [Self.bodyData],
-                        expectedTrailers: Self.trailer
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
                     )
                 }
             }
@@ -190,7 +191,8 @@ struct NIOHTTPServerTests {
                             inbound,
                             expectedHead: [Self.responseHead(status: .ok, for: httpVersion)],
                             expectedBody: [Self.bodyData],
-                            expectedTrailers: Self.trailer
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: httpVersion == .http2
                         )
 
                         responseReceived()
@@ -240,7 +242,8 @@ struct NIOHTTPServerTests {
                                 Self.responseHead(status: .ok, for: httpVersion),
                             ],
                             expectedBody: [Self.bodyData],
-                            expectedTrailers: Self.trailer
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: httpVersion == .http2
                         )
                         responseReceived()
                     }
@@ -373,6 +376,60 @@ struct NIOHTTPServerTests {
     }
 
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Multiple serial HTTP/1.1 requests on the same connection")
+    func testMultipleSerialHTTP1Requests() async throws {
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        let requestCount = 3
+
+        try await confirmation(expectedCount: requestCount) { responseReceived in
+            try await Self.withServer(
+                server: server,
+                serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
+                    // Echo the request body back as the response body.
+                    try await Self.echoResponse(readUpTo: 1024, reader: reader, sender: responseWriter)
+                },
+                body: { serverAddress in
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await client.executeThenClose { inbound, outbound in
+                        var responseIterator = inbound.makeAsyncIterator()
+
+                        for i in 1...requestCount {
+                            // Send request
+                            try await outbound.write(
+                                .head(.init(method: .post, scheme: "http", authority: "", path: "/\(i)"))
+                            )
+                            try await outbound.write(Self.reqBody)
+                            try await outbound.write(.end(nil))
+
+                            // Read response
+                            let headPart = try await responseIterator.next()
+                            #expect(headPart == .head(Self.responseHead(status: .ok, for: .http1_1)))
+
+                            let bodyPart = try await responseIterator.next()
+                            #expect(bodyPart == .body(Self.bodyData))
+
+                            let endPart = try await responseIterator.next()
+                            #expect(endPart == .end(nil))
+
+                            responseReceived()
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Multiple concurrent connections", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testMultipleConcurrentConnections(httpVersion: HTTPVersion) async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -427,7 +484,8 @@ struct NIOHTTPServerTests {
                                     try await Self.validateResponse(
                                         inbound,
                                         expectedHead: [Self.responseHead(status: .ok, for: httpVersion)],
-                                        expectedBody: [Self.bodyData]
+                                        expectedBody: [Self.bodyData],
+                                        expectStreamEnd: httpVersion == .http2
                                     )
 
                                     responseReceived()
@@ -543,7 +601,6 @@ struct NIOHTTPServerTests {
                     try await firstClientChannel.executeThenClose { inbound, outbound in
                         // Only send a request head; finish the stream immediately afterwards.
                         try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
-                        outbound.finish()
                     }
 
                     try await firstRequestErrorCaught.futureResult.get()
@@ -559,7 +616,8 @@ struct NIOHTTPServerTests {
                         try await Self.validateResponse(
                             inbound,
                             expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
-                            expectedBody: [Self.bodyData]
+                            expectedBody: [Self.bodyData],
+                            expectStreamEnd: false
                         )
 
                         responseReceived()
@@ -615,6 +673,7 @@ extension NIOHTTPServerTests {
         expectedHead: [HTTPResponse],
         expectedBody: [ByteBuffer],
         expectedTrailers: HTTPFields? = nil,
+        expectStreamEnd: Bool = true,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
         var responseIterator = responseStream.makeAsyncIterator()
@@ -632,11 +691,13 @@ extension NIOHTTPServerTests {
         let endResponsePart = try await responseIterator.next()
         #expect(endResponsePart == .end(expectedTrailers), sourceLocation: sourceLocation)
 
-        #expect(
-            try await responseIterator.next() == nil,
-            "Received another response part when the response stream should have finished.",
-            sourceLocation: sourceLocation
-        )
+        if expectStreamEnd {
+            #expect(
+                try await responseIterator.next() == nil,
+                "Received another response part when the response stream should have finished.",
+                sourceLocation: sourceLocation
+            )
+        }
     }
 
     /// Unwraps a negotiated channel, asserting it matches the expected `httpVersion`. For HTTP/2, opens and returns a
