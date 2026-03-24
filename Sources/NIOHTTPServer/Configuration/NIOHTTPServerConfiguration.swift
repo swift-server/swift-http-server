@@ -400,7 +400,7 @@ extension NIOHTTPServerConfiguration {
             }
         }
 
-        /// Hashes by protocol version only. Consistent with the ``Equatable`` conformance.
+        /// Hashes by protocol version only. Consistent with the `Equatable` conformance.
         public func hash(into hasher: inout Hasher) {
             switch self.version {
             case .http1_1:

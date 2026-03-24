@@ -144,4 +144,4 @@ let serverConfiguration = try NIOHTTPServerConfiguration(
 
 Setting `trustRootsSource` to `"customCertificateVerificationCallback"` without providing a callback, or providing a
 callback when `trustRootsSource` is set to something else, will result in a
-``NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` error.
+`NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch` error.

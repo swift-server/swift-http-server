@@ -28,25 +28,26 @@ extension NIOHTTPServerConfiguration {
     ///
     /// ``NIOHTTPServerConfiguration`` is comprised of four types. Provide configuration for each type under the
     /// specified key:
-    /// - ``BindTarget`` - Provide under key `"bindTarget"` (keys listed in ``BindTarget/init(config:)``).
     ///
-    /// - ``SupportedHTTPVersions`` - Provide under key `"http.versions"` (supported values listed in
-    ///   ``SupportedHTTPVersions/init(config:)``).
+    /// - **`"bindTarget"`**: The address and port to bind to (see ``BindTarget/init(config:)``).
     ///
-    /// - ``TransportSecurity`` - Provide under key `"transportSecurity"` (keys listed in
+    /// - **`"http"`**: Supported HTTP versions and protocol settings. Supported keys are `"versions"`
+    ///   (a string array of `"http1_1"` and/or `"http2"`) and, when HTTP/2 is enabled, `"http2"` (see
+    ///   ``HTTP2/init(config:)``).
+    ///
+    /// - **`"transportSecurity"`**: The transport security mode: plaintext, TLS, or mTLS (see
     ///   ``TransportSecurity/init(config:customCertificateVerificationCallback:)``).
     ///
-    /// - ``BackPressureStrategy`` - Provide under key `"backpressureStrategy"` (keys listed in
-    ///   ``BackPressureStrategy/init(config:)``).
+    /// - **`"backpressureStrategy"`**: The backpressure strategy (see ``BackPressureStrategy/init(config:)``).
     ///
     /// - Parameters:
     ///   - config: The configuration reader to read configuration values from.
     ///   - customCertificateVerificationCallback: A custom client certificate verification callback. This must be
     ///     provided when `transportSecurity.trustRootsSource` is `"customCertificateVerificationCallback"`, and must be
     ///     `nil` otherwise.
-    ///     - Throws ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS`` if provided
+    ///     - Throws `NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS` if provided
     ///       when `transportSecurity.mode` is not `"mTLS"`.
-    ///     - Throws ``NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if there
+    ///     - Throws `NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch` if there
     ///       is a mismatch between `transportSecurity.trustRootsSource` and whether a custom certificate verification
     ///       callback is provided.
     public init(
@@ -103,7 +104,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     ///    - If `"http2"` is contained in this array, then HTTP/2 configuration can be specified under the `"http2"`
     ///      key. See ``NIOHTTPServerConfiguration/HTTP2/init(config:)`` for the supported keys under `"http2"`.
     ///
-    /// - Throws ``NIOHTTPServerConfigurationError/noSupportedHTTPVersionsSpecified`` if no supported HTTP versions are
+    /// - Throws `NIOHTTPServerConfigurationError/noSupportedHTTPVersionsSpecified` if no supported HTTP versions are
     ///   specified under the "versions" key.
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) throws {
@@ -165,9 +166,9 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     ///   - customCertificateVerificationCallback: A custom client certificate verification callback. This argument must
     ///     be provided when `trustRootsSource` is `"customCertificateVerificationCallback"`, and must be `nil`
     ///     otherwise.
-    ///     - Throws ``NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS`` if the
+    ///     - Throws `NIOHTTPServerConfigurationError/customVerificationCallbackProvidedWhenNotUsingMTLS` if the
     ///       callback is provided when `mode` is not `"mTLS"`.
-    ///     - Throws ``NIOHTTPServerConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if there is a
+    ///     - Throws `NIOHTTPServerConfigurationError/trustRootsSourceAndVerificationCallbackMismatch` if there is a
     ///       mismatch between `trustRootsSource` and whether the callback is provided.
     public init(
         config: ConfigSnapshotReader,
@@ -266,7 +267,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     ///   - customCertificateVerificationCallback: A client certificate verification callback. Must be provided when
     ///     `trustRootsSource` is `"customCertificateVerificationCallback"`, and must be `nil` otherwise.
     ///
-    /// - Throws: ``NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch`` if:
+    /// - Throws: `NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch` if:
     ///   - A verification callback is provided when `trustRootsSource != "customCertificateVerificationCallback"`, or;
     ///   - A verification callback is *not* provided when `trustRootsSource == "customCertificateVerificationCallback"`.
     public init(
