@@ -43,7 +43,7 @@ respective key prefix.
 | `http.http2`                  | `maxFrameSize`                    | `int`          | Optional                                                                                                                      | 2^14    |
 |                               | `targetWindowSize`                | `int`          | Optional                                                                                                                      | 2^16-1  |
 |                               | `maxConcurrentStreams`            | `int`          | Optional                                                                                                                      | nil     |
-| `http.http2.gracefulShutdown` | `maximumGracefulShutdownDuration` | `int`          | Optional                                                                                                                      | nil     |
+| `http.http2.gracefulShutdown` | `maximumDuration`                 | `int`          | Optional                                                                                                                      | nil     |
 | `transportSecurity`           | `mode`                            | `string`       | Required (permitted values: `"plaintext"`, `"tls"`, `"mTLS"`)                                                                 | -       |
 |                               | `credentialSource`                | `string`       | Required for `"tls"` and `"mTLS"` (permitted values: `"inline"`, `"file"`)                                                    | -       |
 |                               | `certificateChainPEMString`       | `string`       | Required for `credentialSource: "inline"`                                                                                     | -       |
@@ -88,11 +88,11 @@ key were omitted.
     "http": {
         "versions": ["http1_1", "http2"],
         "http2": {
-            "maxFrameSize": 16384,                       // default: 2^14 (16384)
-            "targetWindowSize": 65535,                   // default: 2^16 - 1 (65535)
-            "maxConcurrentStreams": 100,                 // default: nil (no limit)
+            "maxFrameSize": 16384,          // default: 2^14 (16384)
+            "targetWindowSize": 65535,      // default: 2^16 - 1 (65535)
+            "maxConcurrentStreams": 100,    // default: nil (no limit)
             "gracefulShutdown": {
-                "maximumGracefulShutdownDuration": 30    // default: nil (no time limit)
+                "maximumDuration": 30       // default: nil (no time limit)
             }
         }
     },
@@ -106,8 +106,8 @@ key were omitted.
         "certificateVerificationMode": "noHostnameVerification"
     },
     "backpressureStrategy": {
-        "lowWatermark": 2,                               // default: 2
-        "highWatermark": 10                              // default: 10
+        "lowWatermark": 2,                  // default: 2
+        "highWatermark": 10                 // default: 10
     }
 }
 ```

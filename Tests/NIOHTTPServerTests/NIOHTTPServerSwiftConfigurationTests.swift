@@ -197,7 +197,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "maxFrameSize": 1,
                 "targetWindowSize": 2,
                 "maxConcurrentStreams": 3,
-                "gracefulShutdown.maximumGracefulShutdownDuration": 4,
+                "gracefulShutdown.maximumDuration": 4,
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
@@ -674,7 +674,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     "http.http2.maxFrameSize": 1,
                     "http.http2.targetWindowSize": 2,
                     "http.http2.maxConcurrentStreams": 3,
-                    "http.http2.gracefulShutdown.maximumGracefulShutdownDuration": 4,
+                    "http.http2.gracefulShutdown.maximumDuration": 4,
                     "transportSecurity.mode": .init(.string("mTLS"), isSecret: false),
                     "transportSecurity.credentialSource": .init(.string("inline"), isSecret: false),
                     "transportSecurity.certificateChainPEMString": .init(.string(certsPEM), isSecret: false),
