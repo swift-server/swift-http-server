@@ -552,7 +552,6 @@ struct NIOHTTPServerTests {
                         .connectToTestHTTP1Server(at: serverAddress)
 
                     try await secondClientChannel.executeThenClose { inbound, outbound in
-                        // Only send a request head; finish the stream immediately afterwards.
                         try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
                         try await outbound.write(.body(Self.bodyData))
                         try await outbound.write(.end(nil))
