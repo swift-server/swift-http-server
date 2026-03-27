@@ -230,6 +230,51 @@ public struct NIOHTTPServerConfiguration: Sendable {
         }
     }
 
+    /// Configuration for connection timeouts.
+    ///
+    /// Timeouts are enabled by default with reasonable values to protect against
+    /// slow or idle connections. Individual timeouts can be disabled by setting
+    /// them to `nil`.
+    public struct ConnectionTimeouts: Sendable {
+        /// Maximum time a connection can remain idle (no data read or written)
+        /// before being closed. `nil` means no idle timeout.
+        public var idle: Duration?
+
+        /// Maximum time allowed to receive the complete request headers
+        /// after a connection is established. `nil` means no timeout.
+        public var readHeader: Duration?
+
+        /// Maximum time allowed to receive the complete request body
+        /// after headers have been received. `nil` means no timeout.
+        public var readBody: Duration?
+
+        /// - Parameters:
+        ///   - idle: Maximum idle time before the connection is closed.
+        ///   - readHeader: Maximum time to receive request headers.
+        ///   - readBody: Maximum time to receive the request body.
+        public init(
+            idle: Duration? = Self.defaultIdle,
+            readHeader: Duration? = Self.defaultReadHeader,
+            readBody: Duration? = Self.defaultReadBody
+        ) {
+            self.idle = idle
+            self.readHeader = readHeader
+            self.readBody = readBody
+        }
+
+        @inlinable
+        static var defaultIdle: Duration? { .seconds(60) }
+
+        @inlinable
+        static var defaultReadHeader: Duration? { .seconds(30) }
+
+        @inlinable
+        static var defaultReadBody: Duration? { .seconds(60) }
+
+        /// Default timeout values: 60s idle, 30s read header, 60s read body.
+        public static var defaults: Self { .init() }
+    }
+
     /// Network binding configuration
     public var bindTarget: BindTarget
 
@@ -242,6 +287,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
 
+    /// The maximum number of concurrent connections the server will accept.
+    ///
+    /// When this limit is reached, the server stops accepting new connections
+    /// until existing ones close. `nil` means unlimited (the default).
+    public var maxConnections: Int?
+
+    /// Configuration for connection timeouts.
+    public var connectionTimeouts: ConnectionTimeouts
+
     /// Create a new configuration.
     /// - Parameters:
     ///   - bindTarget: A ``BindTarget``.
@@ -249,11 +303,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
     ///   - backpressureStrategy: A ``BackPressureStrategy``.
     ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
+    ///   - maxConnections: The maximum number of concurrent connections. `nil` means unlimited.
+    ///   - connectionTimeouts: The connection timeout configuration.
     public init(
         bindTarget: BindTarget,
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity,
-        backpressureStrategy: BackPressureStrategy = .defaults
+        backpressureStrategy: BackPressureStrategy = .defaults,
+        maxConnections: Int? = nil,
+        connectionTimeouts: ConnectionTimeouts = .defaults
     ) throws {
         // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1.
         // To support HTTP/2, `transportSecurity` must be set to `.tls` or `.mTLS`.
@@ -267,10 +325,16 @@ public struct NIOHTTPServerConfiguration: Sendable {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
+        if let maxConnections, maxConnections <= 0 {
+            throw NIOHTTPServerConfigurationError.invalidMaxConnections
+        }
+
         self.bindTarget = bindTarget
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = backpressureStrategy
+        self.maxConnections = maxConnections
+        self.connectionTimeouts = connectionTimeouts
     }
 }
 

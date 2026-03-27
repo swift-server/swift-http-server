@@ -322,6 +322,64 @@ public struct NIOHTTPServer: HTTPServer {
             secureUpgradeChannel.channel.close(promise: nil)
         }
     }
+
+    /// Adds timeout handlers (idle, read header, read body) to a child channel pipeline.
+    ///
+    /// Only handlers for non-nil timeouts are installed. This is called for both
+    /// HTTP/1.1 per-connection channels and HTTP/2 per-stream channels.
+    func addTimeoutHandlers(to channel: any Channel) throws {
+        let timeouts = self.configuration.connectionTimeouts
+
+        if let idle = timeouts.idle {
+            let idleTimeAmount = TimeAmount(idle)
+            try channel.pipeline.syncOperations.addHandler(
+                IdleStateHandler(readTimeout: idleTimeAmount, writeTimeout: idleTimeAmount)
+            )
+            try channel.pipeline.syncOperations.addHandler(ConnectionIdleHandler())
+        }
+
+        if let readHeader = timeouts.readHeader {
+            try channel.pipeline.syncOperations.addHandler(
+                ReadHeaderTimeoutHandler(timeout: TimeAmount(readHeader))
+            )
+        }
+
+        if let readBody = timeouts.readBody {
+            try channel.pipeline.syncOperations.addHandler(
+                ReadBodyTimeoutHandler(timeout: TimeAmount(readBody))
+            )
+        }
+    }
+
+    /// Adds only idle timeout handlers to a channel. Used for HTTP/2 connection-level channels
+    /// where read header/body timeouts are handled per-stream.
+    func addIdleTimeoutHandlers(to channel: any Channel) throws {
+        if let idle = self.configuration.connectionTimeouts.idle {
+            let idleTimeAmount = TimeAmount(idle)
+            try channel.pipeline.syncOperations.addHandler(
+                IdleStateHandler(readTimeout: idleTimeAmount, writeTimeout: idleTimeAmount)
+            )
+            try channel.pipeline.syncOperations.addHandler(ConnectionIdleHandler())
+        }
+    }
+
+    /// Adds only read header and body timeout handlers to a channel. Used for HTTP/2 per-stream
+    /// channels where idle timeout is handled at the connection level.
+    func addReadTimeoutHandlers(to channel: any Channel) throws {
+        let timeouts = self.configuration.connectionTimeouts
+
+        if let readHeader = timeouts.readHeader {
+            try channel.pipeline.syncOperations.addHandler(
+                ReadHeaderTimeoutHandler(timeout: TimeAmount(readHeader))
+            )
+        }
+
+        if let readBody = timeouts.readBody {
+            try channel.pipeline.syncOperations.addHandler(
+                ReadBodyTimeoutHandler(timeout: TimeAmount(readBody))
+            )
+        }
+    }
 }
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)

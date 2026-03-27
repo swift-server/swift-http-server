@@ -97,6 +97,12 @@ extension NIOHTTPServer {
                         try channel.pipeline.syncOperations.addHandler(
                             self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                         )
+
+                        if let maxConnections = self.configuration.maxConnections {
+                            try channel.pipeline.syncOperations.addHandler(
+                                ConnectionLimitHandler(maxConnections: maxConnections)
+                            )
+                        }
                     }
                 }
                 .bind(host: host, port: port) { channel in
@@ -120,6 +126,8 @@ extension NIOHTTPServer {
             channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
 
+                try self.addTimeoutHandlers(to: channel)
+
                 return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                     wrappingChannelSynchronously: channel,
                     configuration: .init(
@@ -141,7 +149,10 @@ extension NIOHTTPServer {
         )
     > {
         channel.eventLoop.makeCompletedFuture {
-            try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
+            // Add idle timeout at the connection level for HTTP/2
+            try self.addIdleTimeoutHandlers(to: channel)
+
+            return try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
                 mode: .server,
                 connectionManagerConfiguration: .init(
                     maxIdleTime: nil,
@@ -157,6 +168,9 @@ extension NIOHTTPServer {
                             .addHandler(
                                 HTTP2FramePayloadToHTTPServerCodec()
                             )
+
+                        // Add read header and body timeouts per-stream for HTTP/2
+                        try self.addReadTimeoutHandlers(to: http2StreamChannel)
 
                         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                             wrappingChannelSynchronously: http2StreamChannel,
