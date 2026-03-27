@@ -509,13 +509,88 @@ struct NIOHTTPServerTests {
             )
         }
     }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Server can still process other connections despite one failing")
+    func testServerCanContinueDespiteFailedConnection() async throws {
+        let server = try self.makePlaintextHTTP1Server()
+
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        let firstRequestErrorCaught = elg.any().makePromise(of: Void.self)
+
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
+                do {
+                    try await Self.echoResponse(
+                        readUpTo: Self.bodyData.readableBytes,
+                        reader: requestReader,
+                        sender: responseSender
+                    )
+                } catch {
+                    // Complete the promise
+                    firstRequestErrorCaught.succeed()
+
+                    // Propagate the error upwards
+                    throw error
+                }
+            },
+            body: { serverAddress in
+                try await confirmation { responseReceived in
+                    let firstClientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await firstClientChannel.executeThenClose { inbound, outbound in
+                        // Only send a request head; finish the stream immediately afterwards.
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                        outbound.finish()
+                    }
+
+                    try await firstRequestErrorCaught.futureResult.get()
+
+                    let secondClientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await secondClientChannel.executeThenClose { inbound, outbound in
+                        // Only send a request head; finish the stream immediately afterwards.
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                        try await outbound.write(.body(Self.bodyData))
+                        try await outbound.write(.end(nil))
+
+                        try await Self.validateResponse(
+                            inbound,
+                            expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                            expectedBody: [Self.bodyData]
+                        )
+
+                        responseReceived()
+                    }
+                }
+            }
+        )
+    }
 }
+
 extension NIOHTTPServerTests {
     static let bodyData = ByteBuffer(repeating: 5, count: 100)
     static let reqBody = HTTPRequestPart.body(Self.bodyData)
 
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    func makePlaintextHTTP1Server() throws -> NIOHTTPServer {
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        return server
+    }
 
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func makeSecureUpgradeServer() throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
