@@ -289,7 +289,7 @@ public struct NIOHTTPServer: HTTPServer {
         } catch {
             self.logger.debug("Error thrown while handling connection: \(error)")
             // TODO: We need to send a response head here potentially
-            throw error
+            try? await channel.channel.close()
         }
     }
 
