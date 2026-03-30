@@ -31,8 +31,9 @@ final class ReadHeaderTimeoutHandler: ChannelInboundHandler, RemovableChannelHan
     }
 
     func channelActive(context: ChannelHandlerContext) {
+        let boundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
         self.scheduledTimeout = context.eventLoop.scheduleTask(in: self.timeout) {
-            context.close(promise: nil)
+            boundContext.value.close(promise: nil)
         }
         context.fireChannelActive()
     }
@@ -71,8 +72,9 @@ final class ReadBodyTimeoutHandler: ChannelInboundHandler, RemovableChannelHandl
         let part = self.unwrapInboundIn(data)
         switch part {
         case .head:
+            let boundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
             self.scheduledTimeout = context.eventLoop.scheduleTask(in: self.timeout) {
-                context.close(promise: nil)
+                boundContext.value.close(promise: nil)
             }
         case .end:
             self.scheduledTimeout?.cancel()
