@@ -40,7 +40,10 @@ let package = Package(
         .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-http-api-proposal.git", branch: "main"),
+        .package(
+            url: "https://github.com/apple/swift-http-api-proposal.git",
+            branch: "2cb0ef6722e2086a04b5a14c0c40971b8038099a"
+        ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.16.0"),
