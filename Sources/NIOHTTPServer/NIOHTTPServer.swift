@@ -251,6 +251,14 @@ public struct NIOHTTPServer: HTTPServer {
                                 readerState: readerState
                             ),
                             responseSender: HTTPResponseSender { response in
+                                // TODO: The server will close the connection
+                                // after a response, the headers must include
+                                // `Connection: close` otherwise clients will
+                                // try to re-use the same connection and fail.
+                                // When the server can handle multiple requests
+                                // on the same connection, this can be removed.
+                                var response = response
+                                response.headerFields[.connection] = "close"
                                 try await outbound.write(.head(response))
                                 return HTTPResponseConcludingAsyncWriter(
                                     writer: outbound,
