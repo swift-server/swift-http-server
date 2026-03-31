@@ -38,11 +38,12 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
         self.activeConnections += 1
 
         let loopBoundSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
-        let channel = context.channel
+        let loopBoundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
         let eventLoop = context.eventLoop
         childChannel.closeFuture.whenComplete { _ in
             eventLoop.execute {
                 let `self` = loopBoundSelf.value
+                let context = loopBoundContext.value
                 self.activeConnections -= 1
                 if self.activeConnections <= self.maxConnections {
                     context.read()

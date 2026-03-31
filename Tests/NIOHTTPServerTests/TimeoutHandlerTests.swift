@@ -24,7 +24,7 @@ import Testing
 struct ReadHeaderTimeoutHandlerTests {
 
     @Test("Headers received within timeout — connection stays open")
-    func headersReceivedWithinTimeout() async throws {
+    func headersReceivedWithinTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -44,7 +44,7 @@ struct ReadHeaderTimeoutHandlerTests {
     }
 
     @Test("Headers not received within timeout — connection closed")
-    func headersNotReceivedWithinTimeout() async throws {
+    func headersNotReceivedWithinTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -60,7 +60,7 @@ struct ReadHeaderTimeoutHandlerTests {
     }
 
     @Test("Cleanup on handler removal")
-    func cleanupOnHandlerRemoval() async throws {
+    func cleanupOnHandlerRemoval() throws {
         let channel = EmbeddedChannel()
         let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -69,7 +69,7 @@ struct ReadHeaderTimeoutHandlerTests {
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
         // Remove the handler before the timeout fires
-        try channel.pipeline.syncOperations.removeHandler(handler)
+        _ = channel.pipeline.syncOperations.removeHandler(handler)
 
         // Advance past the timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
@@ -83,7 +83,7 @@ struct ReadHeaderTimeoutHandlerTests {
 struct ReadBodyTimeoutHandlerTests {
 
     @Test("Body completed within timeout — connection stays open")
-    func bodyCompletedWithinTimeout() async throws {
+    func bodyCompletedWithinTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -105,7 +105,7 @@ struct ReadBodyTimeoutHandlerTests {
     }
 
     @Test("Body not completed within timeout — connection closed")
-    func bodyNotCompletedWithinTimeout() async throws {
+    func bodyNotCompletedWithinTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -124,7 +124,7 @@ struct ReadBodyTimeoutHandlerTests {
     }
 
     @Test("Body parts do not reset timeout")
-    func bodyPartsDoNotResetTimeout() async throws {
+    func bodyPartsDoNotResetTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -150,7 +150,7 @@ struct ReadBodyTimeoutHandlerTests {
     }
 
     @Test("Cleanup on handler removal")
-    func cleanupOnHandlerRemoval() async throws {
+    func cleanupOnHandlerRemoval() throws {
         let channel = EmbeddedChannel()
         let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
@@ -162,7 +162,7 @@ struct ReadBodyTimeoutHandlerTests {
         try channel.writeInbound(HTTPRequestPart.head(head))
 
         // Remove handler before timeout
-        try channel.pipeline.syncOperations.removeHandler(handler)
+        _ = channel.pipeline.syncOperations.removeHandler(handler)
 
         // Advance past timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
