@@ -44,8 +44,8 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
             eventLoop.execute {
                 let `self` = loopBoundSelf.value
                 self.activeConnections -= 1
-                if self.activeConnections < self.maxConnections {
-                    channel.read()
+                if self.activeConnections <= self.maxConnections {
+                    context.read()
                 }
             }
         }
