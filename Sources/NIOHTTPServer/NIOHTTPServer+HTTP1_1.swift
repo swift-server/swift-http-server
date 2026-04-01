@@ -22,20 +22,38 @@ import NIOPosix
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
+    /// Serves incoming plaintext HTTP/1.1 connections.
+    ///
+    /// Each connection is handled concurrently in its own child task. Individual connection errors are handled within
+    /// the child tasks and do not affect other connections.
+    ///
+    /// - Parameters:
+    ///   - serverChannel: The async channel that produces incoming HTTP/1.1 connections.
+    ///   - handler: The request handler.
+    ///
+    /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveInsecureHTTP1_1(
         serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await http1Channel in inbound {
-                    group.addTask {
-                        try await self.handleRequestChannel(
-                            channel: http1Channel,
-                            handler: handler
-                        )
+        try await serverChannel.executeThenClose { inbound in
+            let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
+                do {
+                    for try await http1Channel in inbound {
+                        group.addTask {
+                            await self.handleRequestChannel(channel: http1Channel, handler: handler)
+                        }
                     }
+
+                    return nil
+                } catch {
+                    return error
                 }
+            }
+
+            if let inboundConnectionIterationError {
+                // The error occurred while iterating the inbound connection stream
+                throw inboundConnectionIterationError
             }
         }
     }

@@ -35,50 +35,116 @@ extension NIOHTTPServer {
         (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
     >
 
+    /// Serves incoming connections. Each connection undergoes ALPN negotiation to determine whether to use HTTP/1.1 or
+    /// HTTP/2, and requests are then handled over the negotiated protocol.
+    ///
+    /// Each accepted connection is handled concurrently in its own child task. Individual negotiation errors and
+    /// connection errors are handled within the child tasks and do not affect other connections.
+    ///
+    /// - Parameters:
+    ///   - serverChannel: The async channel that produces incoming connections.
+    ///   - handler: The request handler.
+    ///
+    /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveSecureUpgrade(
         serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await upgradeResult in inbound {
-                    group.addTask {
-                        do {
-                            try await withThrowingDiscardingTaskGroup { connectionGroup in
-                                switch try await upgradeResult.get() {
-                                case .http1_1(let http1Channel):
-                                    let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
-                                    Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                        connectionGroup.addTask {
-                                            try await self.handleRequestChannel(
-                                                channel: http1Channel,
-                                                handler: handler
-                                            )
-                                        }
-                                    }
-                                case .http2((let http2Connection, let http2Multiplexer)):
-                                    do {
-                                        let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
-                                        try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                            for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                connectionGroup.addTask {
-                                                    try await self.handleRequestChannel(
-                                                        channel: http2StreamChannel,
-                                                        handler: handler
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        self.logger.debug("HTTP2 connection closed: \(error)")
-                                    }
-                                }
+        try await serverChannel.executeThenClose { inbound in
+            let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
+                do {
+                    for try await upgradeResult in inbound {
+                        connectionGroup.addTask {
+                            let negotiatedChannel: NegotiatedChannel
+
+                            do {
+                                negotiatedChannel = try await upgradeResult.get()
+                            } catch {
+                                self.logger.debug("Negotiating ALPN failed", metadata: ["error": "\(error)"])
+                                return
                             }
-                        } catch {
-                            self.logger.debug("Negotiating ALPN failed: \(error)")
+
+                            switch negotiatedChannel {
+                            case .http1_1(let requestChannel):
+                                await self.serveHTTP1Connection(
+                                    requestChannel: requestChannel,
+                                    handler: handler
+                                )
+
+                            case .http2((let connectionChannel, let multiplexer)):
+                                await self.serveHTTP2Connection(
+                                    connectionChannel: connectionChannel,
+                                    multiplexer: multiplexer,
+                                    handler: handler
+                                )
+                            }
+                        }
+                    }
+
+                    return nil
+                } catch {
+                    return error
+                }
+            }
+
+            if let inboundConnectionIterationError {
+                // The error occurred while iterating the inbound connection stream
+                throw inboundConnectionIterationError
+            }
+        }
+    }
+
+    /// Serves a HTTP/1.1 connection.
+    ///
+    /// - Parameters:
+    ///   - requestChannel: The HTTP/1.1 request channel.
+    ///   - handler: The request handler.
+    private func serveHTTP1Connection(
+        requestChannel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
+
+        await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+            await self.handleRequestChannel(
+                channel: requestChannel,
+                handler: handler
+            )
+        }
+    }
+
+    /// Serves a HTTP/2 connection by iterating the stream channels and handling each stream concurrently.
+    ///
+    /// - Note: Stream iteration errors are logged but do not propagate to the caller.
+    ///
+    /// - Parameters:
+    ///   - connectionChannel: The underlying NIO channel for the HTTP/2 connection.
+    ///   - multiplexer: The HTTP/2 stream multiplexer.
+    ///   - handler: The request handler.
+    private func serveHTTP2Connection(
+        connectionChannel: any Channel,
+        multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        await withDiscardingTaskGroup { streamGroup in
+            do {
+                let chainFuture = connectionChannel.nioSSL_peerValidatedCertificateChain()
+
+                try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                    for try await streamChannel in multiplexer.inbound {
+                        streamGroup.addTask {
+                            await self.handleRequestChannel(
+                                channel: streamChannel,
+                                handler: handler
+                            )
                         }
                     }
                 }
+            } catch {
+                self.logger.error(
+                    "Error thrown while iterating over incoming HTTP/2 streams",
+                    metadata: ["error": "\(error)"]
+                )
             }
         }
     }
