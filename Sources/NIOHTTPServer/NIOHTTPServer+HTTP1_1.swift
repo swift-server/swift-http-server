@@ -115,29 +115,29 @@ extension NIOHTTPServer {
     ) async {
         do {
             try await channel.executeThenClose { inbound, outbound in
-                    var iterator = inbound.makeAsyncIterator()
+                var iterator = inbound.makeAsyncIterator()
 
-                    requestLoop: while true {
-                        guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
-                            break requestLoop
-                        }
-
-                        guard
-                            let recoveredIterator = try await self.invokeHandler(
-                                request: httpRequest,
-                                iterator: iterator,
-                                outbound: outbound,
-                                handler: handler
-                            )
-                        else {
-                            // Handler did not fully consume the request; cannot continue on this
-                            // connection.
-                            break requestLoop
-                        }
-
-                        iterator = recoveredIterator
+                requestLoop: while true {
+                    guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                        break requestLoop
                     }
+
+                    guard
+                        let recoveredIterator = try await self.invokeHandler(
+                            request: httpRequest,
+                            iterator: iterator,
+                            outbound: outbound,
+                            handler: handler
+                        )
+                    else {
+                        // Handler did not fully consume the request; cannot continue on this
+                        // connection.
+                        break requestLoop
+                    }
+
+                    iterator = recoveredIterator
                 }
+            }
         } catch {
             self.logger.debug("Error thrown while handling HTTP/1.1 connection", metadata: ["error": "\(error)"])
             try? await channel.channel.close()
