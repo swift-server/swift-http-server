@@ -117,7 +117,7 @@ extension NIOHTTPServer {
             try await channel.executeThenClose { inbound, outbound in
                 var iterator = inbound.makeAsyncIterator()
 
-                requestLoop: while true {
+                requestLoop: while !Task.isCancelled {
                     guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
                         break requestLoop
                     }
