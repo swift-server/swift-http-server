@@ -37,6 +37,10 @@ extension NIOHTTPServer {
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
         try await serverChannel.executeThenClose { inbound in
+            // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
+            // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
+            // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
+            // `inbound`) must be caught and handled directly.
             let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
                 do {
                     for try await http1Channel in inbound {
