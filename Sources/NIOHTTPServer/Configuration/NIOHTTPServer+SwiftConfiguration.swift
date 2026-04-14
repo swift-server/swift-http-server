@@ -453,22 +453,16 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     /// Initialize connection timeouts configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `idle` (int, optional, default: 60): Maximum time in seconds a connection can remain idle.
-    ///   Set to `null` to disable.
-    /// - `readHeader` (int, optional, default: 30): Maximum time in seconds to receive request headers.
-    ///   Set to `null` to disable.
-    /// - `readBody` (int, optional, default: 60): Maximum time in seconds to receive the request body.
-    ///   Set to `null` to disable.
+    /// - `idle` (int, optional, default: nil): Maximum time in seconds a connection can remain idle.
+    /// - `readHeader` (int, optional, default: nil): Maximum time in seconds to receive request headers.
+    /// - `readBody` (int, optional, default: nil): Maximum time in seconds to receive the request body.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
-            idle: config.int(forKey: "idle").map { .seconds($0) }
-                ?? Self.defaultIdle,
-            readHeader: config.int(forKey: "readHeader").map { .seconds($0) }
-                ?? Self.defaultReadHeader,
+            idle: config.int(forKey: "idle").map { .seconds($0) },
+            readHeader: config.int(forKey: "readHeader").map { .seconds($0) },
             readBody: config.int(forKey: "readBody").map { .seconds($0) }
-                ?? Self.defaultReadBody
         )
     }
 }

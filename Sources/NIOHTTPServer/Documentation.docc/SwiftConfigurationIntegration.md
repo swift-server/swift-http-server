@@ -29,8 +29,8 @@ let serverConfiguration = try NIOHTTPServerConfiguration(config: config)
 
 ### Configuration key reference
 
-``NIOHTTPServerConfiguration`` is comprised of four components. Provide the configuration for each component under its
-respective key prefix.
+``NIOHTTPServerConfiguration`` is comprised of several components. Provide the configuration for each component under
+its respective key prefix.
 
 > Important: HTTP/2 cannot be served over plaintext. If `"http2"` is included in `http.versions`, the transport
 > security must be set to `"tls"` or `"mTLS"`.
@@ -57,6 +57,10 @@ respective key prefix.
 |                               | `certificateVerificationMode`     | `string`       | Required for `"mTLS"`, permitted values: `"optionalVerification"`, `"noHostnameVerification"`                                 | -       |
 | `backpressureStrategy`        | `lowWatermark`                    | `int`          | Optional                                                                                                                      | 2       |
 |                               | `highWatermark`                   | `int`          | Optional                                                                                                                      | 10      |
+| -                             | `maxConnections`                  | `int`          | Optional                                                                                                                      | nil     |
+| `connectionTimeouts`          | `idle`                            | `int`          | Optional                                                                                                                      | nil     |
+|                               | `readHeader`                      | `int`          | Optional                                                                                                                      | nil     |
+|                               | `readBody`                        | `int`          | Optional                                                                                                                      | nil     |
 
 
 The `credentialSource` determines how server credentials are provided:
@@ -108,6 +112,12 @@ key were omitted.
     "backpressureStrategy": {
         "lowWatermark": 2,                  // default: 2
         "highWatermark": 10                 // default: 10
+    },
+    "maxConnections": 1000,                 // default: nil (unlimited)
+    "connectionTimeouts": {
+        "idle": 60,                         // default: nil (no timeout)
+        "readHeader": 30,                   // default: nil (no timeout)
+        "readBody": 60                      // default: nil (no timeout)
     }
 }
 ```
