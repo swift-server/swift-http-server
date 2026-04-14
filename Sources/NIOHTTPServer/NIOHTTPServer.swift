@@ -340,26 +340,20 @@ extension Channel {
     /// where read header/body timeouts are handled per-stream.
     func addIdleTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         if let idle = timeouts.idle {
-            let idleTimeAmount = TimeAmount(idle)
             try self.pipeline.syncOperations.addHandler(
-                IdleStateHandler(readTimeout: idleTimeAmount, writeTimeout: idleTimeAmount)
+                ConnectionIdleTimeoutHandler(timeout: TimeAmount(idle))
             )
-            try self.pipeline.syncOperations.addHandler(ConnectionIdleHandler())
         }
     }
 
     /// Adds only read header and body timeout handlers to the channel. Used for HTTP/2 per-stream
     /// channels where idle timeout is handled at the connection level.
     func addReadTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
-        if let readHeader = timeouts.readHeader {
+        let readHeader = timeouts.readHeader.map { TimeAmount($0) }
+        let readBody = timeouts.readBody.map { TimeAmount($0) }
+        if readHeader != nil || readBody != nil {
             try self.pipeline.syncOperations.addHandler(
-                ReadHeaderTimeoutHandler(timeout: TimeAmount(readHeader))
-            )
-        }
-
-        if let readBody = timeouts.readBody {
-            try self.pipeline.syncOperations.addHandler(
-                ReadBodyTimeoutHandler(timeout: TimeAmount(readBody))
+                RequestTimeoutHandler(readHeaderTimeout: readHeader, readBodyTimeout: readBody)
             )
         }
     }

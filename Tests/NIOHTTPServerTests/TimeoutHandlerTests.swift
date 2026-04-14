@@ -20,154 +20,259 @@ import Testing
 
 @testable import NIOHTTPServer
 
-@Suite("ReadHeaderTimeoutHandler")
-struct ReadHeaderTimeoutHandlerTests {
+@Suite("ConnectionIdleTimeoutHandler")
+struct ConnectionIdleTimeoutHandlerTests {
+
+    @Test("Connection closed after idle timeout")
+    func closedAfterIdleTimeout() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // Advance past the timeout with no activity
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
+    }
+
+    @Test("Read resets idle timeout")
+    func readResetsTimeout() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // Advance partway, then trigger a read
+        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        try channel.writeInbound(ByteBuffer(bytes: [1, 2, 3]))
+
+        // Advance past the original timeout but within the reset timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        #expect(channel.isActive)
+
+        // Now advance past the reset timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(2))
+        #expect(!channel.isActive)
+    }
+
+    @Test("Write resets idle timeout")
+    func writeResetsTimeout() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // Advance partway, then trigger a write
+        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        try channel.writeOutbound(ByteBuffer(bytes: [1, 2, 3]))
+
+        // Advance past the original timeout but within the reset timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        #expect(channel.isActive)
+
+        // Now advance past the reset timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(2))
+        #expect(!channel.isActive)
+    }
+
+    @Test("Cleanup on handler removal")
+    func cleanupOnHandlerRemoval() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        _ = channel.pipeline.syncOperations.removeHandler(handler)
+
+        channel.embeddedEventLoop.advanceTime(by: .seconds(10))
+
+        #expect(channel.isActive)
+    }
+}
+
+@Suite("RequestTimeoutHandler")
+struct RequestTimeoutHandlerTests {
+
+    // MARK: - Header timeout tests
 
     @Test("Headers received within timeout — connection stays open")
     func headersReceivedWithinTimeout() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: nil)
         try channel.pipeline.syncOperations.addHandler(handler)
 
-        // Activate the channel (starts the timer)
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Send headers before the timeout
         let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Advance past the timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
 
-        // Channel should still be active
         #expect(channel.isActive)
     }
 
     @Test("Headers not received within timeout — connection closed")
     func headersNotReceivedWithinTimeout() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: nil)
         try channel.pipeline.syncOperations.addHandler(handler)
 
-        // Activate the channel (starts the timer)
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Don't send any headers, advance past timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(6))
 
-        // Channel should be closed
         #expect(!channel.isActive)
     }
 
-    @Test("Cleanup on handler removal")
-    func cleanupOnHandlerRemoval() throws {
-        let channel = EmbeddedChannel()
-        let handler = ReadHeaderTimeoutHandler(timeout: .seconds(5))
-        try channel.pipeline.syncOperations.addHandler(handler)
-
-        // Activate the channel (starts the timer)
-        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
-
-        // Remove the handler before the timeout fires
-        _ = channel.pipeline.syncOperations.removeHandler(handler)
-
-        // Advance past the timeout
-        channel.embeddedEventLoop.advanceTime(by: .seconds(10))
-
-        // Channel should still be active — the scheduled task was cancelled on removal
-        #expect(channel.isActive)
-    }
-}
-
-@Suite("ReadBodyTimeoutHandler")
-struct ReadBodyTimeoutHandlerTests {
+    // MARK: - Body timeout tests
 
     @Test("Body completed within timeout — connection stays open")
     func bodyCompletedWithinTimeout() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: nil, readBodyTimeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Send head (starts the timer)
         let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Send end before timeout
         try channel.writeInbound(HTTPRequestPart.end(nil))
 
-        // Advance past timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
 
-        // Channel should still be active
         #expect(channel.isActive)
     }
 
     @Test("Body not completed within timeout — connection closed")
     func bodyNotCompletedWithinTimeout() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: nil, readBodyTimeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Send head (starts the timer) but don't send end
         let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Advance past timeout without sending end
         channel.embeddedEventLoop.advanceTime(by: .seconds(6))
 
-        // Channel should be closed
         #expect(!channel.isActive)
     }
 
     @Test("Body parts do not reset timeout")
     func bodyPartsDoNotResetTimeout() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: nil, readBodyTimeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Send head (starts the timer)
         let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Send body chunks at intervals — these should NOT reset the timer
         channel.embeddedEventLoop.advanceTime(by: .seconds(2))
         try channel.writeInbound(HTTPRequestPart.body(ByteBuffer(bytes: [1, 2, 3])))
 
         channel.embeddedEventLoop.advanceTime(by: .seconds(2))
         try channel.writeInbound(HTTPRequestPart.body(ByteBuffer(bytes: [4, 5, 6])))
 
-        // Now advance past the original 5s timeout (total 6s since head)
+        // Total 6s since head — past the 5s timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(2))
 
-        // Channel should be closed — body chunks didn't reset the timer
         #expect(!channel.isActive)
     }
 
-    @Test("Cleanup on handler removal")
-    func cleanupOnHandlerRemoval() throws {
+    // MARK: - Combined timeout tests
+
+    @Test("Both timeouts configured — header then body")
+    func bothTimeoutsHeaderThenBody() throws {
         let channel = EmbeddedChannel()
-        let handler = ReadBodyTimeoutHandler(timeout: .seconds(5))
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: .seconds(10))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Send head (starts the timer)
+        // Send head within header timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(3))
         let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Remove handler before timeout
+        // Send end within body timeout
+        channel.embeddedEventLoop.advanceTime(by: .seconds(8))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+
+        channel.embeddedEventLoop.advanceTime(by: .seconds(20))
+
+        #expect(channel.isActive)
+    }
+
+    @Test("Both timeouts configured — header timeout fires")
+    func bothTimeoutsHeaderFires() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: .seconds(10))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
+    }
+
+    @Test("Both timeouts configured — body timeout fires")
+    func bothTimeoutsBodyFires() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: .seconds(10))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+
+        channel.embeddedEventLoop.advanceTime(by: .seconds(11))
+
+        #expect(!channel.isActive)
+    }
+
+    // MARK: - Cleanup
+
+    @Test("Cleanup on handler removal during header phase")
+    func cleanupOnHandlerRemovalDuringHeaderPhase() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
         _ = channel.pipeline.syncOperations.removeHandler(handler)
 
-        // Advance past timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
 
-        // Channel should still be active
+        #expect(channel.isActive)
+    }
+
+    @Test("Cleanup on handler removal during body phase")
+    func cleanupOnHandlerRemovalDuringBodyPhase() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+
+        _ = channel.pipeline.syncOperations.removeHandler(handler)
+
+        channel.embeddedEventLoop.advanceTime(by: .seconds(10))
+
         #expect(channel.isActive)
     }
 }
