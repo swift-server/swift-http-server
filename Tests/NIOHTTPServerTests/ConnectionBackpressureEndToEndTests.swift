@@ -43,12 +43,11 @@ struct ConnectionBackpressureEndToEndTests {
             try await NIOHTTPServerTests.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
-                    _ = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
-                        return try await bodyReader.collect(upTo: 1024) { _ in }
-                    }
-                    let writer = try await responseSender.send(.init(status: .ok))
-                    try await writer.produceAndConclude { bodyWriter in nil }
+                    try await NIOHTTPServerTests.echoResponse(
+                        readUpTo: 1024,
+                        reader: reader,
+                        sender: responseSender
+                    )
                 },
                 body: { serverAddress in
                     await withThrowingTaskGroup { group in
@@ -64,18 +63,11 @@ struct ConnectionBackpressureEndToEndTests {
                                     )
                                     try await outbound.write(.end(nil))
 
-                                    var iter = inbound.makeAsyncIterator()
-                                    let head = try await iter.next()
-                                    guard case .head(let response) = head else {
-                                        Issue.record("Expected response head")
-                                        return
-                                    }
-                                    #expect(response.status == 200)
-
-                                    // Read remaining parts
-                                    while let part = try await iter.next() {
-                                        if case .end = part { break }
-                                    }
+                                    try await NIOHTTPServerTests.validateResponse(
+                                        inbound,
+                                        expectedHead: [.init(status: .ok)],
+                                        expectedBody: []
+                                    )
 
                                     responseReceived()
                                 }
@@ -108,12 +100,11 @@ struct ConnectionBackpressureEndToEndTests {
             try await NIOHTTPServerTests.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
-                    _ = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
-                        return try await bodyReader.collect(upTo: 1024) { _ in }
-                    }
-                    let writer = try await responseSender.send(.init(status: .ok))
-                    try await writer.produceAndConclude { bodyWriter in nil }
+                    try await NIOHTTPServerTests.echoResponse(
+                        readUpTo: 1024,
+                        reader: reader,
+                        sender: responseSender
+                    )
                 },
                 body: { serverAddress in
                     await withThrowingTaskGroup { group in
@@ -129,17 +120,11 @@ struct ConnectionBackpressureEndToEndTests {
                                     )
                                     try await outbound.write(.end(nil))
 
-                                    var iter = inbound.makeAsyncIterator()
-                                    let head = try await iter.next()
-                                    guard case .head(let response) = head else {
-                                        Issue.record("Expected response head")
-                                        return
-                                    }
-                                    #expect(response.status == 200)
-
-                                    while let part = try await iter.next() {
-                                        if case .end = part { break }
-                                    }
+                                    try await NIOHTTPServerTests.validateResponse(
+                                        inbound,
+                                        expectedHead: [.init(status: .ok)],
+                                        expectedBody: []
+                                    )
 
                                     responseReceived()
                                 }
@@ -169,12 +154,11 @@ struct ConnectionBackpressureEndToEndTests {
             try await NIOHTTPServerTests.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
-                    _ = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
-                        return try await bodyReader.collect(upTo: 1024) { _ in }
-                    }
-                    let writer = try await responseSender.send(.init(status: .ok))
-                    try await writer.produceAndConclude { bodyWriter in nil }
+                    try await NIOHTTPServerTests.echoResponse(
+                        readUpTo: 1024,
+                        reader: reader,
+                        sender: responseSender
+                    )
                 },
                 body: { serverAddress in
                     await withThrowingTaskGroup { group in
@@ -190,17 +174,11 @@ struct ConnectionBackpressureEndToEndTests {
                                     )
                                     try await outbound.write(.end(nil))
 
-                                    var iter = inbound.makeAsyncIterator()
-                                    let head = try await iter.next()
-                                    guard case .head(let response) = head else {
-                                        Issue.record("Expected response head")
-                                        return
-                                    }
-                                    #expect(response.status == 200)
-
-                                    while let part = try await iter.next() {
-                                        if case .end = part { break }
-                                    }
+                                    try await NIOHTTPServerTests.validateResponse(
+                                        inbound,
+                                        expectedHead: [.init(status: .ok)],
+                                        expectedBody: []
+                                    )
 
                                     responseReceived()
                                 }
