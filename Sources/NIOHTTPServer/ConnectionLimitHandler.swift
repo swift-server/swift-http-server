@@ -28,6 +28,7 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
 
     private let maxConnections: Int
     private var activeConnections: Int = 0
+    private var pendingRead: Bool = false
 
     init(maxConnections: Int) {
         self.maxConnections = maxConnections
@@ -39,12 +40,12 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
 
         let loopBoundSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
         let loopBoundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-        let eventLoop = context.eventLoop
         childChannel.closeFuture.whenComplete { _ in
             let `self` = loopBoundSelf.value
             let context = loopBoundContext.value
             `self`.activeConnections -= 1
-            if `self`.activeConnections <= `self`.maxConnections {
+            if `self`.pendingRead && `self`.activeConnections <= `self`.maxConnections {
+                `self`.pendingRead = false
                 context.read()
             }
         }
@@ -55,6 +56,8 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
     func read(context: ChannelHandlerContext) {
         if self.activeConnections <= self.maxConnections {
             context.read()
+        } else {
+            self.pendingRead = true
         }
     }
 }
