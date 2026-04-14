@@ -23,7 +23,7 @@ import NIOHTTPTypes
 ///
 /// This replaces the combination of NIO's `IdleStateHandler` and a separate
 /// handler to react to idle events.
-final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler {
+final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler {
     typealias InboundIn = NIOAny
     typealias InboundOut = NIOAny
     typealias OutboundIn = NIOAny
