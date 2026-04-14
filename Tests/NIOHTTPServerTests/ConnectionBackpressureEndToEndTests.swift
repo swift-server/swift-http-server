@@ -65,7 +65,7 @@ struct ConnectionBackpressureEndToEndTests {
 
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
-                                        expectedHead: [.init(status: .ok)],
+                                        expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
                                         expectedBody: []
                                     )
 
@@ -122,7 +122,7 @@ struct ConnectionBackpressureEndToEndTests {
 
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
-                                        expectedHead: [.init(status: .ok)],
+                                        expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
                                         expectedBody: []
                                     )
 
@@ -176,7 +176,7 @@ struct ConnectionBackpressureEndToEndTests {
 
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
-                                        expectedHead: [.init(status: .ok)],
+                                        expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
                                         expectedBody: []
                                     )
 
