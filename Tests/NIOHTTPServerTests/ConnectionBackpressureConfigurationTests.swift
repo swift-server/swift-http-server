@@ -145,9 +145,9 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
         #expect(serverConfig.maxConnections == nil)
-        #expect(serverConfig.connectionTimeouts.idle == .seconds(60))
-        #expect(serverConfig.connectionTimeouts.readHeader == .seconds(30))
-        #expect(serverConfig.connectionTimeouts.readBody == .seconds(60))
+        #expect(serverConfig.connectionTimeouts.idle == nil)
+        #expect(serverConfig.connectionTimeouts.readHeader == nil)
+        #expect(serverConfig.connectionTimeouts.readBody == nil)
     }
 }
 #endif  // Configuration
