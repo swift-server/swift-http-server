@@ -273,7 +273,47 @@ public struct NIOHTTPServer: HTTPServer {
             throw error
         }
 
-        return readerState.takeIterator()
+        // If the handler didn't properly conclude the response, the HTTP codec
+        // is in an inconsistent state and the connection cannot be reused.
+        if !writerState.wrapped.withLock({ $0.finishedWriting }) {
+            self.logger.debug("Handler did not conclude the response. Closing connection.")
+            return nil
+        }
+
+        // Recover the iterator for potential connection reuse.
+        guard var recoveredIterator = readerState.takeIterator() else {
+            // The handler started reading the request body but didn't finish.
+            // The iterator was consumed by the reader and not returned.
+            return nil
+        }
+
+        // If the handler didn't fully consume the request body, drain the remaining
+        // parts so the iterator is positioned at the start of the next request.
+        // Errors during draining are not propagated — if the drain fails, we simply
+        // cannot reuse this connection.
+        if !readerState.wrapped.withLock({ $0.finishedReading }) {
+            do {
+                drainLoop: while true {
+                    switch try await recoveredIterator.next(isolation: #isolation) {
+                    case .head:
+                        self.logger.debug(
+                            "Unexpectedly received request head while draining unconsumed request body."
+                        )
+                        return nil
+                    case .body:
+                        continue drainLoop
+                    case .end:
+                        break drainLoop
+                    case .none:
+                        return nil
+                    }
+                }
+            } catch {
+                return nil
+            }
+        }
+
+        return recoveredIterator
     }
 
     /// Fail the listening address promise if the server is shutting down before it began listening.

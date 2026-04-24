@@ -38,7 +38,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         /// The type of errors that can occur during reading operations.
         public typealias ReadFailure = any Error
 
-        /// The HTTP trailer fields captured at the end of the request.
+        /// The shared reader state that holds the iterator and captures trailers.
         fileprivate var state: ReaderState
 
         struct RequestBodyStateMachine {
@@ -62,14 +62,9 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
             private var state: State
             private var readerState: ReaderState
 
-            /// The iterator that provides HTTP request parts from the underlying channel.
-            /// Taken from ReaderState once at the start of reading, and returned when reading completes.
-            private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
-
             init(readerState: ReaderState) {
                 self.state = .readingBody(.noExcess)
                 self.readerState = readerState
-                self.iterator = readerState.takeIterator()
             }
 
             enum ReadResult {
@@ -90,26 +85,45 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
 
                     case .noExcess:
                         // There is no excess from previous reads. We obtain the next element from the stream.
-                        let requestPart = try await self.iterator?.next(isolation: #isolation)
+                        // Take the iterator from ReaderState, read one part, and put it back.
+                        // This ensures the iterator is always recoverable even if the reader
+                        // is dropped without consuming .end.
+                        guard var iterator = self.readerState.takeIterator() else {
+                            throw RequestBodyReadError.requestEndedBeforeReceivingEnd
+                        }
+
+                        let requestPart: HTTPRequestPart?
+                        do {
+                            requestPart = try await iterator.next(isolation: #isolation)
+                        } catch {
+                            // Put the iterator back before propagating the error.
+                            nonisolated(unsafe) let iter = iterator
+                            self.readerState.putIterator(iter)
+                            throw error
+                        }
 
                         switch requestPart {
                         case .head:
+                            nonisolated(unsafe) let iter = iterator
+                            self.readerState.putIterator(iter)
                             fatalError("Unexpectedly received a request head.")
 
                         case .none:
+                            // Stream ended without .end — don't put iterator back.
                             throw RequestBodyReadError.requestEndedBeforeReceivingEnd
 
                         case .body(let element):
+                            nonisolated(unsafe) let iter = iterator
+                            self.readerState.putIterator(iter)
                             bodyElement = element
 
                         case .end(let trailers):
                             self.state = .finished
-                            nonisolated(unsafe) let iterator = self.iterator.take()
+                            nonisolated(unsafe) let iter = iterator
+                            self.readerState.putIterator(iter)
                             self.readerState.wrapped.withLock { state in
                                 state.finishedReading = true
                                 state.trailers = trailers
-                                let disconnected = Disconnected(value: iterator)
-                                state.iterator = disconnected.take()
                             }
                             return .requestFinished
                         }
@@ -136,8 +150,6 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         var requestBodyStateMachine: RequestBodyStateMachine
 
         /// Initializes a new request body reader.
-        ///
-        /// Takes the iterator from ReaderState so the state machine owns it for the entire read cycle.
         fileprivate init(readerState: ReaderState) {
             self.requestBodyStateMachine = .init(readerState: readerState)
             self.state = readerState
@@ -195,6 +207,15 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                 let iterator = state.iterator
                 state.iterator = nil
                 return iterator
+            }
+        }
+
+        func putIterator(
+            _ iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
+        ) {
+            var disconnected = Disconnected(value: Optional(iterator))
+            self.wrapped.withLock { state in
+                state.iterator = disconnected.swap(newValue: nil)
             }
         }
     }
