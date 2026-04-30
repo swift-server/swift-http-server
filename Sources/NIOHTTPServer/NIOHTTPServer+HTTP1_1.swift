@@ -97,15 +97,13 @@ extension NIOHTTPServer {
         channel: any Channel,
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
-        channel.pipeline.addHandler(LoggingHandler()).flatMap {
-            channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
-                try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
+        channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+            try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
 
-                return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                    wrappingChannelSynchronously: channel,
-                    configuration: asyncChannelConfiguration
-                )
-            }
+            return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                wrappingChannelSynchronously: channel,
+                configuration: asyncChannelConfiguration
+            )
         }
     }
 
@@ -144,40 +142,5 @@ extension NIOHTTPServer {
             self.logger.debug("Error thrown while handling HTTP/1.1 connection", metadata: ["error": "\(error)"])
             try? await channel.channel.close()
         }
-    }
-}
-
-import Runtime
-final class LoggingHandler: ChannelDuplexHandler, Sendable {
-    typealias InboundIn = ByteBuffer
-    typealias OutboundIn = ByteBuffer
-
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        print("channelRead: \(self.unwrapInboundIn(data))")
-        context.fireChannelRead(data)
-    }
-
-    func channelReadComplete(context: ChannelHandlerContext) {
-        print("channelReadComplete")
-        context.fireChannelReadComplete()
-    }
-
-    func close(context: ChannelHandlerContext, mode: CloseMode, promise: EventLoopPromise<Void>?) {
-        if #available(macOS 26.0, *) {
-            print("close", try! Backtrace.capture().symbolicated()?.description)
-        } else {
-            // Fallback on earlier versions
-        }
-        context.close(mode: mode, promise: promise)
-    }
-
-    func flush(context: ChannelHandlerContext) {
-        print("flush")
-        context.flush()
-    }
-
-    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-        print("write: \(self.unwrapOutboundIn(data))")
-        context.write(data, promise: promise)
     }
 }
