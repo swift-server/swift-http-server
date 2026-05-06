@@ -84,6 +84,10 @@ public struct NIOHTTPServer: HTTPServer {
     public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
     public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
 
+    /// Maximum number of bytes to drain from an unconsumed request body before
+    /// giving up and closing the connection.
+    private var maxDrainBytes: Int { 256 * 1024 }
+
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
 
@@ -289,9 +293,10 @@ public struct NIOHTTPServer: HTTPServer {
 
         // If the handler didn't fully consume the request body, drain the remaining
         // parts so the iterator is positioned at the start of the next request.
-        // Errors during draining are not propagated — if the drain fails, we simply
-        // cannot reuse this connection.
+        // To prevent an attacker from keeping the connection in an infinite draining
+        // state, we only drain up to `Self.bytesDrained`. If more remains, close the connection.
         if !readerState.wrapped.withLock({ $0.finishedReading }) {
+            var bytesDrained = 0
             do {
                 drainLoop: while true {
                     switch try await recoveredIterator.next(isolation: #isolation) {
@@ -300,7 +305,11 @@ public struct NIOHTTPServer: HTTPServer {
                             "Unexpectedly received request head while draining unconsumed request body."
                         )
                         return nil
-                    case .body:
+                    case .body(let buffer):
+                        bytesDrained += buffer.readableBytes
+                        if bytesDrained > self.maxDrainBytes {
+                            return nil
+                        }
                         continue drainLoop
                     case .end:
                         break drainLoop
