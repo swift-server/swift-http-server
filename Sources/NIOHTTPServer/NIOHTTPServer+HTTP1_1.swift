@@ -83,7 +83,10 @@ extension NIOHTTPServer {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
 
-            try channel.addTimeoutHandlers(self.configuration.connectionTimeouts)
+            try channel
+                .pipeline
+                .syncOperations
+                .addTimeoutHandlers(self.configuration.connectionTimeouts)
 
             return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                 wrappingChannelSynchronously: channel,

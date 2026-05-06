@@ -126,7 +126,10 @@ extension NIOHTTPServer {
             channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
 
-                try channel.addTimeoutHandlers(self.configuration.connectionTimeouts)
+                try channel
+                    .pipeline
+                    .syncOperations
+                    .addTimeoutHandlers(self.configuration.connectionTimeouts)
 
                 return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                     wrappingChannelSynchronously: channel,
@@ -150,7 +153,10 @@ extension NIOHTTPServer {
     > {
         channel.eventLoop.makeCompletedFuture {
             // Add idle timeout at the connection level for HTTP/2
-            try channel.addIdleTimeoutHandlers(self.configuration.connectionTimeouts)
+            try channel
+                .pipeline
+                .syncOperations
+                .addIdleTimeoutHandlers(self.configuration.connectionTimeouts)
 
             return try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
                 mode: .server,
@@ -170,7 +176,10 @@ extension NIOHTTPServer {
                             )
 
                         // Add read header and body timeouts per-stream for HTTP/2
-                        try http2StreamChannel.addReadTimeoutHandlers(self.configuration.connectionTimeouts)
+                        try http2StreamChannel
+                            .pipeline
+                            .syncOperations
+                            .addReadTimeoutHandlers(self.configuration.connectionTimeouts)
 
                         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                             wrappingChannelSynchronously: http2StreamChannel,

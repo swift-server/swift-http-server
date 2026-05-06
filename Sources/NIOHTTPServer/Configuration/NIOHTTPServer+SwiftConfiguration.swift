@@ -454,8 +454,10 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     ///
     /// ## Configuration keys:
     /// - `idle` (int, optional, default: nil): Maximum time in seconds a connection can remain idle.
-    /// - `readHeader` (int, optional, default: nil): Maximum time in seconds to receive request headers.
-    /// - `readBody` (int, optional, default: nil): Maximum time in seconds to receive the request body.
+    /// - `readHeader` (int, optional, default: nil): Maximum time in seconds to receive request headers
+    /// after a connection is established.
+    /// - `readBody` (int, optional, default: nil): Maximum time in seconds to receive the complete request
+    /// body after headers have been received.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {

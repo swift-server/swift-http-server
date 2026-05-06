@@ -326,7 +326,7 @@ public struct NIOHTTPServer: HTTPServer {
 }
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-extension Channel {
+extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
     /// Only handlers for non-nil timeouts are installed. This is called for both
@@ -340,7 +340,7 @@ extension Channel {
     /// where read header/body timeouts are handled per-stream.
     func addIdleTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         if let idle = timeouts.idle {
-            try self.pipeline.syncOperations.addHandler(
+            try self.addHandler(
                 ConnectionIdleTimeoutHandler(timeout: TimeAmount(idle))
             )
         }
@@ -352,7 +352,7 @@ extension Channel {
         let readHeader = timeouts.readHeader.map { TimeAmount($0) }
         let readBody = timeouts.readBody.map { TimeAmount($0) }
         if readHeader != nil || readBody != nil {
-            try self.pipeline.syncOperations.addHandler(
+            try self.addHandler(
                 RequestTimeoutHandler(readHeaderTimeout: readHeader, readBodyTimeout: readBody)
             )
         }

@@ -236,7 +236,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// slow or idle connections. Individual timeouts can be disabled by setting
     /// them to `nil`.
     public struct ConnectionTimeouts: Sendable {
-        /// Maximum time a connection can remain idle (no data read or written)
+        /// Maximum time an established connection can remain idle (no data read or written)
         /// before being closed. `nil` means no idle timeout.
         public var idle: Duration?
 
@@ -250,8 +250,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
         /// - Parameters:
         ///   - idle: Maximum idle time before the connection is closed.
-        ///   - readHeader: Maximum time to receive request headers.
-        ///   - readBody: Maximum time to receive the request body.
+        ///   - readHeader: Maximum time to receive request headers after a connection is established.
+        ///   - readBody: Maximum time to receive the complete request body after headers have been received.
         public init(
             idle: Duration? = Self.defaultIdle,
             readHeader: Duration? = Self.defaultReadHeader,
