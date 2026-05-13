@@ -79,8 +79,8 @@ extension NIOHTTPServer {
         for bindTarget in bindTargets {
             switch bindTarget.backing {
             case .hostAndPort(let host, let port):
-                let serverChannel = try await bootstrap
-                    .bind(host: host, port: port) { channel in
+                let serverChannel =
+                    try await bootstrap.bind(host: host, port: port) { channel in
                         self.setupHTTP1_1ConnectionChildChannel(
                             channel: channel,
                             asyncChannelConfiguration: .init(
