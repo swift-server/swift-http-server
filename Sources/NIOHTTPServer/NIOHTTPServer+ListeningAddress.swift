@@ -37,25 +37,25 @@ enum ListeningAddressError: CustomStringConvertible, Error {
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
-    func addressBound(_ address: NIOCore.SocketAddress?) throws {
-        switch self.listeningAddressState.withLockedValue({ $0.addressBound(address) }) {
-        case .succeedPromise(let promise, let boundAddress):
-            promise.succeed(boundAddress)
+    func addressesBound(_ addresses: [NIOCore.SocketAddress?]) throws {
+        switch self.listeningAddressState.withLockedValue({ $0.addressesBound(addresses) }) {
+        case .succeedPromise(let promise, let boundAddresses):
+            promise.succeed(boundAddresses)
         case .failPromise(let promise, let error):
             promise.fail(error)
         }
     }
 
-    /// The address the server is listening from.
+    /// The addresses the server is listening on.
     ///
-    /// It is an `async` property because it will only return once the address has been successfully bound.
+    /// It is an `async` property because it will only return once the addresses have been successfully bound.
     ///
-    /// - Throws: An error will be thrown if the address could not be bound or is not bound any longer because the
+    /// - Throws: An error will be thrown if the addresses could not be bound or are not bound any longer because the
     ///   server isn't listening anymore.
-    public var listeningAddress: SocketAddress {
+    public var listeningAddresses: [SocketAddress] {
         get async throws {
             try await self.listeningAddressState
-                .withLockedValue { try $0.listeningAddressFuture }
+                .withLockedValue { try $0.listeningAddressesFuture }
                 .get()
         }
     }
@@ -64,11 +64,11 @@ extension NIOHTTPServer {
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
     enum State {
-        case idle(EventLoopPromise<SocketAddress>)
-        case listening(EventLoopFuture<SocketAddress>)
+        case idle(EventLoopPromise<[SocketAddress]>)
+        case listening(EventLoopFuture<[SocketAddress]>)
         case closedOrInvalidAddress(ListeningAddressError)
 
-        var listeningAddressFuture: EventLoopFuture<SocketAddress> {
+        var listeningAddressesFuture: EventLoopFuture<[SocketAddress]> {
             get throws {
                 switch self {
                 case .idle(let eventLoopPromise):
@@ -82,29 +82,33 @@ extension NIOHTTPServer {
         }
 
         enum OnBound {
-            case succeedPromise(_ promise: EventLoopPromise<SocketAddress>, address: SocketAddress)
-            case failPromise(_ promise: EventLoopPromise<SocketAddress>, error: ListeningAddressError)
+            case succeedPromise(_ promise: EventLoopPromise<[SocketAddress]>, addresses: [SocketAddress])
+            case failPromise(_ promise: EventLoopPromise<[SocketAddress]>, error: ListeningAddressError)
         }
 
-        mutating func addressBound(_ address: NIOCore.SocketAddress?) -> OnBound {
+        mutating func addressesBound(_ addresses: [NIOCore.SocketAddress?]) -> OnBound {
             switch self {
             case .idle(let listeningAddressPromise):
-                do {
-                    let socketAddress = try SocketAddress(address)
+                var socketAddresses = [SocketAddress]()
+                socketAddresses.reserveCapacity(addresses.count)
+                do throws(ListeningAddressError) {
+                    for address in addresses {
+                        try socketAddresses.append(SocketAddress(address))
+                    }
                     self = .listening(listeningAddressPromise.futureResult)
-                    return .succeedPromise(listeningAddressPromise, address: socketAddress)
+                    return .succeedPromise(listeningAddressPromise, addresses: socketAddresses)
                 } catch {
                     self = .closedOrInvalidAddress(error)
                     return .failPromise(listeningAddressPromise, error: error)
                 }
 
             case .listening, .closedOrInvalidAddress:
-                fatalError("Invalid state: addressBound should only be called once and when in idle state")
+                fatalError("Invalid state: addressesBound should only be called once and when in idle state")
             }
         }
 
         enum OnClose {
-            case failPromise(_ promise: EventLoopPromise<SocketAddress>, error: ListeningAddressError)
+            case failPromise(_ promise: EventLoopPromise<[SocketAddress]>, error: ListeningAddressError)
             case doNothing
         }
 

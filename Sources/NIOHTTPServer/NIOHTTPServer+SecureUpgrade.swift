@@ -153,34 +153,40 @@ extension NIOHTTPServer {
         }
     }
 
-    func setupSecureUpgradeServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
+    func setupSecureUpgradeServerChannels(
+        bindTargets: [NIOHTTPServerConfiguration.BindTarget],
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
         tlsConfiguration: TLSConfiguration
-    ) async throws -> NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never> {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelInitializer { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(
-                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                        )
-                    }
-                }
-                .bind(host: host, port: port) { channel in
-                    self.setupSecureUpgradeConnectionChildChannel(
-                        channel: channel,
-                        supportedHTTPVersions: supportedHTTPVersions,
-                        tlsConfiguration: tlsConfiguration
+    ) async throws -> [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>] {
+        let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(
+                        self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                     )
                 }
+            }
 
-            try self.addressBound(serverChannel.channel.localAddress)
-
-            return serverChannel
+        var serverChannels = [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>]()
+        for bindTarget in bindTargets {
+            switch bindTarget.backing {
+            case .hostAndPort(let host, let port):
+                let serverChannel = try await bootstrap
+                    .bind(host: host, port: port) { channel in
+                        self.setupSecureUpgradeConnectionChildChannel(
+                            channel: channel,
+                            supportedHTTPVersions: supportedHTTPVersions,
+                            tlsConfiguration: tlsConfiguration
+                        )
+                    }
+                serverChannels.append(serverChannel)
+            }
         }
+
+        try self.addressesBound(serverChannels.map { $0.channel.localAddress })
+
+        return serverChannels
     }
 
     private func http1ConnectionInitializer(

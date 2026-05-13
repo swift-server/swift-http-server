@@ -79,7 +79,7 @@ struct NIOHTTPServiceLifecycleTests {
                     let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                     group.addTask { try await serviceGroup.run() }
 
-                    let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestHTTP1Server(at: serverAddress)
@@ -165,7 +165,7 @@ struct NIOHTTPServiceLifecycleTests {
                 let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                 group.addTask { try await serviceGroup.run() }
 
-                let serverAddress = try await server.listeningAddress
+                let serverAddress = try await server.listeningAddresses.first!
 
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                     .connectToTestHTTP1Server(at: serverAddress)
@@ -245,7 +245,7 @@ struct NIOHTTPServiceLifecycleTests {
                     let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                     group.addTask { try await serviceGroup.run() }
 
-                    let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestSecureUpgradeHTTPServer(

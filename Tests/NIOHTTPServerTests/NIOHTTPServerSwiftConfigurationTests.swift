@@ -688,9 +688,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
             let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-            guard case .hostAndPort(host: "127.0.0.1", port: 8000) = serverConfig.bindTarget.backing else {
+            guard let firstBindTarget = serverConfig.bindTargets.first,
+                case .hostAndPort(host: "127.0.0.1", port: 8000) = firstBindTarget.backing
+            else {
                 Issue.record(
-                    "Expected bind target to be 127.0.0.1:8000, got \(serverConfig.bindTarget.backing) instead."
+                    "Expected bind target to be 127.0.0.1:8000, got \(serverConfig.bindTargets) instead."
                 )
                 return
             }

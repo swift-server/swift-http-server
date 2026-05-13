@@ -62,34 +62,40 @@ extension NIOHTTPServer {
         }
     }
 
-    func setupHTTP1_1ServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget
-    ) async throws -> NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never> {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelInitializer { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(
-                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                        )
-                    }
-                }
-                .bind(host: host, port: port) { channel in
-                    self.setupHTTP1_1ConnectionChildChannel(
-                        channel: channel,
-                        asyncChannelConfiguration: .init(
-                            backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                            isOutboundHalfClosureEnabled: true
-                        )
+    func setupHTTP1_1ServerChannels(
+        bindTargets: [NIOHTTPServerConfiguration.BindTarget]
+    ) async throws -> [NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>] {
+        let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(
+                        self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                     )
                 }
+            }
 
-            try self.addressBound(serverChannel.channel.localAddress)
-
-            return serverChannel
+        var serverChannels = [NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>]()
+        for bindTarget in bindTargets {
+            switch bindTarget.backing {
+            case .hostAndPort(let host, let port):
+                let serverChannel = try await bootstrap
+                    .bind(host: host, port: port) { channel in
+                        self.setupHTTP1_1ConnectionChildChannel(
+                            channel: channel,
+                            asyncChannelConfiguration: .init(
+                                backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                                isOutboundHalfClosureEnabled: true
+                            )
+                        )
+                    }
+                serverChannels.append(serverChannel)
+            }
         }
+
+        try self.addressesBound(serverChannels.map { $0.channel.localAddress })
+
+        return serverChannels
     }
 
     func setupHTTP1_1ConnectionChildChannel(
