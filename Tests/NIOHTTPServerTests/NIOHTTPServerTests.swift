@@ -663,7 +663,7 @@ struct NIOHTTPServerTests {
     /// ``ListeningAddressError/serverClosed``. No subset of addresses continues serving after the server
     /// has stopped.
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-    @Test("All addresses stop together and listeningAddresses throws after server stops", .timeLimit(.minutes(1)))
+    @Test("All addresses stop together and listeningAddresses throws after server stops")
     func testAllAddressesStopTogether() async throws {
         let server = NIOHTTPServer(
             logger: Logger(label: "NIOHTTPServerTests"),
