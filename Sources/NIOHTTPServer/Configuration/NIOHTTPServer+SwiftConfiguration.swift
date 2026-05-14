@@ -29,7 +29,12 @@ extension NIOHTTPServerConfiguration {
     /// ``NIOHTTPServerConfiguration`` is comprised of four types. Provide configuration for each type under the
     /// specified key:
     ///
-    /// - **`"bindTarget"`**: The address and port to bind to (see ``BindTarget/init(config:)``).
+    /// - **`"bindTarget"`**: A single address and port to bind to (see ``BindTarget/init(config:)``). Use this when
+    ///   binding to exactly one address.
+    ///
+    /// - **`"bindTargets"`**: Multiple addresses to bind to, provided as parallel string and int arrays under
+    ///   `bindTargets.hosts` and `bindTargets.ports`. Exactly one of `"bindTarget"` or `"bindTargets"` must be
+    ///   provided.
     ///
     /// - **`"http"`**: Supported HTTP versions and protocol settings. Supported keys are `"versions"`
     ///   (a string array of `"http1_1"` and/or `"http2"`) and, when HTTP/2 is enabled, `"http2"` (see
@@ -50,6 +55,10 @@ extension NIOHTTPServerConfiguration {
     ///     - Throws `NIOHTTPServerSwiftConfigurationError/trustRootsSourceAndVerificationCallbackMismatch` if there
     ///       is a mismatch between `transportSecurity.trustRootsSource` and whether a custom certificate verification
     ///       callback is provided.
+    ///     - Throws `NIOHTTPServerSwiftConfigurationError/singularAndPluralBindTargetsProvided` if both
+    ///       `"bindTarget"` and `"bindTargets"` are provided.
+    ///     - Throws `NIOHTTPServerSwiftConfigurationError/bindTargetsHostsAndPortsLengthMismatch` if
+    ///       `bindTargets.hosts` and `bindTargets.ports` have different lengths.
     public init(
         config: ConfigReader,
         customCertificateVerificationCallback: (
@@ -59,7 +68,7 @@ extension NIOHTTPServerConfiguration {
         let snapshot = config.snapshot()
 
         try self.init(
-            bindTarget: try .init(config: snapshot.scoped(to: "bindTarget")),
+            bindTargets: try Self.readBindTargets(from: snapshot),
             supportedHTTPVersions: try .init(config: snapshot.scoped(to: "http")),
             transportSecurity: try .init(
                 config: snapshot.scoped(to: "transportSecurity"),
@@ -67,6 +76,37 @@ extension NIOHTTPServerConfiguration {
             ),
             backpressureStrategy: .init(config: snapshot.scoped(to: "backpressureStrategy"))
         )
+    }
+
+    /// Reads bind targets from either the singular `bindTarget` scope or the plural `bindTargets` scope.
+    /// Exactly one of the two must be provided.
+    private static func readBindTargets(
+        from snapshot: ConfigSnapshotReader
+    ) throws -> [BindTarget] {
+        let bindTargetsScope = snapshot.scoped(to: "bindTargets")
+        let hosts = bindTargetsScope.stringArray(forKey: "hosts")
+        let ports = bindTargetsScope.intArray(forKey: "ports")
+        let hasPlural = hosts != nil || ports != nil
+
+        let bindTargetScope = snapshot.scoped(to: "bindTarget")
+        let singularHost = bindTargetScope.string(forKey: "host")
+        let singularPort = bindTargetScope.int(forKey: "port")
+        let hasSingular = singularHost != nil || singularPort != nil
+
+        if hasSingular && hasPlural {
+            throw NIOHTTPServerSwiftConfigurationError.singularAndPluralBindTargetsProvided
+        }
+
+        if hasPlural {
+            let hosts = hosts ?? []
+            let ports = ports ?? []
+            guard hosts.count == ports.count else {
+                throw NIOHTTPServerSwiftConfigurationError.bindTargetsHostsAndPortsLengthMismatch
+            }
+            return zip(hosts, ports).map { .hostAndPort(host: $0, port: $1) }
+        }
+
+        return [try BindTarget(config: bindTargetScope)]
     }
 }
 

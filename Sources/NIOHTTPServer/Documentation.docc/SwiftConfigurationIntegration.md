@@ -32,13 +32,18 @@ let serverConfiguration = try NIOHTTPServerConfiguration(config: config)
 ``NIOHTTPServerConfiguration`` is comprised of four components. Provide the configuration for each component under its
 respective key prefix.
 
+> Important: Exactly one of `bindTarget` (singular, for a single address) or `bindTargets` (plural, for multiple
+> addresses) must be provided. Providing both results in an error.
+
 > Important: HTTP/2 cannot be served over plaintext. If `"http2"` is included in `http.versions`, the transport
 > security must be set to `"tls"` or `"mTLS"`.
 
 | Prefix                        | Configuration Key                 | Type           | Required/Optional                                                                                                             | Default |
 |-------------------------------|-----------------------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------|---------|
-| `bindTarget`                  | `host`                            | `string`       | Required                                                                                                                      | -       |
-|                               | `port`                            | `int`          | Required                                                                                                                      | -       |
+| `bindTarget`                  | `host`                            | `string`       | Required when binding to a single address (mutually exclusive with `bindTargets`)                                             | -       |
+|                               | `port`                            | `int`          | Required when binding to a single address (mutually exclusive with `bindTargets`)                                             | -       |
+| `bindTargets`                 | `hosts`                           | `string array` | Required when binding to multiple addresses (mutually exclusive with `bindTarget`); must match length of `ports`              | -       |
+|                               | `ports`                           | `int array`    | Required when binding to multiple addresses (mutually exclusive with `bindTarget`); must match length of `hosts`              | -       |
 | `http`                        | `versions`                        | `string array` | Required (permitted values: `"http1_1"`, `"http2"`)                                                                           | -       |
 | `http.http2`                  | `maxFrameSize`                    | `int`          | Optional                                                                                                                      | 2^14    |
 |                               | `targetWindowSize`                | `int`          | Optional                                                                                                                      | 2^16-1  |
@@ -109,6 +114,19 @@ key were omitted.
         "lowWatermark": 2,                  // default: 2
         "highWatermark": 10                 // default: 10
     }
+}
+```
+
+To bind to multiple addresses, replace `bindTarget` with `bindTargets`, providing parallel `hosts` and `ports` arrays
+of the same length:
+
+```json
+{
+    "bindTargets": {
+        "hosts": ["0.0.0.0", "::"],
+        "ports": [443, 443]
+    },
+    // ...rest of the configuration
 }
 ```
 
