@@ -48,10 +48,12 @@ extension NIOHTTPServer {
 
     /// The addresses the server is listening on.
     ///
-    /// It is an `async` property because it will only return once the addresses have been successfully bound.
+    /// This property returns one ``SocketAddress`` per ``NIOHTTPServerConfiguration/bindTargets`` entry.
+    /// It suspends until **all** bind targets have been successfully bound. If any single bind fails, no addresses are returned:
+    /// the server treats its listening addresses as an all-or-nothing unit. See ``serve(handler:)`` for the full semantics.
     ///
     /// - Throws: An error will be thrown if the addresses could not be bound or are not bound any longer because the
-    ///   server isn't listening anymore.
+    ///   server isn't listening anymore (for example, after ``serve(handler:)`` has returned).
     public var listeningAddresses: [SocketAddress] {
         get async throws {
             try await self.listeningAddressState
