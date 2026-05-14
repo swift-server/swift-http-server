@@ -169,19 +169,27 @@ extension NIOHTTPServer {
             }
 
         var serverChannels = [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>]()
-        for bindTarget in bindTargets {
-            switch bindTarget.backing {
-            case .hostAndPort(let host, let port):
-                let serverChannel =
-                    try await bootstrap.bind(host: host, port: port) { channel in
-                        self.setupSecureUpgradeConnectionChildChannel(
-                            channel: channel,
-                            supportedHTTPVersions: supportedHTTPVersions,
-                            tlsConfiguration: tlsConfiguration
-                        )
-                    }
-                serverChannels.append(serverChannel)
+        do {
+            for bindTarget in bindTargets {
+                switch bindTarget.backing {
+                case .hostAndPort(let host, let port):
+                    let serverChannel =
+                        try await bootstrap.bind(host: host, port: port) { channel in
+                            self.setupSecureUpgradeConnectionChildChannel(
+                                channel: channel,
+                                supportedHTTPVersions: supportedHTTPVersions,
+                                tlsConfiguration: tlsConfiguration
+                            )
+                        }
+                    serverChannels.append(serverChannel)
+                }
             }
+        } catch {
+            // A later bind failed: close any channels we already bound to avoid leaking sockets.
+            for serverChannel in serverChannels {
+                serverChannel.channel.close(promise: nil)
+            }
+            throw error
         }
 
         try self.addressesBound(serverChannels.map { $0.channel.localAddress })

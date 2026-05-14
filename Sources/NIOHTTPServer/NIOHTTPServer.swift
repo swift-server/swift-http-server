@@ -153,9 +153,11 @@ public struct NIOHTTPServer: HTTPServer {
     public func serve(
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        let serverChannels = try await self.makeServerChannels()
-
+        // Ensure the listening address promise is always completed on the way out, regardless of whether
+        // binding succeeded, the serve loop returned normally, or an error propagated.
         defer { self.finishListeningAddressPromise() }
+
+        let serverChannels = try await self.makeServerChannels()
 
         return try await withTaskCancellationHandler {
             try await withGracefulShutdownHandler {

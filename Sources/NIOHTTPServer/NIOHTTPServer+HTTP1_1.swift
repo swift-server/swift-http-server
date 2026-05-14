@@ -76,21 +76,29 @@ extension NIOHTTPServer {
             }
 
         var serverChannels = [NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>]()
-        for bindTarget in bindTargets {
-            switch bindTarget.backing {
-            case .hostAndPort(let host, let port):
-                let serverChannel =
-                    try await bootstrap.bind(host: host, port: port) { channel in
-                        self.setupHTTP1_1ConnectionChildChannel(
-                            channel: channel,
-                            asyncChannelConfiguration: .init(
-                                backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                                isOutboundHalfClosureEnabled: true
+        do {
+            for bindTarget in bindTargets {
+                switch bindTarget.backing {
+                case .hostAndPort(let host, let port):
+                    let serverChannel =
+                        try await bootstrap.bind(host: host, port: port) { channel in
+                            self.setupHTTP1_1ConnectionChildChannel(
+                                channel: channel,
+                                asyncChannelConfiguration: .init(
+                                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                                    isOutboundHalfClosureEnabled: true
+                                )
                             )
-                        )
-                    }
-                serverChannels.append(serverChannel)
+                        }
+                    serverChannels.append(serverChannel)
+                }
             }
+        } catch {
+            // A later bind failed: close any channels we already bound to avoid leaking sockets.
+            for serverChannel in serverChannels {
+                serverChannel.channel.close(promise: nil)
+            }
+            throw error
         }
 
         try self.addressesBound(serverChannels.map { $0.channel.localAddress })

@@ -732,6 +732,65 @@ struct NIOHTTPServerTests {
             )
         }
     }
+
+    /// Verifies that when a later bind target fails, any previously-bound listening channels are cleaned up.
+    /// Without cleanup, the already-bound sockets would leak and keep their ports occupied even though the
+    /// server never started serving.
+    ///
+    /// The test binds two targets. The second target is configured to fail by pointing at a port that's
+    /// already in use. After `serve` throws, we verify that the first target's port is free by successfully
+    /// binding a fresh listener on it.
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Previously bound channels are closed when a later bind fails", .timeLimit(.minutes(1)))
+    func testPreviouslyBoundChannelsAreClosedOnPartialBindFailure() async throws {
+        // Reserve a port by binding a dummy listener. We'll use this port for the first bind target.
+        // We close the dummy listener immediately; its port should be free to reuse (SO_REUSEADDR is set
+        // on server bootstraps).
+        let dummyForFirstTarget = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .bind(host: "127.0.0.1", port: 0) { channel in
+                channel.eventLoop.makeSucceededFuture(channel)
+            }
+        let firstPort = try #require(dummyForFirstTarget.channel.localAddress?.port)
+        try await dummyForFirstTarget.channel.close()
+
+        // Bind a live listener that will cause the second bind to fail.
+        let occupiedListener = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .bind(host: "127.0.0.1", port: 0) { channel in
+                channel.eventLoop.makeSucceededFuture(channel)
+            }
+        let occupiedPort = try #require(occupiedListener.channel.localAddress?.port)
+        defer { occupiedListener.channel.close(promise: nil) }
+
+        // Configure a server that binds to [firstPort, occupiedPort]. The first bind should succeed,
+        // the second should fail with "address already in use".
+        let server = NIOHTTPServer(
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: try .init(
+                bindTargets: [
+                    .hostAndPort(host: "127.0.0.1", port: firstPort),
+                    .hostAndPort(host: "127.0.0.1", port: occupiedPort),
+                ],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        await #expect(throws: Error.self) {
+            try await server.serve(
+                handler: HTTPServerClosureRequestHandler { _, _, _, _ in }
+            )
+        }
+
+        // If the first channel was properly closed, we should be able to bind to firstPort again.
+        // If it wasn't (i.e., the channel leaked), this bind will fail.
+        let rebindAttempt = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .bind(host: "127.0.0.1", port: firstPort) { channel in
+                channel.eventLoop.makeSucceededFuture(channel)
+            }
+        try await rebindAttempt.channel.close()
+    }
 }
 
 extension NIOHTTPServerTests {
