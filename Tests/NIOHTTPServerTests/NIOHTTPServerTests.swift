@@ -740,21 +740,19 @@ struct NIOHTTPServerTests {
     /// The test binds two targets. The second target is configured to fail by pointing at a port that's
     /// already in use. After `serve` throws, we verify that the first target's port is free by successfully
     /// binding a fresh listener on it.
+    ///
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-    @Test("Previously bound channels are closed when a later bind fails", .timeLimit(.minutes(1)))
+    @Test("Previously bound channels are closed when a later bind fails")
     func testPreviouslyBoundChannelsAreClosedOnPartialBindFailure() async throws {
-        // Reserve a port by binding a dummy listener. We'll use this port for the first bind target.
-        // We close the dummy listener immediately; its port should be free to reuse (SO_REUSEADDR is set
-        // on server bootstraps).
-        let dummyForFirstTarget = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-            .bind(host: "127.0.0.1", port: 0) { channel in
-                channel.eventLoop.makeSucceededFuture(channel)
-            }
-        let firstPort = try #require(dummyForFirstTarget.channel.localAddress?.port)
-        try await dummyForFirstTarget.channel.close()
+        // We use a specific port for the first target rather than `port: 0`, because the
+        // "bind to ephemeral port 0, close, then verify the port is free later" pattern is racy in
+        // a parallel test environment: another test that binds to port 0 may be assigned the same
+        // port between the close and our verification. The chosen port is also below the typical
+        // ephemeral range so it cannot be allocated to other parallel tests using `port: 0`.
+        let firstPort = 30_210
 
-        // Bind a live listener that will cause the second bind to fail.
+        // Hold a live listener on an ephemeral port. The server's second bind will conflict with this
+        // listener and fail with "address already in use".
         let occupiedListener = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .bind(host: "127.0.0.1", port: 0) { channel in
                 channel.eventLoop.makeSucceededFuture(channel)
@@ -763,7 +761,7 @@ struct NIOHTTPServerTests {
         defer { occupiedListener.channel.close(promise: nil) }
 
         // Configure a server that binds to [firstPort, occupiedPort]. The first bind should succeed,
-        // the second should fail with "address already in use".
+        // the second should fail with "address already in use", causing cleanup of the first channel.
         let server = NIOHTTPServer(
             logger: Logger(label: "NIOHTTPServerTests"),
             configuration: try .init(
@@ -776,14 +774,20 @@ struct NIOHTTPServerTests {
             )
         )
 
-        await #expect(throws: Error.self) {
+        let error = await #expect(throws: IOError.self) {
             try await server.serve(
                 handler: HTTPServerClosureRequestHandler { _, _, _, _ in }
             )
         }
+        #expect(error?.errnoCode == EADDRINUSE)
+
+        // The server's cleanup of partially-bound channels uses fire-and-forget close, so the socket
+        // may not be fully released the instant `serve` throws. Wait briefly so the close has time
+        // to propagate before we try to rebind.
+        try await Task.sleep(for: .milliseconds(100))
 
         // If the first channel was properly closed, we should be able to bind to firstPort again.
-        // If it wasn't (i.e., the channel leaked), this bind will fail.
+        // If it wasn't (i.e., the channel leaked), this bind will fail with "address already in use".
         let rebindAttempt = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: firstPort) { channel in
