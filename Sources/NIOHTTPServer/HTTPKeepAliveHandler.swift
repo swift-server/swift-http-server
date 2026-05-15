@@ -155,7 +155,7 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
             case .head:
                 preconditionFailure(
                     "HTTPKeepAliveHandler received a second response head while the previous head was still buffered. "
-                    + "A handler must only write one final response head per request."
+                        + "A handler must only write one final response head per request."
                 )
             }
         case .streaming:
