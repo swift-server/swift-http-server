@@ -84,10 +84,6 @@ public struct NIOHTTPServer: HTTPServer {
     public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
     public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
 
-    /// Maximum number of bytes to drain from an unconsumed request body before
-    /// giving up and closing the connection.
-    private var maxDrainBytes: Int { 256 * 1024 }
-
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
 
@@ -219,21 +215,24 @@ public struct NIOHTTPServer: HTTPServer {
 
     /// Reads the next request head from the iterator. Returns `nil` if the connection is done or
     /// an unexpected part is received.
+    ///
+    /// Skips over leftover `.body` and `.end` parts from a previous request that the
+    /// handler didn't fully consume. The ``HTTPKeepAliveHandler`` separately ensures that connections are closed (with
+    /// `Connection: close`) when the server responds before the request `.end` arrives, preventing unbounded leftover state.
     func nextRequestHead(
         from iterator: inout NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
     ) async throws -> HTTPRequest? {
-        switch try await iterator.next(isolation: #isolation) {
-        case .head(let request):
-            return request
-        case .body:
-            self.logger.debug("Unexpectedly received body on connection. Closing now.")
-            return nil
-        case .end:
-            self.logger.debug("Unexpectedly received end on connection. Closing now.")
-            return nil
-        case .none:
-            self.logger.trace("No more request parts on connection")
-            return nil
+        while true {
+            switch try await iterator.next(isolation: #isolation) {
+            case .head(let request):
+                return request
+            case .body, .end:
+                // Leftover parts from a previous request. Skip and look for the next head.
+                continue
+            case .none:
+                self.logger.trace("No more request parts on connection")
+                return nil
+            }
         }
     }
 
@@ -284,45 +283,10 @@ public struct NIOHTTPServer: HTTPServer {
             return nil
         }
 
-        // Recover the iterator for potential connection reuse.
-        guard var recoveredIterator = readerState.takeIterator() else {
-            // The handler started reading the request body but didn't finish.
-            // The iterator was consumed by the reader and not returned.
-            return nil
-        }
-
-        // If the handler didn't fully consume the request body, drain the remaining
-        // parts so the iterator is positioned at the start of the next request.
-        // To prevent an attacker from keeping the connection in an infinite draining
-        // state, we only drain up to `Self.bytesDrained`. If more remains, close the connection.
-        if !readerState.wrapped.withLock({ $0.finishedReading }) {
-            var bytesDrained = 0
-            do {
-                drainLoop: while true {
-                    switch try await recoveredIterator.next(isolation: #isolation) {
-                    case .head:
-                        self.logger.debug(
-                            "Unexpectedly received request head while draining unconsumed request body."
-                        )
-                        return nil
-                    case .body(let buffer):
-                        bytesDrained += buffer.readableBytes
-                        if bytesDrained > self.maxDrainBytes {
-                            return nil
-                        }
-                        continue drainLoop
-                    case .end:
-                        break drainLoop
-                    case .none:
-                        return nil
-                    }
-                }
-            } catch {
-                return nil
-            }
-        }
-
-        return recoveredIterator
+        // Recover the iterator for potential connection reuse. If the handler started
+        // reading the request body but didn't finish, the iterator was consumed by the
+        // reader and not returned, so we can't reuse the connection.
+        return readerState.takeIterator()
     }
 
     /// Fail the listening address promise if the server is shutting down before it began listening.

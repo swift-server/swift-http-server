@@ -99,6 +99,7 @@ extension NIOHTTPServer {
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
+            try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
 
             return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                 wrappingChannelSynchronously: channel,
