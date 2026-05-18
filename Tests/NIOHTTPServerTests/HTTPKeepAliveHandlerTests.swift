@@ -317,6 +317,7 @@ struct HTTPKeepAliveHandlerTests {
                     var responseBodyWriter = responseBodyWriter
                     let reader = maybeReader.take()!
                     let _ = try await reader.consumeAndConclude { bodyReader in
+                        // swift-format-ignore: ReplaceForEachWithForLoop
                         try await bodyReader.forEach { span in
                             try await responseBodyWriter.write(span)
                         }
