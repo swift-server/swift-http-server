@@ -677,43 +677,36 @@ struct NIOHTTPServerTests {
             )
         )
 
-        // Start the server, verify both addresses are listening, then cancel.
-        try await withThrowingTaskGroup { group in
-            group.addTask {
-                try await server.serve(
-                    handler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
-                        try await Self.echoResponse(
-                            readUpTo: Self.bodyData.readableBytes,
-                            reader: requestReader,
-                            sender: responseSender
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
+                try await Self.echoResponse(
+                    readUpTo: Self.bodyData.readableBytes,
+                    reader: requestReader,
+                    sender: responseSender
+                )
+            },
+            body: { addresses in
+                #expect(addresses.count == 2)
+
+                // Verify both addresses are serving
+                for addr in addresses {
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: addr)
+                    try await client.executeThenClose { inbound, outbound in
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                        try await outbound.write(Self.reqBody)
+                        try await outbound.write(Self.reqEnd)
+                        try await Self.validateResponse(
+                            inbound,
+                            expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                            expectedBody: [Self.bodyData],
+                            expectedTrailers: Self.trailer
                         )
                     }
-                )
-            }
-
-            let addresses = try await server.listeningAddresses
-            #expect(addresses.count == 2)
-
-            // Verify both addresses are serving
-            for addr in addresses {
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: addr)
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
-                    try await outbound.write(Self.reqBody)
-                    try await outbound.write(Self.reqEnd)
-                    try await Self.validateResponse(
-                        inbound,
-                        expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
-                        expectedBody: [Self.bodyData],
-                        expectedTrailers: Self.trailer
-                    )
                 }
             }
-
-            // Stop the server
-            group.cancelAll()
-        }
+        )
 
         // After the server has stopped, listeningAddresses must throw rather than returning stale addresses.
         await #expect(throws: ListeningAddressError.serverClosed) {
@@ -733,22 +726,22 @@ struct NIOHTTPServerTests {
         }
     }
 
-    /// Verifies that when a later bind target fails, any previously-bound listening channels are cleaned up.
-    /// Without cleanup, the already-bound sockets would leak and keep their ports occupied even though the
-    /// server never started serving.
+    /// Verifies that when a later bind target fails, any previously-bound listening channels are cleaned up
+    /// before the error propagates to the caller. Without cleanup, the already-bound sockets would leak and
+    /// keep their ports occupied even though the server never started serving.
     ///
     /// The test binds two targets. The second target is configured to fail by pointing at a port that's
-    /// already in use. After `serve` throws, we verify that the first target's port is free by successfully
-    /// binding a fresh listener on it.
+    /// already in use. We verify `serve` throws an `IOError` with `EADDRINUSE`, and that we can
+    /// immediately rebind to the first target's port — proving the first channel was closed before the
+    /// error propagated.
     ///
+    /// We use a specific port for the first target (rather than `port: 0`) so we know what port to rebind
+    /// to for the verification. The port is below the typical ephemeral range used by `port: 0`
+    /// allocations on Linux (32768+) and macOS (49152+), so other tests using `port: 0` cannot
+    /// accidentally be assigned this port by the OS.
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     @Test("Previously bound channels are closed when a later bind fails")
     func testPreviouslyBoundChannelsAreClosedOnPartialBindFailure() async throws {
-        // We use a specific port for the first target rather than `port: 0`, because the
-        // "bind to ephemeral port 0, close, then verify the port is free later" pattern is racy in
-        // a parallel test environment: another test that binds to port 0 may be assigned the same
-        // port between the close and our verification. The chosen port is also below the typical
-        // ephemeral range so it cannot be allocated to other parallel tests using `port: 0`.
         let firstPort = 30_210
 
         // Hold a live listener on an ephemeral port. The server's second bind will conflict with this
@@ -780,11 +773,6 @@ struct NIOHTTPServerTests {
             )
         }
         #expect(error?.errnoCode == EADDRINUSE)
-
-        // The server's cleanup of partially-bound channels uses fire-and-forget close, so the socket
-        // may not be fully released the instant `serve` throws. Wait briefly so the close has time
-        // to propagate before we try to rebind.
-        try await Task.sleep(for: .milliseconds(100))
 
         // If the first channel was properly closed, we should be able to bind to firstPort again.
         // If it wasn't (i.e., the channel leaked), this bind will fail with "address already in use".

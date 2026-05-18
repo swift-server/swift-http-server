@@ -186,8 +186,10 @@ extension NIOHTTPServer {
             }
         } catch {
             // A later bind failed: close any channels we already bound to avoid leaking sockets.
+            // We await the closes so the sockets are fully released by the time we throw, giving the
+            // caller deterministic semantics: when `serve` throws, all cleanup is done.
             for serverChannel in serverChannels {
-                serverChannel.channel.close(promise: nil)
+                try? await serverChannel.channel.close()
             }
             throw error
         }
