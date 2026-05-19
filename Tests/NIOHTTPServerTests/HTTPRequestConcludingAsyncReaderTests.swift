@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import AsyncStreaming
+import BasicContainers
 import HTTPTypes
 import NIOCore
 import NIOHTTP1
@@ -42,7 +43,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
 
             _ = try await requestReader.consumeAndConclude { bodyReader in
                 var bodyReader = bodyReader
-                try await bodyReader.read(maximumCount: nil) { _ in }
+                try await bodyReader.read() { _ in }
             }
         }
     }
@@ -65,9 +66,9 @@ struct HTTPRequestConcludingAsyncReaderTests {
             _ = try await requestReader.consumeAndConclude { bodyReader in
                 var bodyReader = bodyReader
 
-                try await bodyReader.read(maximumCount: nil) { _ in }
+                try await bodyReader.read() { _ in }
                 // The stream has finished without an end part. Calling `read` now should result in a fatal error.
-                try await bodyReader.read(maximumCount: nil) { _ in }
+                try await bodyReader.read() { _ in }
             }
         }
     }
@@ -94,20 +95,19 @@ struct HTTPRequestConcludingAsyncReaderTests {
         let (requestBody, finalElement) = try await requestReader.consumeAndConclude { bodyReader in
             var bodyReader = bodyReader
 
-            var buffer = ByteBuffer()
+            var requestBody = ByteBuffer()
             // Read the body chunk
-            try await bodyReader.read(maximumCount: nil) { element in
-                buffer.writeBytes(element.bytes)
-                return
+            try await bodyReader.read() { buffer in
+                _ = requestBody.writeBytes(buffer.span.bytes)
             }
 
             // Now read the trailer. We should get back an empty element here, but the trailer should be available in
             // the tuple returned by `consumeAndConclude`
-            try await bodyReader.read(maximumCount: nil) { element in
+            try await bodyReader.read() { element in
                 #expect(element.count == 0)
             }
 
-            return buffer
+            return requestBody
         }
 
         #expect(requestBody == body)
@@ -146,11 +146,10 @@ struct HTTPRequestConcludingAsyncReaderTests {
                 let (_, finalElement) = try await requestReader.consumeAndConclude { bodyReader in
                     // Read all body chunks
                     var chunksProcessed = 0
-                    // swift-format-ignore: ReplaceForEachWithForLoop
-                    try await bodyReader.forEach { element in
-                        var buffer = ByteBuffer()
-                        buffer.writeBytes(element.bytes)
-                        #expect(bodyChunks[chunksProcessed] == buffer)
+                    try await bodyReader.forEachBuffer { buffer in
+                        var chunk = ByteBuffer()
+                        chunk.writeBytes(buffer.span.bytes)
+                        #expect(bodyChunks[chunksProcessed] == chunk)
 
                         chunksProcessed += 1
                     }
@@ -184,7 +183,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
             // Check that the read error is propagated
             await #expect(throws: TestError.errorWhileReading) {
                 do {
-                    try await bodyReader.read(maximumCount: nil) { (element) throws(TestError) in
+                    try await bodyReader.read() { (element) throws(TestError) in
                         throw TestError.errorWhileReading
                     }
                 } catch let eitherError as EitherError<Error, TestError> {
@@ -208,114 +207,21 @@ struct HTTPRequestConcludingAsyncReaderTests {
             readerState: .init()
         )
 
-        _ = try await requestReader.consumeAndConclude { requestBodyReader in
+        _ =     await requestReader.consumeAndConclude { requestBodyReader in
             var requestBodyReader = requestBodyReader
 
             // There are more bytes available than our limit.
-            let collected = try await requestBodyReader.collect(upTo: 9) { element in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(element.bytes)
-                return buffer
-            }
-
-            // We should only collect up to the limit (the first 9 bytes).
-            #expect(collected == .init(repeating: 5, count: 9))
-        }
-    }
-
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-    @Test("Multiple body chunks; multiple reads with limits")
-    func testReadWithLimits() async throws {
-        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
-
-        // First write 10 bytes;
-        source.yield(.body(.init(repeating: 1, count: 10)))
-        // Then write another 5 bytes.
-        source.yield(.body(.init(repeating: 2, count: 5)))
-        source.yield(.end(nil))
-        source.finish()
-
-        let streamIterator = stream.makeAsyncIterator()
-
-        let requestReader = HTTPRequestConcludingAsyncReader(iterator: streamIterator, readerState: .init())
-        _ = try await requestReader.consumeAndConclude { requestBodyReader in
-            var requestBodyReader = requestBodyReader
-
-            // Collect 8 bytes (partial of first write).
-            let collectedPartOne = try await requestBodyReader.collect(upTo: 8) { element in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(element.bytes)
-                return buffer
-            }
-
-            // Then collect 4 more bytes (overlap of first and second write).
-            let collectedPartTwo = try await requestBodyReader.collect(upTo: 4) { element in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(element.bytes)
-                return buffer
-            }
-
-            // Then collect 3 more bytes (partial of second write).
-            let collectedPartThree = try await requestBodyReader.collect(upTo: 3) { element in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(element.bytes)
-                return buffer
-            }
-
-            #expect(collectedPartOne == .init(repeating: 1, count: 8))
-            #expect(collectedPartTwo == .init([1, 1, 2, 2]))
-            #expect(collectedPartThree == .init(repeating: 2, count: 3))
-        }
-    }
-
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-    @Test("Multiple random-length chunks; multiple reads with random limits")
-    func testMultipleReadsWithRandomLimits() async throws {
-        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
-
-        // Generate random ByteBuffers of varying length and write them to the stream.
-        var randomBuffer = ByteBuffer()
-        for _ in 0..<100 {
-            let randomNumber = UInt8.random(in: 1...50)
-            let randomCount = Int.random(in: 1...50)
-
-            let randomData = ByteBuffer(repeating: randomNumber, count: randomCount)
-            // Store the data so we can track what we have wrote
-            randomBuffer.writeImmutableBuffer(randomData)
-
-            source.yield(.body(randomData))
-        }
-        source.yield(.end(nil))
-        source.finish()
-
-        let streamIterator = stream.makeAsyncIterator()
-
-        let requestReader = HTTPRequestConcludingAsyncReader(iterator: streamIterator, readerState: .init())
-        _ = try await requestReader.consumeAndConclude { requestBodyReader in
-            var requestBodyReader = requestBodyReader
-
-            var collectedBuffer = ByteBuffer()
-            while true {
-                let randomMaxCount = Int.random(in: 1...100)
-
-                let collected = try await requestBodyReader.collect(upTo: randomMaxCount) { element in
-                    var localBuffer = ByteBuffer()
-                    localBuffer.writeBytes(element.bytes)
-                    return localBuffer
+            await #expect(throws: AsyncReaderLeftOverElementsError.self) {
+                do {
+                    try await requestBodyReader.collect(upTo: 9) { _ in }
+                } catch let eitherEitherError as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never> {
+                    do {
+                        try eitherEitherError.unwrap()
+                    } catch let eitherError as EitherError<Error, AsyncReaderLeftOverElementsError> {
+                        try eitherError.unwrap()
+                    }
                 }
-
-                if collected.readableBytes == 0 {
-                    break
-                }
-
-                // The collected buffer should never exceed the specified max count.
-                try #require(collected.readableBytes <= randomMaxCount)
-
-                collectedBuffer.writeImmutableBuffer(collected)
             }
-
-            // Check if the collected buffer exactly matches what was written to the stream.
-            try #require(randomBuffer == collectedBuffer)
         }
     }
 }

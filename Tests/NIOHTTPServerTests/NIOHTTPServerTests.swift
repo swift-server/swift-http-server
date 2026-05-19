@@ -84,7 +84,7 @@ struct NIOHTTPServerTests {
                 let (_, finalElement) = try await reader.consumeAndConclude { bodyReader in
                     var bodyReader = bodyReader
                     return try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                        buffer.writeBytes(body.bytes)
+                        buffer.writeBytes(body.span.bytes)
                     }
                 }
                 #expect(buffer == Self.bodyData)
@@ -157,7 +157,7 @@ struct NIOHTTPServerTests {
                         var bodyReader = bodyReader
                         var buffer = ByteBuffer()
                         _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                            buffer.writeBytes(body.bytes)
+                            buffer.writeBytes(body.span.bytes)
                         }
                         return buffer
                     }
@@ -268,7 +268,7 @@ struct NIOHTTPServerTests {
 
                         // This should fail: the client has closed the stream without sending an end part.
                         let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read(maximumCount: nil) { _ in }
+                            try await bodyReader.read() { _ in }
                         }
 
                         switch httpVersion {
@@ -326,14 +326,13 @@ struct NIOHTTPServerTests {
 
                     let (_, finalElement) = try await reader.consumeAndConclude { bodyAsyncReader in
                         var count = 1
-                        // swift-format-ignore: ReplaceForEachWithForLoop
-                        try await bodyAsyncReader.forEach { span in
-                            var buffer = ByteBuffer()
-                            buffer.writeBytes(span.bytes)
-                            #expect(buffer == ByteBuffer(bytes: [UInt8(count)]))
+                        try await bodyAsyncReader.forEachBuffer { buffer in
+                            var chunk = ByteBuffer()
+                            chunk.writeBytes(buffer.span.bytes)
+                            #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
                             count += 1
 
-                            try await responseBodyWriter.write(span)
+                            try await responseBodyWriter.write(buffer.span)
                         }
                     }
                     #expect(finalElement == Self.trailer)
@@ -959,9 +958,9 @@ extension NIOHTTPServerTests {
     ) async throws {
         let (requestBody, trailers) = try await reader.consumeAndConclude { bodyReader in
             var bodyReader = bodyReader
-            return try await bodyReader.collect(upTo: limit) { span in
+            return try await bodyReader.collect(upTo: limit) { inputSpan in
                 var buffer = ByteBuffer()
-                buffer.writeBytes(span.bytes)
+                buffer.writeBytes(inputSpan.span.bytes)
                 return buffer
             }
         }

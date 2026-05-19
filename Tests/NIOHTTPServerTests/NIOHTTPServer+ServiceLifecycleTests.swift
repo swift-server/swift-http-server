@@ -57,11 +57,11 @@ struct NIOHTTPServiceLifecycleTests {
             try await server.serve { request, requestContext, requestReader, responseSender in
                 _ = try await requestReader.consumeAndConclude { bodyReader in
                     var bodyReader = bodyReader
-                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                    try await bodyReader.read() { _ in }
 
                     firstChunkReadPromise.succeed()
 
-                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                    try await bodyReader.read() { _ in }
                 }
 
                 let responseBodyWriter = try await responseSender.send(.init(status: .ok))
@@ -146,13 +146,13 @@ struct NIOHTTPServiceLifecycleTests {
                         var bodyReader = bodyReader
 
                         let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                            try await bodyReader.read() { _ in }
 
                             firstChunkReadPromise.succeed()
 
                             // The following call will block: the client will never send a request end part. This is
                             // intentional because we want to keep the connection alive.
-                            try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                            try await bodyReader.read() { _ in }
                         }
                         #expect(throws: CancellationError.self) { try error.unwrap() }
                     }
@@ -226,13 +226,13 @@ struct NIOHTTPServiceLifecycleTests {
                     var bodyReader = bodyReader
 
                     let error = try await #require(throws: EitherError<Error, Never>.self) {
-                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                        try await bodyReader.read() { _ in }
 
                         firstChunkReadPromise.succeed()
 
                         // The following call will block: the client will never send a request end part. This is
                         // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
-                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                        try await bodyReader.read() { _ in }
                     }
                     #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
                 }
