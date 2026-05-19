@@ -1,4 +1,4 @@
-// swift-tools-version:6.2
+// swift-tools-version:6.4
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift HTTP Server open source project
