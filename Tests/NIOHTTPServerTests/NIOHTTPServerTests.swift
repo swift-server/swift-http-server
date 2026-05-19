@@ -268,7 +268,7 @@ struct NIOHTTPServerTests {
 
                         // This should fail: the client has closed the stream without sending an end part.
                         let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read() { _ in }
+                            try await bodyReader.read { _ in }
                         }
 
                         switch httpVersion {

@@ -14,9 +14,8 @@
 
 public import AsyncStreaming
 public import BasicContainers
-public import HTTPTypes
 public import HTTPAPIs
-
+public import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
 import Synchronization

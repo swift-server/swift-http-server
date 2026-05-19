@@ -43,7 +43,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
 
             _ = try await requestReader.consumeAndConclude { bodyReader in
                 var bodyReader = bodyReader
-                try await bodyReader.read() { _ in }
+                try await bodyReader.read { _ in }
             }
         }
     }
@@ -66,9 +66,9 @@ struct HTTPRequestConcludingAsyncReaderTests {
             _ = try await requestReader.consumeAndConclude { bodyReader in
                 var bodyReader = bodyReader
 
-                try await bodyReader.read() { _ in }
+                try await bodyReader.read { _ in }
                 // The stream has finished without an end part. Calling `read` now should result in a fatal error.
-                try await bodyReader.read() { _ in }
+                try await bodyReader.read { _ in }
             }
         }
     }
@@ -97,13 +97,13 @@ struct HTTPRequestConcludingAsyncReaderTests {
 
             var requestBody = ByteBuffer()
             // Read the body chunk
-            try await bodyReader.read() { buffer in
+            try await bodyReader.read { buffer in
                 _ = requestBody.writeBytes(buffer.span.bytes)
             }
 
             // Now read the trailer. We should get back an empty element here, but the trailer should be available in
             // the tuple returned by `consumeAndConclude`
-            try await bodyReader.read() { element in
+            try await bodyReader.read { element in
                 #expect(element.count == 0)
             }
 
@@ -183,7 +183,7 @@ struct HTTPRequestConcludingAsyncReaderTests {
             // Check that the read error is propagated
             await #expect(throws: TestError.errorWhileReading) {
                 do {
-                    try await bodyReader.read() { (element) throws(TestError) in
+                    try await bodyReader.read { (element) throws(TestError) in
                         throw TestError.errorWhileReading
                     }
                 } catch let eitherError as EitherError<Error, TestError> {
@@ -207,14 +207,16 @@ struct HTTPRequestConcludingAsyncReaderTests {
             readerState: .init()
         )
 
-        _ =     await requestReader.consumeAndConclude { requestBodyReader in
+        _ = await requestReader.consumeAndConclude { requestBodyReader in
             var requestBodyReader = requestBodyReader
 
             // There are more bytes available than our limit.
             await #expect(throws: AsyncReaderLeftOverElementsError.self) {
                 do {
                     try await requestBodyReader.collect(upTo: 9) { _ in }
-                } catch let eitherEitherError as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never> {
+                } catch let eitherEitherError
+                    as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never>
+                {
                     do {
                         try eitherEitherError.unwrap()
                     } catch let eitherError as EitherError<Error, AsyncReaderLeftOverElementsError> {
