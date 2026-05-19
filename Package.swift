@@ -49,7 +49,12 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            branch: "2cb0ef6722e2086a04b5a14c0c40971b8038099a"
+            branch: "c195a5dd2c05780908d2d29bb064f832e108eb5d"
+        ),
+        .package(
+            url: "https://github.com/apple/swift-async-algorithms.git",
+            revision: "d0b4a06d0f173a2f3be27d3ea21b3c3aa18db440",
+            traits: ["UnstableAsyncStreaming"]
         ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
@@ -78,7 +83,7 @@ let package = Package(
         .target(
             name: "NIOHTTPServer",
             dependencies: [
-                .product(name: "AsyncStreaming", package: "swift-http-api-proposal"),
+                .product(name: "AsyncStreaming", package: "swift-async-algorithms"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
