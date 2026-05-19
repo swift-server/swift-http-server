@@ -49,7 +49,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            branch: "c195a5dd2c05780908d2d29bb064f832e108eb5d"
+            revision: "c195a5dd2c05780908d2d29bb064f832e108eb5d"
         ),
         .package(
             url: "https://github.com/apple/swift-async-algorithms.git",
