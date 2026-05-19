@@ -16,7 +16,7 @@
 import PackageDescription
 
 let extraSettings: [SwiftSetting] = [
-    .enableExperimentalFeature("SuppressedAssociatedTypes"),
+    .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
     .enableExperimentalFeature("LifetimeDependence"),
     .enableExperimentalFeature("Lifetimes"),
     .enableUpcomingFeature("LifetimeDependence"),
