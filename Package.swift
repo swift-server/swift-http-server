@@ -29,6 +29,13 @@ let extraSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "swift-http-server",
+    platforms: [  // TODO: Needed until https://github.com/swiftlang/swift/issues/89028 is fixed
+        .macOS(.v15),
+        .iOS(.v18),
+        .watchOS(.v11),
+        .tvOS(.v18),
+        .visionOS(.v2),
+    ],
     products: [
         .library(
             name: "NIOHTTPServer",
