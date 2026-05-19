@@ -49,11 +49,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            revision: "c195a5dd2c05780908d2d29bb064f832e108eb5d"
+            revision: "140b8c2aa773514e2464c15db8d94f4eca46d4a1"
         ),
         .package(
             url: "https://github.com/apple/swift-async-algorithms.git",
-            revision: "d0b4a06d0f173a2f3be27d3ea21b3c3aa18db440",
+            from: "1.1.4",
             traits: ["UnstableAsyncStreaming"]
         ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
