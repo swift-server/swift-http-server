@@ -381,12 +381,19 @@ struct HTTPKeepAliveHandlerTests {
         )
     }
 
-    /// Verifies that when the response head is written before request `.end` arrives,
-    /// and the request `.end` arrives before any response body is written, the
-    /// keep-alive handler flushes the buffered head and keeps the connection alive.
+    /// Verifies that if an inbound read cycle ends without the request `.end` having
+    /// arrived while the handler is mid-response, the buffered response head is
+    /// amended with `Connection: close` and flushed, and the server closes the
+    /// connection once response `.end` is written.
+    ///
+    /// We force the timing by having the handler write the response head, signal
+    /// the client to send a body chunk (without `.end`), and then wait. When the
+    /// server reads the body chunk, the read cycle ends with the head still
+    /// buffered and request `.end` still missing — the keep-alive handler must add
+    /// `Connection: close`.
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
-    @Test("Response head buffered, request .end arrives first — keep-alive works")
-    func testResponseHeadBufferedThenRequestEndArrives_KeepsAlive() async throws {
+    @Test("Read cycle ends without request .end while head is buffered — Connection: close added")
+    func testReadCycleEndsWithoutRequestEnd_AddsConnectionClose() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
             configuration: try .init(
@@ -396,30 +403,30 @@ struct HTTPKeepAliveHandlerTests {
             )
         )
 
-        // Signals from the handler to the client. We use these to force the exact
-        // sequence: handler writes response head BEFORE the client sends request
-        // `.end`, so the response head is buffered by the keep-alive handler.
         let (responseHeadWrittenStream, responseHeadWritten) = AsyncStream<Void>.makeStream()
+        let (handlerCanFinishStream, handlerCanFinish) = AsyncStream<Void>.makeStream()
 
         try await NIOHTTPServerTests.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
-                // Send the response head immediately, before reading anything from
-                // the request body. At this point request `.end` has NOT been sent
-                // by the client, so the keep-alive handler will buffer the head.
+                // Write the response head before reading anything. The keep-alive
+                // handler buffers it because request `.end` hasn't arrived.
                 let writer = try await sender.send(
                     .init(status: .ok, headerFields: [.contentLength: "5"])
                 )
                 responseHeadWritten.yield()
                 responseHeadWritten.finish()
 
-                // Now read the request body + end.
+                // Wait for the test to confirm it saw `Connection: close` before
+                // we drain the request and finish the response.
+                var canFinishIterator = handlerCanFinishStream.makeAsyncIterator()
+                _ = await canFinishIterator.next()
+
+                // Drain the request body + end and then write the response body + end.
                 let _ = try await reader.consumeAndConclude { partsReader in
                     var partsReader = partsReader
                     try await partsReader.collect(upTo: 1024) { _ in }
                 }
-
-                // Write the response body + end.
                 try await writer.writeAndConclude("hello".utf8.span, finalElement: nil)
             },
             body: { serverAddress in
@@ -427,24 +434,22 @@ struct HTTPKeepAliveHandlerTests {
                     .connectToTestHTTP1Server(at: serverAddress)
 
                 try await client.executeThenClose { inbound, outbound in
-                    // Send only the head — do NOT send body or end yet.
+                    // Send only the head.
                     try await outbound.write(
                         .head(.init(method: .post, scheme: "http", authority: "", path: "/"))
                     )
 
-                    // Wait for the handler to write the response head. Because the
-                    // request `.end` has not yet been sent, the response head is
-                    // currently buffered by the keep-alive handler.
+                    // Wait for the handler to write the response head.
                     var signalIterator = responseHeadWrittenStream.makeAsyncIterator()
                     _ = await signalIterator.next()
 
-                    // Now send the body + end. This should cause the keep-alive
-                    // handler to flush the buffered response head and enter the
-                    // streaming state — the connection must remain alive.
-                    try await outbound.write(.body(ByteBuffer(string: "hello")))
-                    try await outbound.write(.end(nil))
+                    // Send a single body byte, WITHOUT request `.end`. The server
+                    // will see this as its own read cycle that ends with the
+                    // request `.end` still missing — triggering the
+                    // `Connection: close` amendment.
+                    try await outbound.write(.body(ByteBuffer(string: "x")))
 
-                    // Read the response.
+                    // Read the response head. It must carry `Connection: close`.
                     var responseIterator = inbound.makeAsyncIterator()
                     let headPart = try await responseIterator.next()
                     guard case .head(let response) = headPart else {
@@ -453,11 +458,16 @@ struct HTTPKeepAliveHandlerTests {
                     }
                     #expect(response.status == .ok)
                     #expect(
-                        response.headerFields[.connection] != "close",
-                        "Expected keep-alive, got headers: \(response.headerFields)"
+                        response.headerFields[.connection] == "close",
+                        "Expected Connection: close after read cycle ended without request .end; got \(response.headerFields)"
                     )
 
-                    // Drain body and end.
+                    // Let the handler finish and send the rest of the request.
+                    handlerCanFinish.yield()
+                    handlerCanFinish.finish()
+                    try await outbound.write(.end(nil))
+
+                    // Drain the response body + end.
                     var sawEnd = false
                     while !sawEnd {
                         let part = try await responseIterator.next()
@@ -475,18 +485,9 @@ struct HTTPKeepAliveHandlerTests {
                         }
                     }
 
-                    // Pipeline a second request to verify keep-alive actually works.
-                    try await outbound.write(
-                        .head(.init(method: .get, scheme: "http", authority: "", path: "/second"))
-                    )
-                    try await outbound.write(.end(nil))
-
-                    let secondHead = try await responseIterator.next()
-                    guard case .head(let secondResponse) = secondHead else {
-                        Issue.record("Expected second .head, got \(String(describing: secondHead))")
-                        return
-                    }
-                    #expect(secondResponse.status == .ok)
+                    // The server should have closed the connection.
+                    let next = try await responseIterator.next()
+                    #expect(next == nil, "Expected channel close after response; got \(String(describing: next))")
                 }
             }
         )
