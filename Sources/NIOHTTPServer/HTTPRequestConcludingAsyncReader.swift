@@ -49,6 +49,11 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         /// The iterator that provides HTTP request parts from the underlying channel.
         private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
 
+        /// A reusable buffer handed to the body closure on each call to ``read(body:)``.
+        /// Reusing it across calls preserves the allocation; the buffer is cleared
+        /// (while keeping its capacity) at the start of every read.
+        private var buffer: UniqueArray<UInt8>
+
         /// Initializes a new request body reader with the given NIO async channel iterator.
         ///
         /// - Parameter iterator: The NIO async channel inbound stream iterator to use for reading request parts.
@@ -58,6 +63,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         ) {
             self.iterator = iterator
             self.state = readerState
+            self.buffer = UniqueArray<UInt8>()
         }
 
         /// Reads a chunk of request body data.
@@ -71,15 +77,15 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                 throw .first(error)
             }
 
-            var buffer = UniqueArray<UInt8>()
+            self.buffer.removeAll(keepingCapacity: true)
             switch requestPart {
             case .head:
                 fatalError()
             case .body(let element):
-                buffer.reserveCapacity(element.readableBytes)
+                self.buffer.reserveCapacity(element.readableBytes)
                 unsafe element.withUnsafeReadableBytes { rawBufferPtr in
                     let usbptr = unsafe rawBufferPtr.assumingMemoryBound(to: UInt8.self)
-                    unsafe buffer.append(copying: usbptr)
+                    unsafe self.buffer.append(copying: usbptr)
                 }
             case .end(let trailers):
                 self.state.wrapped.withLock { state in
@@ -91,7 +97,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
             }
 
             do {
-                return try await body(&buffer)
+                return try await body(&self.buffer)
             } catch {
                 throw .second(error)
             }

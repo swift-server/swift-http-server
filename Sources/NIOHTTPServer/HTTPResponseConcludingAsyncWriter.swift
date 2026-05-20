@@ -35,7 +35,7 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
     ///
     /// This writer handles the body parts of an HTTP response, allowing them to be written
     /// incrementally as spans of bytes.
-    public struct ResponseBodyAsyncWriter: AsyncWriter {
+    public struct ResponseBodyAsyncWriter: AsyncWriter, ~Copyable {
         /// The type of elements this writer accepts (byte arrays representing body chunks).
         public typealias WriteElement = UInt8
 
@@ -48,32 +48,38 @@ public struct HTTPResponseConcludingAsyncWriter: ConcludingAsyncWriter, ~Copyabl
         /// The underlying NIO writer for HTTP response parts.
         private var writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
 
+        /// A reusable buffer handed to the body closure on each call to ``write(_:)``.
+        /// Reusing it across calls preserves the allocation; the buffer is cleared
+        /// (while keeping its capacity) at the start of every write.
+        private var buffer: UniqueArray<UInt8>
+
         /// Initializes a new response body writer with the given NIO async channel writer.
         ///
         /// - Parameter writer: The NIO async channel outbound writer to use for writing response parts.
         init(writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>) {
             self.writer = writer
+            self.buffer = UniqueArray<UInt8>()
         }
 
         /// Writes a chunk of response body data to the underlying writer.
         public mutating func write<Return: ~Copyable, Failure: Error>(
             _ body: nonisolated(nonsending) (inout Buffer) async throws(Failure) -> Return
         ) async throws(EitherError<WriteFailure, Failure>) -> Return {
-            var buffer = UniqueArray<UInt8>()
+            self.buffer.removeAll(keepingCapacity: true)
             let result: Return
             do {
-                result = try await body(&buffer)
+                result = try await body(&self.buffer)
             } catch {
                 throw .second(error)
             }
 
-            if buffer.count == 0 {
+            if self.buffer.count == 0 {
                 return result
             }
 
             var byteBuffer = ByteBuffer()
-            byteBuffer.reserveCapacity(buffer.count)
-            byteBuffer.writeBytes(buffer.span.bytes)
+            byteBuffer.reserveCapacity(self.buffer.count)
+            byteBuffer.writeBytes(self.buffer.span.bytes)
 
             do {
                 try await self.writer.write(.body(byteBuffer))
