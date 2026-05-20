@@ -83,10 +83,7 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
                 fatalError()
             case .body(let element):
                 self.buffer.reserveCapacity(element.readableBytes)
-                unsafe element.withUnsafeReadableBytes { rawBufferPtr in
-                    let usbptr = unsafe rawBufferPtr.assumingMemoryBound(to: UInt8.self)
-                    unsafe self.buffer.append(copying: usbptr)
-                }
+                self.buffer.append(copying: element.readableBytesUInt8Span)
             case .end(let trailers):
                 self.state.wrapped.withLock { state in
                     state.trailers = trailers
