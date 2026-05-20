@@ -116,100 +116,108 @@ public struct NIOHTTPServer: HTTPServer {
 
     /// Starts an HTTP server with the specified request handler.
     ///
-    /// This method creates and runs an HTTP server that processes incoming requests using the provided
-    /// ``HTTPServerRequestHandler`` implementation. The server binds to the specified configuration and
-    /// handles each connection concurrently using Swift's structured concurrency.
+    /// This method binds to all addresses specified in ``NIOHTTPServerConfiguration/bindTargets`` and begins
+    /// accepting connections on each one. All bind targets share the same request handler, transport security
+    /// configuration, and supported HTTP versions.
     ///
-    /// - Parameters:
-    ///   - logger: A logger instance for recording server events and debugging information.
-    ///   - configuration: The server configuration including bind target and TLS settings.
-    ///   - handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP requests. The handler
-    ///     receives each request along with a body reader and response sender function.
+    /// ## All-or-nothing listening
+    ///
+    /// The server treats its set of listening addresses as a single unit. If any one of the bound addresses
+    /// stops listening — whether due to its underlying socket closing, an unrecoverable error on the
+    /// listening channel, or any other reason — the server stops listening on **all** remaining addresses
+    /// and this method returns. After that point, ``listeningAddresses`` will throw
+    /// ``ListeningAddressError/serverClosed``.
+    ///
+    /// This also applies during graceful shutdown and task cancellation: all channels are shut down together.
+    ///
+    /// - Parameter handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP
+    ///   requests. The handler receives each request along with a body reader and response sender function.
     ///
     /// ## Example
     ///
     /// ```swift
-    /// struct EchoHandler: HTTPServerRequestHandler {
-    ///     func handle(
-    ///         request: HTTPRequest,
-    ///         requestBodyAndTrailers: HTTPRequestConcludingAsyncReader,
-    ///         responseSender: @escaping (HTTPResponse) async throws -> HTTPResponseConcludingAsyncWriter
-    ///     ) async throws {
-    ///         let response = HTTPResponse(status: .ok)
-    ///         let writer = try await sendResponse(response)
-    ///         // Handle request and write response...
-    ///     }
-    /// }
-    ///
-    /// let configuration = HTTPServerConfiguration(
-    ///     bindTarget: .hostAndPort(host: "localhost", port: 8080),
-    ///     tlsConfiguration: .insecure()
-    /// )
-    ///
-    /// try await Server.serve(
+    /// let server = NIOHTTPServer(
     ///     logger: logger,
-    ///     configuration: configuration,
-    ///     handler: EchoHandler()
+    ///     configuration: try .init(
+    ///         bindTargets: [
+    ///             .hostAndPort(host: "0.0.0.0", port: 8080),
+    ///             .hostAndPort(host: "0.0.0.0", port: 8443),
+    ///         ],
+    ///         supportedHTTPVersions: [.http1_1],
+    ///         transportSecurity: .plaintext
+    ///     )
     /// )
+    ///
+    /// try await server.serve(handler: MyHandler())
     /// ```
     public func serve(
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        let serverChannel = try await self.makeServerChannel()
+        // Ensure the listening address promise is always completed on the way out, regardless of whether
+        // binding succeeded, the serve loop returned normally, or an error propagated.
+        defer { self.finishListeningAddressPromise() }
+
+        let serverChannels = try await self.makeServerChannels()
 
         return try await withTaskCancellationHandler {
             try await withGracefulShutdownHandler {
-                try await self._serve(serverChannel: serverChannel, handler: handler)
+                try await self._serve(serverChannels: serverChannels, handler: handler)
             } onGracefulShutdown: {
                 self.beginGracefulShutdown()
             }
         } onCancel: {
-            // Forcefully close down the server channel
-            self.close(serverChannel: serverChannel)
+            // Forcefully close down the server channels
+            self.close(serverChannels: serverChannels)
         }
     }
 
-    /// Creates and returns a server channel based on the configured transport security.
-    private func makeServerChannel() async throws -> ServerChannel {
+    /// Creates and returns server channels based on the configured transport security.
+    private func makeServerChannels() async throws -> [ServerChannel] {
         switch self.configuration.transportSecurity.backing {
         case .plaintext:
-            return .plaintextHTTP1_1(
-                try await self.setupHTTP1_1ServerChannel(bindTarget: self.configuration.bindTarget)
-            )
+            return try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
+                .map { .plaintextHTTP1_1($0) }
 
         case .tls(let credentials):
-            return .secureUpgrade(
-                try await self.setupSecureUpgradeServerChannel(
-                    bindTarget: self.configuration.bindTarget,
-                    supportedHTTPVersions: self.configuration.supportedHTTPVersions,
-                    tlsConfiguration: try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
-                )
-            )
+            return try await self.setupSecureUpgradeServerChannels(
+                bindTargets: self.configuration.bindTargets,
+                supportedHTTPVersions: self.configuration.supportedHTTPVersions,
+                tlsConfiguration: try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
+            ).map { .secureUpgrade($0) }
 
         case .mTLS(let credentials, let mTLSConfiguration):
-            return .secureUpgrade(
-                try await self.setupSecureUpgradeServerChannel(
-                    bindTarget: self.configuration.bindTarget,
-                    supportedHTTPVersions: self.configuration.supportedHTTPVersions,
-                    tlsConfiguration: try .makeServerConfiguration(
-                        tlsCredentials: credentials,
-                        mTLSConfiguration: mTLSConfiguration
-                    )
+            return try await self.setupSecureUpgradeServerChannels(
+                bindTargets: self.configuration.bindTargets,
+                supportedHTTPVersions: self.configuration.supportedHTTPVersions,
+                tlsConfiguration: try .makeServerConfiguration(
+                    tlsCredentials: credentials,
+                    mTLSConfiguration: mTLSConfiguration
                 )
-            )
+            ).map { .secureUpgrade($0) }
         }
     }
 
     private func _serve(
-        serverChannel: ServerChannel,
+        serverChannels: [ServerChannel],
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        switch serverChannel {
-        case .plaintextHTTP1_1(let http1Channel):
-            try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for serverChannel in serverChannels {
+                group.addTask {
+                    switch serverChannel {
+                    case .plaintextHTTP1_1(let http1Channel):
+                        try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
 
-        case .secureUpgrade(let secureUpgradeChannel):
-            try await self.serveSecureUpgrade(serverChannel: secureUpgradeChannel, handler: handler)
+                    case .secureUpgrade(let secureUpgradeChannel):
+                        try await self.serveSecureUpgrade(serverChannel: secureUpgradeChannel, handler: handler)
+                    }
+                }
+            }
+
+            // Wait for the first channel to complete (either normally or by throwing).
+            // If any channel stops serving, bring down all remaining channels.
+            try await group.next()
+            group.cancelAll()
         }
     }
 
@@ -306,16 +314,18 @@ public struct NIOHTTPServer: HTTPServer {
         self.serverQuiescingHelper.initiateShutdown(promise: nil)
     }
 
-    /// Forcefully closes the server channel without waiting for existing connections to drain.
-    private func close(serverChannel: ServerChannel) {
+    /// Forcefully closes the server channels without waiting for existing connections to drain.
+    private func close(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
 
-        switch serverChannel {
-        case .plaintextHTTP1_1(let http1Channel):
-            http1Channel.channel.close(promise: nil)
+        for serverChannel in serverChannels {
+            switch serverChannel {
+            case .plaintextHTTP1_1(let http1Channel):
+                http1Channel.channel.close(promise: nil)
 
-        case .secureUpgrade(let secureUpgradeChannel):
-            secureUpgradeChannel.channel.close(promise: nil)
+            case .secureUpgrade(let secureUpgradeChannel):
+                secureUpgradeChannel.channel.close(promise: nil)
+            }
         }
     }
 }

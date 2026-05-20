@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 public import AsyncStreaming
+public import BasicContainers
+public import HTTPAPIs
 public import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
@@ -38,148 +40,65 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
         /// The type of errors that can occur during reading operations.
         public typealias ReadFailure = any Error
 
-        /// The shared reader state that holds the iterator and captures trailers.
+        /// The buffer type used to hand elements to the caller.
+        public typealias Buffer = UniqueArray<UInt8>
+
+        /// The HTTP trailer fields captured at the end of the request.
         fileprivate var state: ReaderState
 
-        struct RequestBodyStateMachine {
-            enum State {
-                // The request body is currently being read: expecting more request body parts or a request end part.
-                case readingBody(ReadingBodyState)
+        /// The iterator that provides HTTP request parts from the underlying channel.
+        /// Taken from `state` at construction; returned to `state` when this reader
+        /// observes request `.end` so the outer request loop can recover it for
+        /// HTTP/1.1 keep-alive.
+        private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
 
-                // The request end part was received. We have finished.
-                case finished
+        /// A reusable buffer handed to the body closure on each call to ``read(body:)``.
+        /// Reusing it across calls preserves the allocation; the buffer is cleared
+        /// (while keeping its capacity) at the start of every read.
+        private var buffer: UniqueArray<UInt8>
 
-                enum ReadingBodyState {
-                    // All received bytes have been consumed; no excess bytes need to be stored.
-                    case noExcess
-
-                    // `read` was called with a `maximumCount` value that was lower than the bytes available. The excess
-                    // bytes are stored here so they can be dispensed in future calls to `read`.
-                    case excess(ByteBuffer)
-                }
-            }
-
-            private var state: State
-            private var readerState: ReaderState
-
-            init(readerState: ReaderState) {
-                self.state = .readingBody(.noExcess)
-                self.readerState = readerState
-            }
-
-            enum ReadResult {
-                case readBody(ByteBuffer)
-                case requestFinished
-            }
-
-            mutating func read(limit: Int?) async throws -> ReadResult {
-                switch self.state {
-                case .readingBody(let readingBodyState):
-                    var bodyElement: ByteBuffer
-
-                    switch readingBodyState {
-                    case .excess(let excessElement):
-                        // There was an excess of bytes from the previous call to `read`. We read directly from this
-                        // excess and don't advance the iterator.
-                        bodyElement = excessElement
-
-                    case .noExcess:
-                        // There is no excess from previous reads. We obtain the next element from the stream.
-                        // Take the iterator from ReaderState, read one part, and put it back.
-                        // This ensures the iterator is always recoverable even if the reader
-                        // is dropped without consuming .end.
-                        guard var iterator = self.readerState.takeIterator() else {
-                            throw RequestBodyReadError.requestEndedBeforeReceivingEnd
-                        }
-
-                        let requestPart: HTTPRequestPart?
-                        do {
-                            requestPart = try await iterator.next(isolation: #isolation)
-                        } catch {
-                            // Put the iterator back before propagating the error.
-                            nonisolated(unsafe) let iter = iterator
-                            self.readerState.putIterator(iter)
-                            throw error
-                        }
-
-                        switch requestPart {
-                        case .head:
-                            nonisolated(unsafe) let iter = iterator
-                            self.readerState.putIterator(iter)
-                            fatalError("Unexpectedly received a request head.")
-
-                        case .none:
-                            // Stream ended without .end — don't put iterator back.
-                            throw RequestBodyReadError.requestEndedBeforeReceivingEnd
-
-                        case .body(let element):
-                            nonisolated(unsafe) let iter = iterator
-                            self.readerState.putIterator(iter)
-                            bodyElement = element
-
-                        case .end(let trailers):
-                            self.state = .finished
-                            nonisolated(unsafe) let iter = iterator
-                            self.readerState.putIterator(iter)
-                            self.readerState.wrapped.withLock { state in
-                                state.finishedReading = true
-                                state.trailers = trailers
-                            }
-                            return .requestFinished
-                        }
-                    }
-
-                    if let limit, limit < bodyElement.readableBytes,
-                        let truncated = bodyElement.readSlice(length: limit)
-                    {
-                        // There are more bytes available than `limit`. We must store the excess in a buffer for it to
-                        // be consumed in the next call to `read`.
-                        self.state = .readingBody(.excess(bodyElement))
-                        return .readBody(truncated)
-                    }
-
-                    self.state = .readingBody(.noExcess)
-                    return .readBody(bodyElement)
-
-                case .finished:
-                    return .requestFinished
-                }
-            }
-        }
-
-        var requestBodyStateMachine: RequestBodyStateMachine
-
-        /// Initializes a new request body reader.
+        /// Initializes a new request body reader, taking the iterator from the
+        /// shared `ReaderState`.
         fileprivate init(readerState: ReaderState) {
-            self.requestBodyStateMachine = .init(readerState: readerState)
             self.state = readerState
+            self.iterator = readerState.takeIterator()
+            self.buffer = UniqueArray<UInt8>()
         }
 
         /// Reads a chunk of request body data.
-        ///
-        /// - Parameter body: A function that consumes the read element (or nil for end of stream)
-        ///                  and returns a value of type `Return`.
-        /// - Returns: The value returned by the body function after processing the read element.
-        /// - Throws: An error if the reading operation fails.
-        public mutating func read<Return, Failure: Error>(
-            maximumCount: Int?,
-            body: nonisolated(nonsending) (consuming Span<ReadElement>) async throws(Failure) -> Return
+        public mutating func read<Return: ~Copyable, Failure: Error>(
+            body: nonisolated(nonsending) (inout Buffer) async throws(Failure) -> Return
         ) async throws(EitherError<ReadFailure, Failure>) -> Return {
-            let readResult: RequestBodyStateMachine.ReadResult
+            let requestPart: HTTPRequestPart?
             do {
-                readResult = try await self.requestBodyStateMachine.read(limit: maximumCount)
+                requestPart = try await self.iterator?.next(isolation: #isolation)
             } catch {
                 throw .first(error)
             }
 
-            do {
-                switch readResult {
-                case .readBody(let readElement):
-                    return try await body(Array(buffer: readElement).span)
-
-                case .requestFinished:
-                    return try await body(.init())
+            self.buffer.removeAll(keepingCapacity: true)
+            switch requestPart {
+            case .head:
+                fatalError()
+            case .body(let element):
+                self.buffer.reserveCapacity(element.readableBytes)
+                self.buffer.append(copying: element.readableBytesUInt8Span)
+            case .end(let trailers):
+                // Move the iterator back into ReaderState so the outer request
+                // loop can recover it for the next request on the same connection
+                // (HTTP/1.1 keep-alive).
+                nonisolated(unsafe) let iter = self.iterator.take()
+                self.state.wrapped.withLock { state in
+                    state.trailers = trailers
+                    state.finishedReading = true
+                    _ = state.iterator.swap(newValue: iter)
                 }
+            case .none:
+                throw .first(RequestBodyReadError.streamEndedBeforeReceivingRequestEnd)
+            }
+
+            do {
+                return try await body(&self.buffer)
             } catch {
                 throw .second(error)
             }
@@ -191,31 +110,25 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
             var trailers: HTTPFields? = nil
             var finishedReading: Bool = false
 
-            /// The iterator that provides HTTP request parts from the underlying channel.
-            /// Stored here between read cycles for HTTP/1.1 keep-alive recovery.
-            var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+            /// The iterator. Initially populated from the channel; taken by the
+            /// body reader at construction time and returned by it once request
+            /// `.end` has been observed (for HTTP/1.1 keep-alive recovery).
+            var iterator: Disconnected<
+                NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+            >
         }
 
         let wrapped: Mutex<Wrapped>
 
         init(iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator) {
-            self.wrapped = .init(.init(iterator: iterator))
+            self.wrapped = .init(.init(iterator: Disconnected(value: iterator)))
         }
 
+        /// Takes the iterator out of the state. Returns the iterator if present,
+        /// or `nil` if it's already been taken (e.g. by the body reader).
         func takeIterator() -> sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator? {
             self.wrapped.withLock { state in
-                let iterator = state.iterator
-                state.iterator = nil
-                return iterator
-            }
-        }
-
-        func putIterator(
-            _ iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
-        ) {
-            var disconnected = Disconnected(value: Optional(iterator))
-            self.wrapped.withLock { state in
-                state.iterator = disconnected.swap(newValue: nil)
+                state.iterator.swap(newValue: nil)
             }
         }
     }

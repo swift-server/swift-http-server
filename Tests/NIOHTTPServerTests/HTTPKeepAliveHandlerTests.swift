@@ -121,7 +121,7 @@ struct HTTPKeepAliveHandlerTests {
                 // handler amends the head with `Connection: close` before flushing.
                 let _ = try await reader.consumeAndConclude { partsReader in
                     var partsReader = partsReader
-                    try await partsReader.read(maximumCount: 1) { _ in }
+                    try await partsReader.read { _ in }
                 }
                 let writer = try await sender.send(
                     .init(status: .ok, headerFields: [.contentLength: "0"])
@@ -317,9 +317,8 @@ struct HTTPKeepAliveHandlerTests {
                     var responseBodyWriter = responseBodyWriter
                     let reader = maybeReader.take()!
                     let _ = try await reader.consumeAndConclude { bodyReader in
-                        // swift-format-ignore: ReplaceForEachWithForLoop
-                        try await bodyReader.forEach { span in
-                            try await responseBodyWriter.write(span)
+                        try await bodyReader.forEachBuffer { buffer in
+                            try await responseBodyWriter.write(buffer.span)
                         }
                     }
                     return nil

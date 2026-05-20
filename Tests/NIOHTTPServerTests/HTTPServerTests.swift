@@ -62,7 +62,7 @@ struct HTTPServerTests {
                 }
             }
 
-            _ = try await server.listeningAddress
+            _ = try await server.listeningAddresses
 
             group.cancelAll()
         }
