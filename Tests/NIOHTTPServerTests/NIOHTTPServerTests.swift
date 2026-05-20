@@ -35,7 +35,7 @@ import X509
 struct NIOHTTPServerTests {
     let serverLogger = Logger(label: "NIOHTTPServerTests")
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
@@ -64,7 +64,7 @@ struct NIOHTTPServerTests {
     }
 
     @Test("Plaintext request-response")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
             logger: Logger(label: "NIOHTTPServerTests"),
@@ -117,7 +117,7 @@ struct NIOHTTPServerTests {
         )
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test(
         "mTLS request-response with custom verification callback returning peer certificates",
         arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
@@ -200,7 +200,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Multiple informational response headers", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testMultipleInformationalResponseHeaders(httpVersion: HTTPVersion) async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -249,7 +249,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Client closes stream without sending end part", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testRequestWithoutEndPart(httpVersion: HTTPVersion) async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -307,7 +307,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Bi-directional streaming", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testBidirectionalStreaming(httpVersion: HTTPVersion) async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -371,7 +371,7 @@ struct NIOHTTPServerTests {
         )
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Multiple concurrent connections", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testMultipleConcurrentConnections(httpVersion: HTTPVersion) async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -439,7 +439,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Multiple concurrent HTTP/2 streams")
     func testMultipleConcurrentHTTP2Streams() async throws {
         let (server, serverChain) = try self.makeSecureUpgradeServer()
@@ -509,7 +509,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Server can still process other connections despite one failing")
     func testServerCanContinueDespiteFailedConnection() async throws {
         let server = try self.makePlaintextHTTP1Server()
@@ -568,7 +568,7 @@ struct NIOHTTPServerTests {
         )
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Bind to multiple addresses")
     func testMultipleBindAddresses() async throws {
         let server = NIOHTTPServer(
@@ -593,7 +593,7 @@ struct NIOHTTPServerTests {
         )
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Serve requests on multiple addresses independently")
     func testServeOnMultipleAddresses() async throws {
         let server = NIOHTTPServer(
@@ -661,7 +661,7 @@ struct NIOHTTPServerTests {
     /// all bound addresses become unavailable simultaneously and ``listeningAddresses`` throws
     /// ``ListeningAddressError/serverClosed``. No subset of addresses continues serving after the server
     /// has stopped.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("All addresses stop together and listeningAddresses throws after server stops")
     func testAllAddressesStopTogether() async throws {
         let server = NIOHTTPServer(
@@ -713,7 +713,7 @@ struct NIOHTTPServerTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Empty bind targets throws error")
     func testEmptyBindTargetsThrows() throws {
         #expect(throws: NIOHTTPServerConfigurationError.noBindTargetsSpecified) {
@@ -738,7 +738,7 @@ struct NIOHTTPServerTests {
     /// to for the verification. The port is below the typical ephemeral range used by `port: 0`
     /// allocations on Linux (32768+) and macOS (49152+), so other tests using `port: 0` cannot
     /// accidentally be assigned this port by the OS.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Previously bound channels are closed when a later bind fails")
     func testPreviouslyBoundChannelsAreClosedOnPartialBindFailure() async throws {
         let firstPort = 30_210
@@ -791,7 +791,7 @@ extension NIOHTTPServerTests {
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func makePlaintextHTTP1Server() throws -> NIOHTTPServer {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
@@ -805,7 +805,7 @@ extension NIOHTTPServerTests {
         return server
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func makeSecureUpgradeServer() throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
         let serverChain = try TestCA.makeSelfSignedChain()
 
@@ -909,7 +909,7 @@ extension NIOHTTPServerTests {
 
     /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with the first
     /// listening address, then cancels the server task.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
@@ -927,7 +927,7 @@ extension NIOHTTPServerTests {
 
     /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with all listening
     /// addresses, then cancels the server task.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
@@ -950,7 +950,7 @@ extension NIOHTTPServerTests {
     }
 
     /// Reads the full request body and trailers from `reader`, then sends a `200 OK` response echoing them back.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     static func echoResponse(
         readUpTo limit: Int,
         reader: consuming HTTPRequestConcludingAsyncReader,

@@ -20,7 +20,7 @@ public import X509
 ///
 /// This structure contains all the necessary configuration options for setting up
 /// and running ``NIOHTTPServer``, including network binding and TLS settings.
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 public struct NIOHTTPServerConfiguration: Sendable {
     /// Specifies where the server should bind and listen for incoming connections.
     ///
@@ -303,7 +303,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
 ///
 /// Indicates whether certificate verification succeeded or failed, and provides associated metadata when verification
 /// is successful.
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 public enum CertificateVerificationResult: Sendable, Hashable {
     /// Metadata resulting from successful certificate verification.
     public struct VerificationMetadata: Sendable, Hashable {
@@ -367,7 +367,7 @@ public struct CertificateVerificationMode: Sendable {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSL.CertificateVerification {
     /// Maps ``CertificateVerificationMode`` to the NIOSSL representation.
     init(_ verificationMode: CertificateVerificationMode) {
@@ -380,7 +380,7 @@ extension NIOSSL.CertificateVerification {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
     /// Represents an HTTP version.
     public struct HTTPVersion: Sendable, Hashable {
@@ -438,7 +438,7 @@ extension NIOHTTPServerConfiguration {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOAsyncSequenceProducerBackPressureStrategies.HighLowWatermark {
     init(_ backpressureStrategy: NIOHTTPServerConfiguration.BackPressureStrategy) {
         switch backpressureStrategy.backing {
@@ -448,7 +448,7 @@ extension NIOAsyncSequenceProducerBackPressureStrategies.HighLowWatermark {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     /// The ALPN protocol identifiers to advertise during the TLS handshake, derived from the supported HTTP versions.
     ///

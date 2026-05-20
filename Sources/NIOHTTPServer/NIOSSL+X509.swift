@@ -20,7 +20,7 @@ import X509
 
 // MARK: X509 to NIOSSL
 
-@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSLCertificate {
     convenience init(_ certificate: Certificate) throws {
         var serializer = DER.Serializer()
@@ -29,28 +29,28 @@ extension NIOSSLCertificate {
     }
 }
 
-@available(macOS 11.0, iOS 14, tvOS 14, watchOS 7, macCatalyst 14, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSLPrivateKey {
     convenience init(_ privateKey: Certificate.PrivateKey) throws {
         try self.init(bytes: try privateKey.serializeAsPEM().derBytes, format: .der)
     }
 }
 
-@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSLCertificateSource {
     init(_ certificate: Certificate) throws {
         self = .certificate(try NIOSSLCertificate(certificate))
     }
 }
 
-@available(macOS 11.0, iOS 14, tvOS 14, watchOS 7, macCatalyst 14, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSLPrivateKeySource {
     init(_ privateKey: Certificate.PrivateKey) throws {
         self = .privateKey(try NIOSSLPrivateKey(privateKey))
     }
 }
 
-@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension NIOSSLTrustRoots {
     init(treatingNilAsSystemTrustRoots certificates: [Certificate]?) throws {
         if let certificates {
@@ -63,7 +63,7 @@ extension NIOSSLTrustRoots {
 
 // MARK: NIOSSL to X509
 
-@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)
+@available(anyAppleOS 26.0, *)
 extension Certificate {
     init(_ certificate: NIOSSLCertificate) throws {
         try self.init(derEncoded: certificate.toDERBytes())

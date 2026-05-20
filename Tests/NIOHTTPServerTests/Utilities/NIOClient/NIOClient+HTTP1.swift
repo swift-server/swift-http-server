@@ -19,7 +19,7 @@ import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOPosix
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension Channel {
     /// Adds HTTP/1.1 client handlers to the pipeline.
     func configureTestHTTP1ClientPipeline(
@@ -48,7 +48,7 @@ extension Channel {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension ClientBootstrap {
     /// Connects to the provided `serverAddress` and provides a `NIOAsyncChannel`. With this ``NIOAsyncChannel``, one
     /// can write `HTTPRequestPart`s to the server and observe `HTTPResponsePart`s from the inbound stream of the

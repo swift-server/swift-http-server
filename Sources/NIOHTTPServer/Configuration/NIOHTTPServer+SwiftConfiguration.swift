@@ -20,7 +20,7 @@ import NIOHTTP2
 import SwiftASN1
 public import X509
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
     /// Initialize the server configuration from a config reader.
     ///
@@ -110,7 +110,7 @@ extension NIOHTTPServerConfiguration {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.BindTarget {
     /// Initialize a bind target configuration from a config reader.
     ///
@@ -134,7 +134,7 @@ private enum HTTPVersionKind: String {
     case http2
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     /// Initialize a supported HTTP versions configuration from a config reader.
     ///
@@ -171,7 +171,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Initialize a transport security configuration from a config reader.
     ///
@@ -242,7 +242,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     /// Initialize TLS credentials (certificate chain and private key) from a config reader.
     ///
@@ -288,7 +288,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     /// Initialize an mTLS trust configuration from a config reader.
     ///
@@ -360,7 +360,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.BackPressureStrategy {
     /// Initialize the backpressure strategy configuration from a config reader.
     ///
@@ -387,7 +387,7 @@ extension NIOHTTPServerConfiguration.BackPressureStrategy {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.HTTP2 {
     /// Initialize a HTTP/2 configuration from a config reader.
     ///
@@ -420,7 +420,7 @@ extension NIOHTTPServerConfiguration.HTTP2 {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
     /// Initialize a HTTP/2 graceful shutdown configuration from a config reader.
     ///
@@ -436,7 +436,7 @@ extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     fileprivate enum HTTPVersionKind: String {
         case http1_1
@@ -444,7 +444,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     fileprivate enum TransportSecurityMode: String {
         case plaintext
@@ -458,7 +458,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     /// The supported sources for trust roots.
     fileprivate enum TrustRootsSource: String {
@@ -475,7 +475,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension CertificateVerificationMode {
     fileprivate init(_ mode: NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration.VerificationMode) {
         switch mode {

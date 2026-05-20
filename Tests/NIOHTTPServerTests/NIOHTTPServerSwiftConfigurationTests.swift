@@ -28,7 +28,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("BindTarget")
     struct BindTargetTests {
         @Test("Valid host and port")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testValidConfig() throws {
             let provider = InMemoryProvider(values: ["host": "localhost", "port": 8080])
 
@@ -45,7 +45,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Init fails with missing host")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testMissingHost() throws {
             let provider = InMemoryProvider(values: ["port": 8080])
             let config = ConfigReader(provider: provider)
@@ -59,7 +59,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Init fails with missing port")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testMissingPort() throws {
             let provider = InMemoryProvider(values: ["host": "localhost"])
             let config = ConfigReader(provider: provider)
@@ -76,7 +76,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("Multiple bind targets via bindTargets")
     struct MultipleBindTargetsTests {
         @Test("Parallel hosts and ports produce multiple bind targets")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testMultipleBindTargets() throws {
             let provider = InMemoryProvider(
                 values: [
@@ -107,7 +107,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Singular bindTarget still works")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testSingularBindTargetStillWorks() throws {
             let provider = InMemoryProvider(
                 values: [
@@ -131,7 +131,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Providing both singular and plural throws an error")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testBothSingularAndPluralThrows() throws {
             let provider = InMemoryProvider(
                 values: [
@@ -151,7 +151,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Mismatched hosts and ports lengths throws an error")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testMismatchedHostsAndPortsLengthsThrows() throws {
             let provider = InMemoryProvider(
                 values: [
@@ -169,7 +169,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Empty bindTargets arrays throws an error")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testEmptyBindTargetsArraysThrows() throws {
             let provider = InMemoryProvider(
                 values: [
@@ -190,7 +190,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("BackPressureStrategy")
     struct BackPressureStrategyTests {
         @Test("Default values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testDefaultValues() throws {
             // Don't provide anything. All values have defaults.
             let provider = InMemoryProvider(values: [:])
@@ -207,7 +207,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Custom values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testCustomValues() throws {
             let provider = InMemoryProvider(values: ["lowWatermark": 5, "highWatermark": 20])
             let config = ConfigReader(provider: provider)
@@ -223,7 +223,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Partial custom values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testPartialCustomValues() throws {
             let provider = InMemoryProvider(values: ["lowWatermark": 3])
             let config = ConfigReader(provider: provider)
@@ -242,7 +242,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("SupportedHTTPVersions")
     struct SupportedHTTPVersionsTests {
         @Test("Empty supported version set is invalid")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testEmptySupportedHTTPVersionSetFails() async {
             await #expect(processExitsWith: .failure) {
                 let provider = InMemoryProvider(values: [
@@ -256,7 +256,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Unrecognized versions are ignored")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testUnrecognizedHTTPVersionIgnored() throws {
             let provider = InMemoryProvider(values: [
                 "versions": .init(.stringArray(["unrecognized_version"]), isSecret: false)
@@ -273,7 +273,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Default HTTP/2 configuration used when not specified")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testDefaultHTTP2ConfigurationUsed() throws {
             let provider = InMemoryProvider(values: [
                 "versions": .init(.stringArray(["http1_1", "http2"]), isSecret: false)
@@ -290,7 +290,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("HTTP2")
     struct HTTP2Tests {
         @Test("Default values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testDefaultValues() throws {
             let provider = InMemoryProvider(values: [:])
             let config = ConfigReader(provider: provider)
@@ -305,7 +305,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Custom values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testCustomValues() throws {
             let provider = InMemoryProvider(values: [
                 "maxFrameSize": 1,
@@ -325,7 +325,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Partial custom values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testPartialCustomValues() throws {
             let provider = InMemoryProvider(values: ["maxFrameSize": 5])
             let config = ConfigReader(provider: provider)
@@ -343,7 +343,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("TransportSecurity")
     struct TransportSecurityTests {
         @Test("Invalid security mode")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testInvalidSecurityMode() throws {
             let provider = InMemoryProvider(values: ["mode": "<this_mode_does_not_exist>"])
             let config = ConfigReader(provider: provider)
@@ -357,7 +357,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Custom verification callback without mTLS being enabled")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func testCannotInitializeWithCustomCallbackWhenMTLSNotEnabled() throws {
             let provider = InMemoryProvider(values: ["mode": "tls", "credentialSource": "inline"])
             let config = ConfigReader(provider: provider)
@@ -382,7 +382,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Suite
         struct TLS {
             @Test("Valid config using inline credentials")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testValidConfigUsingInlineCredentials() throws {
                 let chain = try TestCA.makeSelfSignedChain()
                 let certsPEM = try chain.chainPEMString
@@ -416,7 +416,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Valid file-based credentials with reloading")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testValidFileConfigWithReloading() async throws {
                 let provider = InMemoryProvider(
                     values: [
@@ -444,7 +444,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Valid file-based credentials without reloading")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testValidFileConfigWithoutReloading() throws {
                 let provider = InMemoryProvider(
                     values: [
@@ -471,7 +471,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Init fails with missing certificate")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testMissingCertificate() throws {
                 let chain = try TestCA.makeSelfSignedChain()
                 let keyPEM = try chain.privateKey.serializeAsPEM().pemString
@@ -494,7 +494,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Init fails with missing private key")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testMissingPrivateKey() throws {
                 let chain = try TestCA.makeSelfSignedChain()
                 let certsPEM = try chain.chainPEMString
@@ -520,7 +520,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Suite
         struct MTLS {
             @Test("Custom verification callback")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testValidConfigWithCustomVerificationCallback() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
 
@@ -572,7 +572,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Optional verification mode")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testOptionalVerification() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
                 let certsPEM = try serverChain.chainPEMString
@@ -614,7 +614,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Invalid verification mode")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testInvalidVerificationMode() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
 
@@ -645,7 +645,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Default trust roots")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testDefaultTrustRoots() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
 
@@ -687,7 +687,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             @Test("Trust roots from PEM file path")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testTrustRootsFromPEMFilePath() throws {
                 let serverChain = try TestCA.makeSelfSignedChain()
 
@@ -730,7 +730,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Suite
         struct ReloadingMTLS {
             @Test("Valid config with file credentials and reloading")
-            @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+            @available(anyAppleOS 26.0, *)
             func testValidConfig() async throws {
                 let chain = try TestCA.makeSelfSignedChain()
                 let trustRootPEM = try chain.ca.serializeAsPEM().pemString
@@ -774,7 +774,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
     @Suite("End-to-End")
     struct EndToEndConfigurationTests {
         @Test("Configure all possible values")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func fullConfiguration() throws {
             let chain = try TestCA.makeSelfSignedChain()
             let certsPEM = try chain.chainPEMString
@@ -843,7 +843,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
 
         @Test("Only HTTP/1.1 supported over plaintext")
-        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        @available(anyAppleOS 26.0, *)
         func onlyHTTP1_1SupportedOverPlaintext() async {
             await #expect(processExitsWith: .failure) {
                 let provider = InMemoryProvider(
