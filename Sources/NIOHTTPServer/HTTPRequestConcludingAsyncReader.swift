@@ -113,9 +113,10 @@ public struct HTTPRequestConcludingAsyncReader: ConcludingAsyncReader, ~Copyable
             /// The iterator. Initially populated from the channel; taken by the
             /// body reader at construction time and returned by it once request
             /// `.end` has been observed (for HTTP/1.1 keep-alive recovery).
-            var iterator: Disconnected<
-                NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
-            >
+            var iterator:
+                Disconnected<
+                    NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+                >
         }
 
         let wrapped: Mutex<Wrapped>
