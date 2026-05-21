@@ -691,7 +691,8 @@ struct NIOHTTPServerTests {
                         inbound,
                         expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
                         expectedBody: [Self.bodyData],
-                        expectedTrailers: Self.trailer
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
                     )
                 }
 
@@ -708,7 +709,8 @@ struct NIOHTTPServerTests {
                         inbound,
                         expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
                         expectedBody: [Self.bodyData],
-                        expectedTrailers: Self.trailer
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
                     )
                 }
             }
@@ -758,7 +760,8 @@ struct NIOHTTPServerTests {
                             inbound,
                             expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
                             expectedBody: [Self.bodyData],
-                            expectedTrailers: Self.trailer
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: false
                         )
                     }
                 }

@@ -61,7 +61,10 @@ struct NIOHTTPServiceLifecycleTests {
 
                     firstChunkReadPromise.succeed()
 
-                    try await bodyReader.read { _ in }
+                    var requestFinished = false
+                    while !requestFinished {
+                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
+                    }
                 }
 
                 let responseBodyWriter = try await responseSender.send(.init(status: .ok))

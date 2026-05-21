@@ -139,7 +139,7 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
                 // The head we flushed earlier carried `Connection: close`; close
                 // the connection now that the response is complete.
                 context.flush()
-                context.close(mode: .all, promise: nil)
+                context.close(mode: .output, promise: nil)
             }
         }
     }
@@ -185,7 +185,7 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
             // The response was fully buffered (head + ... + end) and we have to
             // close. Close now (the flush above ensured the writes reached the
             // wire).
-            context.close(mode: .all, promise: nil)
+            context.close(mode: .output, promise: nil)
         }
     }
 }
