@@ -35,7 +35,7 @@ enum ListeningAddressError: CustomStringConvertible, Error {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     func addressesBound(_ addresses: [NIOCore.SocketAddress?]) throws {
         switch self.listeningAddressState.withLockedValue({ $0.addressesBound(addresses) }) {
@@ -63,7 +63,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     enum State {
         case idle(EventLoopPromise<[SocketAddress]>)
@@ -131,7 +131,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServer.SocketAddress {
     fileprivate init(_ address: NIOCore.SocketAddress?) throws(ListeningAddressError) {
         guard let address, let port = address.port else {

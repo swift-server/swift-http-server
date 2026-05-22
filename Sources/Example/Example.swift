@@ -22,7 +22,7 @@ import NIOHTTPServer
 import X509
 
 @main
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 struct Example {
     static func main() async throws {
         try await serve()

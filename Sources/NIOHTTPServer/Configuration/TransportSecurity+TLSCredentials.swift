@@ -15,7 +15,7 @@
 public import NIOCertificateReloading
 public import X509
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Represents the server's TLS credentials: a certificate chain and its corresponding private key.
     ///
