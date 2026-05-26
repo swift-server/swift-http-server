@@ -1,4 +1,4 @@
-// swift-tools-version:6.2
+// swift-tools-version:6.4
 //===----------------------------------------------------------------------===//
 //
 // This source file is part of the Swift HTTP Server open source project
@@ -16,7 +16,7 @@
 import PackageDescription
 
 let extraSettings: [SwiftSetting] = [
-    .enableExperimentalFeature("SuppressedAssociatedTypes"),
+    .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
     .enableExperimentalFeature("LifetimeDependence"),
     .enableExperimentalFeature("Lifetimes"),
     .enableUpcomingFeature("LifetimeDependence"),
@@ -29,6 +29,13 @@ let extraSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "swift-http-server",
+    platforms: [  // TODO: Needed until https://github.com/swiftlang/swift/issues/89028 is fixed
+        .macOS(.v15),
+        .iOS(.v18),
+        .watchOS(.v11),
+        .tvOS(.v18),
+        .visionOS(.v2),
+    ],
     products: [
         .library(
             name: "NIOHTTPServer",
@@ -40,7 +47,15 @@ let package = Package(
         .default(enabledTraits: ["Configuration"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-http-api-proposal.git", branch: "main"),
+        .package(
+            url: "https://github.com/apple/swift-http-api-proposal.git",
+            revision: "140b8c2aa773514e2464c15db8d94f4eca46d4a1"
+        ),
+        .package(
+            url: "https://github.com/apple/swift-async-algorithms.git",
+            from: "1.1.4",
+            traits: ["UnstableAsyncStreaming"]
+        ),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.16.0"),
@@ -68,7 +83,7 @@ let package = Package(
         .target(
             name: "NIOHTTPServer",
             dependencies: [
-                .product(name: "AsyncStreaming", package: "swift-http-api-proposal"),
+                .product(name: "AsyncStreaming", package: "swift-async-algorithms"),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),

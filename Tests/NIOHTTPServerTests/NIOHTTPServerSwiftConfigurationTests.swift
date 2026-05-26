@@ -73,6 +73,120 @@ struct NIOHTTPServerSwiftConfigurationTests {
         }
     }
 
+    @Suite("Multiple bind targets via bindTargets")
+    struct MultipleBindTargetsTests {
+        @Test("Parallel hosts and ports produce multiple bind targets")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testMultipleBindTargets() throws {
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTargets.hosts": .init(.stringArray(["127.0.0.1", "::1"]), isSecret: false),
+                    "bindTargets.ports": .init(.intArray([8080, 8443]), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            let serverConfig = try NIOHTTPServerConfiguration(config: config)
+
+            #expect(serverConfig.bindTargets.count == 2)
+            guard case .hostAndPort(let host0, let port0) = serverConfig.bindTargets[0].backing else {
+                Issue.record("Expected first bind target to be host/port, got \(serverConfig.bindTargets[0].backing)")
+                return
+            }
+            #expect(host0 == "127.0.0.1")
+            #expect(port0 == 8080)
+
+            guard case .hostAndPort(let host1, let port1) = serverConfig.bindTargets[1].backing else {
+                Issue.record("Expected second bind target to be host/port, got \(serverConfig.bindTargets[1].backing)")
+                return
+            }
+            #expect(host1 == "::1")
+            #expect(port1 == 8443)
+        }
+
+        @Test("Singular bindTarget still works")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testSingularBindTargetStillWorks() throws {
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTarget.host": "127.0.0.1",
+                    "bindTarget.port": 8080,
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            let serverConfig = try NIOHTTPServerConfiguration(config: config)
+
+            #expect(serverConfig.bindTargets.count == 1)
+            guard case .hostAndPort(let host, let port) = serverConfig.bindTargets[0].backing else {
+                Issue.record("Expected host/port, got \(serverConfig.bindTargets[0].backing)")
+                return
+            }
+            #expect(host == "127.0.0.1")
+            #expect(port == 8080)
+        }
+
+        @Test("Providing both singular and plural throws an error")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testBothSingularAndPluralThrows() throws {
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTarget.host": "127.0.0.1",
+                    "bindTarget.port": 8080,
+                    "bindTargets.hosts": .init(.stringArray(["127.0.0.1"]), isSecret: false),
+                    "bindTargets.ports": .init(.intArray([8443]), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.singularAndPluralBindTargetsProvided) {
+                _ = try NIOHTTPServerConfiguration(config: config)
+            }
+        }
+
+        @Test("Mismatched hosts and ports lengths throws an error")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testMismatchedHostsAndPortsLengthsThrows() throws {
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTargets.hosts": .init(.stringArray(["127.0.0.1", "::1"]), isSecret: false),
+                    "bindTargets.ports": .init(.intArray([8080]), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.bindTargetsHostsAndPortsLengthMismatch) {
+                _ = try NIOHTTPServerConfiguration(config: config)
+            }
+        }
+
+        @Test("Empty bindTargets arrays throws an error")
+        @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+        func testEmptyBindTargetsArraysThrows() throws {
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTargets.hosts": .init(.stringArray([]), isSecret: false),
+                    "bindTargets.ports": .init(.intArray([]), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            #expect(throws: NIOHTTPServerConfigurationError.noBindTargetsSpecified) {
+                _ = try NIOHTTPServerConfiguration(config: config)
+            }
+        }
+    }
+
     @Suite("BackPressureStrategy")
     struct BackPressureStrategyTests {
         @Test("Default values")
@@ -688,9 +802,11 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
             let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-            guard case .hostAndPort(host: "127.0.0.1", port: 8000) = serverConfig.bindTarget.backing else {
+            guard let firstBindTarget = serverConfig.bindTargets.first,
+                case .hostAndPort(host: "127.0.0.1", port: 8000) = firstBindTarget.backing
+            else {
                 Issue.record(
-                    "Expected bind target to be 127.0.0.1:8000, got \(serverConfig.bindTarget.backing) instead."
+                    "Expected bind target to be 127.0.0.1:8000, got \(serverConfig.bindTargets) instead."
                 )
                 return
             }

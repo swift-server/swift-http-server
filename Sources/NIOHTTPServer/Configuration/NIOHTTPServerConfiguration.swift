@@ -275,8 +275,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public static var defaults: Self { .init() }
     }
 
-    /// Network binding configuration
-    public var bindTarget: BindTarget
+    /// Network binding configuration specifying all addresses where the server should listen.
+    public var bindTargets: [BindTarget]
 
     /// TLS configuration for the server.
     public var transportSecurity: TransportSecurity
@@ -296,9 +296,9 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// Configuration for connection timeouts.
     public var connectionTimeouts: ConnectionTimeouts
 
-    /// Create a new configuration.
+    /// Create a new configuration with multiple bind targets.
     /// - Parameters:
-    ///   - bindTarget: A ``BindTarget``.
+    ///   - bindTargets: An array of ``BindTarget`` values specifying where the server should listen.
     ///   - supportedHTTPVersions: The HTTP protocol versions the server should support.
     ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
     ///   - backpressureStrategy: A ``BackPressureStrategy``.
@@ -306,13 +306,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - maxConnections: The maximum number of concurrent connections. `nil` means unlimited.
     ///   - connectionTimeouts: The connection timeout configuration.
     public init(
-        bindTarget: BindTarget,
+        bindTargets: [BindTarget],
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity,
         backpressureStrategy: BackPressureStrategy = .defaults,
         maxConnections: Int? = nil,
         connectionTimeouts: ConnectionTimeouts = .defaults
     ) throws {
+        if bindTargets.isEmpty {
+            throw NIOHTTPServerConfigurationError.noBindTargetsSpecified
+        }
+
         // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1.
         // To support HTTP/2, `transportSecurity` must be set to `.tls` or `.mTLS`.
         if case .plaintext = transportSecurity.backing {
@@ -329,12 +333,39 @@ public struct NIOHTTPServerConfiguration: Sendable {
             throw NIOHTTPServerConfigurationError.invalidMaxConnections
         }
 
-        self.bindTarget = bindTarget
+        self.bindTargets = bindTargets
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = backpressureStrategy
         self.maxConnections = maxConnections
         self.connectionTimeouts = connectionTimeouts
+    }
+
+    /// Create a new configuration with a single bind target.
+    /// - Parameters:
+    ///   - bindTarget: A ``BindTarget``.
+    ///   - supportedHTTPVersions: The HTTP protocol versions the server should support.
+    ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
+    ///   - backpressureStrategy: A ``BackPressureStrategy``.
+    ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
+    ///   - maxConnections: The maximum number of concurrent connections. `nil` means unlimited.
+    ///   - connectionTimeouts: The connection timeout configuration.
+    public init(
+        bindTarget: BindTarget,
+        supportedHTTPVersions: Set<HTTPVersion>,
+        transportSecurity: TransportSecurity,
+        backpressureStrategy: BackPressureStrategy = .defaults,
+        maxConnections: Int? = nil,
+        connectionTimeouts: ConnectionTimeouts = .defaults
+    ) throws {
+        try self.init(
+            bindTargets: [bindTarget],
+            supportedHTTPVersions: supportedHTTPVersions,
+            transportSecurity: transportSecurity,
+            backpressureStrategy: backpressureStrategy,
+            maxConnections: maxConnections,
+            connectionTimeouts: connectionTimeouts
+        )
     }
 }
 

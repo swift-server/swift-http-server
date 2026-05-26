@@ -17,6 +17,7 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
     case noSupportedHTTPVersionsSpecified
     case incompatibleTransportSecurity
     case invalidMaxConnections
+    case noBindTargetsSpecified
 
     var description: String {
         switch self {
@@ -28,6 +29,9 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
 
         case .invalidMaxConnections:
             "Invalid configuration: `maxConnections` must be greater than 0."
+
+        case .noBindTargetsSpecified:
+            "Invalid configuration: at least one bind target must be specified."
         }
     }
 }

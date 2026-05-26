@@ -48,7 +48,7 @@ struct TestingChannelHTTP1Server {
             logger: logger,
             // The server won't actually be bound to this host and port; we just have to pass this argument.
             configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 8000),
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext
             )
@@ -98,7 +98,7 @@ struct TestingChannelHTTP1Server {
 
             try await body(clientAsyncChannel)
 
-            try await serverTestConnectionChannel.close()
+            try? await serverTestConnectionChannel.close()
         }
     }
 }

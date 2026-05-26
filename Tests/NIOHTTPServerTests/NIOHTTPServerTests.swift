@@ -59,7 +59,7 @@ struct NIOHTTPServerTests {
 
         // Now that the server has shut down, try obtaining the listening address. This should result in an error.
         await #expect(throws: ListeningAddressError.serverClosed) {
-            try await server.listeningAddress
+            try await server.listeningAddresses
         }
     }
 
@@ -84,7 +84,7 @@ struct NIOHTTPServerTests {
                 let (_, finalElement) = try await reader.consumeAndConclude { bodyReader in
                     var bodyReader = bodyReader
                     return try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                        buffer.writeBytes(body.bytes)
+                        buffer.writeBytes(body.span.bytes)
                     }
                 }
                 #expect(buffer == Self.bodyData)
@@ -110,7 +110,8 @@ struct NIOHTTPServerTests {
                         inbound,
                         expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
                         expectedBody: [Self.bodyData],
-                        expectedTrailers: Self.trailer
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
                     )
                 }
             }
@@ -157,7 +158,7 @@ struct NIOHTTPServerTests {
                         var bodyReader = bodyReader
                         var buffer = ByteBuffer()
                         _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                            buffer.writeBytes(body.bytes)
+                            buffer.writeBytes(body.span.bytes)
                         }
                         return buffer
                     }
@@ -190,7 +191,8 @@ struct NIOHTTPServerTests {
                             inbound,
                             expectedHead: [Self.responseHead(status: .ok, for: httpVersion)],
                             expectedBody: [Self.bodyData],
-                            expectedTrailers: Self.trailer
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: httpVersion == .http2
                         )
 
                         responseReceived()
@@ -240,7 +242,8 @@ struct NIOHTTPServerTests {
                                 Self.responseHead(status: .ok, for: httpVersion),
                             ],
                             expectedBody: [Self.bodyData],
-                            expectedTrailers: Self.trailer
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: httpVersion == .http2
                         )
                         responseReceived()
                     }
@@ -268,7 +271,7 @@ struct NIOHTTPServerTests {
 
                         // This should fail: the client has closed the stream without sending an end part.
                         let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read(maximumCount: nil) { _ in }
+                            try await bodyReader.read { _ in }
                         }
 
                         switch httpVersion {
@@ -326,14 +329,13 @@ struct NIOHTTPServerTests {
 
                     let (_, finalElement) = try await reader.consumeAndConclude { bodyAsyncReader in
                         var count = 1
-                        // swift-format-ignore: ReplaceForEachWithForLoop
-                        try await bodyAsyncReader.forEach { span in
-                            var buffer = ByteBuffer()
-                            buffer.writeBytes(span.bytes)
-                            #expect(buffer == ByteBuffer(bytes: [UInt8(count)]))
+                        try await bodyAsyncReader.forEachBuffer { buffer in
+                            var chunk = ByteBuffer()
+                            chunk.writeBytes(buffer.span.bytes)
+                            #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
                             count += 1
 
-                            try await responseBodyWriter.write(span)
+                            try await responseBodyWriter.write(buffer.span)
                         }
                     }
                     #expect(finalElement == Self.trailer)
@@ -370,6 +372,60 @@ struct NIOHTTPServerTests {
                 }
             }
         )
+    }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Multiple serial HTTP/1.1 requests on the same connection")
+    func testMultipleSerialHTTP1Requests() async throws {
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        let requestCount = 3
+
+        try await confirmation(expectedCount: requestCount) { responseReceived in
+            try await Self.withServer(
+                server: server,
+                serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
+                    // Echo the request body back as the response body.
+                    try await Self.echoResponse(readUpTo: 1024, reader: reader, sender: responseWriter)
+                },
+                body: { serverAddress in
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await client.executeThenClose { inbound, outbound in
+                        var responseIterator = inbound.makeAsyncIterator()
+
+                        for i in 1...requestCount {
+                            // Send request
+                            try await outbound.write(
+                                .head(.init(method: .post, scheme: "http", authority: "", path: "/\(i)"))
+                            )
+                            try await outbound.write(Self.reqBody)
+                            try await outbound.write(.end(nil))
+
+                            // Read response
+                            let headPart = try await responseIterator.next()
+                            #expect(headPart == .head(Self.responseHead(status: .ok, for: .http1_1)))
+
+                            let bodyPart = try await responseIterator.next()
+                            #expect(bodyPart == .body(Self.bodyData))
+
+                            let endPart = try await responseIterator.next()
+                            #expect(endPart == .end(nil))
+
+                            responseReceived()
+                        }
+                    }
+                }
+            )
+        }
     }
 
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
@@ -427,7 +483,8 @@ struct NIOHTTPServerTests {
                                     try await Self.validateResponse(
                                         inbound,
                                         expectedHead: [Self.responseHead(status: .ok, for: httpVersion)],
-                                        expectedBody: [Self.bodyData]
+                                        expectedBody: [Self.bodyData],
+                                        expectStreamEnd: httpVersion == .http2
                                     )
 
                                     responseReceived()
@@ -509,13 +566,305 @@ struct NIOHTTPServerTests {
             )
         }
     }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Server can still process other connections despite one failing")
+    func testServerCanContinueDespiteFailedConnection() async throws {
+        let server = try self.makePlaintextHTTP1Server()
+
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        let firstRequestErrorCaught = elg.any().makePromise(of: Void.self)
+
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
+                do {
+                    try await Self.echoResponse(
+                        readUpTo: Self.bodyData.readableBytes,
+                        reader: requestReader,
+                        sender: responseSender
+                    )
+                } catch {
+                    // Complete the promise
+                    firstRequestErrorCaught.succeed()
+
+                    // Propagate the error upwards
+                    throw error
+                }
+            },
+            body: { serverAddress in
+                try await confirmation { responseReceived in
+                    let firstClientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await firstClientChannel.executeThenClose { inbound, outbound in
+                        // Only send a request head; finish the stream immediately afterwards.
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                    }
+
+                    try await firstRequestErrorCaught.futureResult.get()
+
+                    let secondClientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: serverAddress)
+
+                    try await secondClientChannel.executeThenClose { inbound, outbound in
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                        try await outbound.write(.body(Self.bodyData))
+                        try await outbound.write(.end(nil))
+
+                        try await Self.validateResponse(
+                            inbound,
+                            expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                            expectedBody: [Self.bodyData],
+                            expectStreamEnd: false
+                        )
+
+                        responseReceived()
+                    }
+                }
+            }
+        )
+    }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Bind to multiple addresses")
+    func testMultipleBindAddresses() async throws {
+        let server = NIOHTTPServer(
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: try .init(
+                bindTargets: [
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                ],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, _, _ in },
+            body: { (addresses: [NIOHTTPServer.SocketAddress]) in
+                #expect(addresses.count == 2)
+                #expect(addresses[0].port != addresses[1].port)
+            }
+        )
+    }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Serve requests on multiple addresses independently")
+    func testServeOnMultipleAddresses() async throws {
+        let server = NIOHTTPServer(
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: try .init(
+                bindTargets: [
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                ],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
+                try await Self.echoResponse(
+                    readUpTo: Self.bodyData.readableBytes,
+                    reader: requestReader,
+                    sender: responseSender
+                )
+            },
+            body: { (addresses: [NIOHTTPServer.SocketAddress]) in
+                #expect(addresses.count == 2)
+
+                // Send a request to the first address
+                let firstClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestHTTP1Server(at: addresses[0])
+
+                try await firstClient.executeThenClose { inbound, outbound in
+                    try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                    try await outbound.write(Self.reqBody)
+                    try await outbound.write(Self.reqEnd)
+
+                    try await Self.validateResponse(
+                        inbound,
+                        expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                        expectedBody: [Self.bodyData],
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
+                    )
+                }
+
+                // Send a request to the second address
+                let secondClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestHTTP1Server(at: addresses[1])
+
+                try await secondClient.executeThenClose { inbound, outbound in
+                    try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                    try await outbound.write(Self.reqBody)
+                    try await outbound.write(Self.reqEnd)
+
+                    try await Self.validateResponse(
+                        inbound,
+                        expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                        expectedBody: [Self.bodyData],
+                        expectedTrailers: Self.trailer,
+                        expectStreamEnd: false
+                    )
+                }
+            }
+        )
+    }
+
+    /// Verifies the all-or-nothing listening semantics: when the server stops (e.g., due to cancellation),
+    /// all bound addresses become unavailable simultaneously and ``listeningAddresses`` throws
+    /// ``ListeningAddressError/serverClosed``. No subset of addresses continues serving after the server
+    /// has stopped.
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("All addresses stop together and listeningAddresses throws after server stops")
+    func testAllAddressesStopTogether() async throws {
+        let server = NIOHTTPServer(
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: try .init(
+                bindTargets: [
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                    .hostAndPort(host: "127.0.0.1", port: 0),
+                ],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        try await Self.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, context, requestReader, responseSender in
+                try await Self.echoResponse(
+                    readUpTo: Self.bodyData.readableBytes,
+                    reader: requestReader,
+                    sender: responseSender
+                )
+            },
+            body: { addresses in
+                #expect(addresses.count == 2)
+
+                // Verify both addresses are serving
+                for addr in addresses {
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestHTTP1Server(at: addr)
+                    try await client.executeThenClose { inbound, outbound in
+                        try await outbound.write(.head(.init(method: .post, scheme: "http", authority: "", path: "/")))
+                        try await outbound.write(Self.reqBody)
+                        try await outbound.write(Self.reqEnd)
+                        try await Self.validateResponse(
+                            inbound,
+                            expectedHead: [Self.responseHead(status: .ok, for: .http1_1)],
+                            expectedBody: [Self.bodyData],
+                            expectedTrailers: Self.trailer,
+                            expectStreamEnd: false
+                        )
+                    }
+                }
+            }
+        )
+
+        // After the server has stopped, listeningAddresses must throw rather than returning stale addresses.
+        await #expect(throws: ListeningAddressError.serverClosed) {
+            try await server.listeningAddresses
+        }
+    }
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Empty bind targets throws error")
+    func testEmptyBindTargetsThrows() throws {
+        #expect(throws: NIOHTTPServerConfigurationError.noBindTargetsSpecified) {
+            try NIOHTTPServerConfiguration(
+                bindTargets: [],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        }
+    }
+
+    /// Verifies that when a later bind target fails, any previously-bound listening channels are cleaned up
+    /// before the error propagates to the caller. Without cleanup, the already-bound sockets would leak and
+    /// keep their ports occupied even though the server never started serving.
+    ///
+    /// The test binds two targets. The second target is configured to fail by pointing at a port that's
+    /// already in use. We verify `serve` throws an `IOError` with `EADDRINUSE`, and that we can
+    /// immediately rebind to the first target's port — proving the first channel was closed before the
+    /// error propagated.
+    ///
+    /// We use a specific port for the first target (rather than `port: 0`) so we know what port to rebind
+    /// to for the verification. The port is below the typical ephemeral range used by `port: 0`
+    /// allocations on Linux (32768+) and macOS (49152+), so other tests using `port: 0` cannot
+    /// accidentally be assigned this port by the OS.
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @Test("Previously bound channels are closed when a later bind fails")
+    func testPreviouslyBoundChannelsAreClosedOnPartialBindFailure() async throws {
+        let firstPort = 30_210
+
+        // Hold a live listener on an ephemeral port. The server's second bind will conflict with this
+        // listener and fail with "address already in use".
+        let occupiedListener = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .bind(host: "127.0.0.1", port: 0) { channel in
+                channel.eventLoop.makeSucceededFuture(channel)
+            }
+        let occupiedPort = try #require(occupiedListener.channel.localAddress?.port)
+        defer { occupiedListener.channel.close(promise: nil) }
+
+        // Configure a server that binds to [firstPort, occupiedPort]. The first bind should succeed,
+        // the second should fail with "address already in use", causing cleanup of the first channel.
+        let server = NIOHTTPServer(
+            logger: Logger(label: "NIOHTTPServerTests"),
+            configuration: try .init(
+                bindTargets: [
+                    .hostAndPort(host: "127.0.0.1", port: firstPort),
+                    .hostAndPort(host: "127.0.0.1", port: occupiedPort),
+                ],
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        let error = await #expect(throws: IOError.self) {
+            try await server.serve(
+                handler: HTTPServerClosureRequestHandler { _, _, _, _ in }
+            )
+        }
+        #expect(error?.errnoCode == EADDRINUSE)
+
+        // If the first channel was properly closed, we should be able to bind to firstPort again.
+        // If it wasn't (i.e., the channel leaked), this bind will fail with "address already in use".
+        let rebindAttempt = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .bind(host: "127.0.0.1", port: firstPort) { channel in
+                channel.eventLoop.makeSucceededFuture(channel)
+            }
+        try await rebindAttempt.channel.close()
+    }
 }
+
 extension NIOHTTPServerTests {
     static let bodyData = ByteBuffer(repeating: 5, count: 100)
     static let reqBody = HTTPRequestPart.body(Self.bodyData)
 
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
+
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    func makePlaintextHTTP1Server() throws -> NIOHTTPServer {
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        return server
+    }
 
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     func makeSecureUpgradeServer() throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
@@ -541,6 +890,7 @@ extension NIOHTTPServerTests {
         expectedHead: [HTTPResponse],
         expectedBody: [ByteBuffer],
         expectedTrailers: HTTPFields? = nil,
+        expectStreamEnd: Bool = true,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
         var responseIterator = responseStream.makeAsyncIterator()
@@ -558,11 +908,13 @@ extension NIOHTTPServerTests {
         let endResponsePart = try await responseIterator.next()
         #expect(endResponsePart == .end(expectedTrailers), sourceLocation: sourceLocation)
 
-        #expect(
-            try await responseIterator.next() == nil,
-            "Received another response part when the response stream should have finished.",
-            sourceLocation: sourceLocation
-        )
+        if expectStreamEnd {
+            #expect(
+                try await responseIterator.next() == nil,
+                "Received another response part when the response stream should have finished.",
+                sourceLocation: sourceLocation
+            )
+        }
     }
 
     /// Unwraps a negotiated channel, asserting it matches the expected `httpVersion`. For HTTP/2, opens and returns a
@@ -619,8 +971,8 @@ extension NIOHTTPServerTests {
         return HTTPResponse(status: status, headerFields: headers)
     }
 
-    /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with the listening address,
-    /// then cancels the server task.
+    /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with the first
+    /// listening address, then cancels the server task.
     @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
     static func withServer(
         server: NIOHTTPServer,
@@ -630,18 +982,33 @@ extension NIOHTTPServerTests {
         >,
         body: (NIOHTTPServer.SocketAddress) async throws -> Void
     ) async throws {
+        try await self.withServer(server: server, serverHandler: serverHandler) {
+            (addresses: [NIOHTTPServer.SocketAddress]) in
+            let address = try #require(addresses.first)
+            try await body(address)
+        }
+    }
+
+    /// Starts `server` with `serverHandler`, waits for it to begin listening, runs `body` with all listening
+    /// addresses, then cancels the server task.
+    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    static func withServer(
+        server: NIOHTTPServer,
+        serverHandler: some HTTPServerRequestHandler<
+            NIOHTTPServer.RequestConcludingReader,
+            NIOHTTPServer.ResponseConcludingWriter
+        >,
+        body: ([NIOHTTPServer.SocketAddress]) async throws -> Void
+    ) async throws {
         try await withThrowingTaskGroup { group in
-            // Add the server task to the group
             group.addTask {
                 try await server.serve(handler: serverHandler)
             }
 
-            // Wait for the server to start listening before running the body closure
-            let listeningAddress = try await server.listeningAddress
+            let listeningAddresses = try await server.listeningAddresses
 
-            try await body(listeningAddress)
+            try await body(listeningAddresses)
 
-            // Shut the server down
             group.cancelAll()
         }
     }
@@ -655,9 +1022,9 @@ extension NIOHTTPServerTests {
     ) async throws {
         let (requestBody, trailers) = try await reader.consumeAndConclude { bodyReader in
             var bodyReader = bodyReader
-            return try await bodyReader.collect(upTo: limit) { span in
+            return try await bodyReader.collect(upTo: limit) { inputSpan in
                 var buffer = ByteBuffer()
-                buffer.writeBytes(span.bytes)
+                buffer.writeBytes(inputSpan.span.bytes)
                 return buffer
             }
         }

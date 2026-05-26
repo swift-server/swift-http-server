@@ -50,7 +50,7 @@ struct ConnectionBackpressureEndToEndTests {
                     )
                 },
                 body: { serverAddress in
-                    await withThrowingTaskGroup { group in
+                    try await withThrowingTaskGroup { group in
                         for _ in 0..<2 {
                             group.addTask {
                                 let client = try await ClientBootstrap(
@@ -66,13 +66,16 @@ struct ConnectionBackpressureEndToEndTests {
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
                                         expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
-                                        expectedBody: []
+                                        expectedBody: [],
+                                        expectStreamEnd: false
                                     )
 
                                     responseReceived()
                                 }
                             }
                         }
+
+                        try await group.waitForAll()
                     }
                 }
             )
@@ -123,7 +126,8 @@ struct ConnectionBackpressureEndToEndTests {
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
                                         expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
-                                        expectedBody: []
+                                        expectedBody: [],
+                                        expectStreamEnd: false
                                     )
 
                                     responseReceived()
@@ -177,7 +181,8 @@ struct ConnectionBackpressureEndToEndTests {
                                     try await NIOHTTPServerTests.validateResponse(
                                         inbound,
                                         expectedHead: [NIOHTTPServerTests.responseHead(status: .ok, for: .http1_1)],
-                                        expectedBody: []
+                                        expectedBody: [],
+                                        expectStreamEnd: false
                                     )
 
                                     responseReceived()

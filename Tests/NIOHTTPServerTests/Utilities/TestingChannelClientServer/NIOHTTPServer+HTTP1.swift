@@ -38,8 +38,8 @@ extension NIOHTTPServer {
         // Trick the server into thinking it's been bound to an address so that we don't leak the listening address
         // promise. In reality, the server hasn't been bound to any address: we will manually feed in requests and
         // observe responses.
-        try self.addressBound(.init(ipAddress: "127.0.0.1", port: 8000))
-        _ = try await self.listeningAddress
+        try self.addressesBound([.init(ipAddress: "127.0.0.1", port: 8000)])
+        _ = try await self.listeningAddresses
 
         try await self.serveInsecureHTTP1_1(serverChannel: serverTestAsyncChannel, handler: handler)
     }

@@ -57,11 +57,14 @@ struct NIOHTTPServiceLifecycleTests {
             try await server.serve { request, requestContext, requestReader, responseSender in
                 _ = try await requestReader.consumeAndConclude { bodyReader in
                     var bodyReader = bodyReader
-                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                    try await bodyReader.read { _ in }
 
                     firstChunkReadPromise.succeed()
 
-                    try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                    var requestFinished = false
+                    while !requestFinished {
+                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
+                    }
                 }
 
                 let responseBodyWriter = try await responseSender.send(.init(status: .ok))
@@ -79,7 +82,7 @@ struct NIOHTTPServiceLifecycleTests {
                     let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                     group.addTask { try await serviceGroup.run() }
 
-                    let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestHTTP1Server(at: serverAddress)
@@ -146,13 +149,13 @@ struct NIOHTTPServiceLifecycleTests {
                         var bodyReader = bodyReader
 
                         let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                            try await bodyReader.read { _ in }
 
                             firstChunkReadPromise.succeed()
 
                             // The following call will block: the client will never send a request end part. This is
                             // intentional because we want to keep the connection alive.
-                            try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                            try await bodyReader.read { _ in }
                         }
                         #expect(throws: CancellationError.self) { try error.unwrap() }
                     }
@@ -165,7 +168,7 @@ struct NIOHTTPServiceLifecycleTests {
                 let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                 group.addTask { try await serviceGroup.run() }
 
-                let serverAddress = try await server.listeningAddress
+                let serverAddress = try await server.listeningAddresses.first!
 
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                     .connectToTestHTTP1Server(at: serverAddress)
@@ -183,6 +186,13 @@ struct NIOHTTPServiceLifecycleTests {
                     group.cancelAll()
                     // Wait for the server to shut down.
                     try await group.waitForAll()
+
+                    // Wait for the client channel to be fully closed. The server has closed
+                    // its side of the connection, but the client's event loop may not have
+                    // processed the TCP FIN/RST yet. closeFuture completes only once the
+                    // channel is fully inactive, which is a stronger guarantee than just
+                    // draining inbound (which may return while the channel is half-closed).
+                    try await client.channel.closeFuture.get()
 
                     // We shouldn't be able to complete our request; the server should have shut down.
                     await #expect(throws: ChannelError.ioOnClosedChannel) {
@@ -226,13 +236,13 @@ struct NIOHTTPServiceLifecycleTests {
                     var bodyReader = bodyReader
 
                     let error = try await #require(throws: EitherError<Error, Never>.self) {
-                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                        try await bodyReader.read { _ in }
 
                         firstChunkReadPromise.succeed()
 
                         // The following call will block: the client will never send a request end part. This is
                         // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
-                        try await bodyReader.read(maximumCount: Self.bodyData.readableBytes) { _ in }
+                        try await bodyReader.read { _ in }
                     }
                     #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
                 }
@@ -245,7 +255,7 @@ struct NIOHTTPServiceLifecycleTests {
                     let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
                     group.addTask { try await serviceGroup.run() }
 
-                    let serverAddress = try await server.listeningAddress
+                    let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestSecureUpgradeHTTPServer(

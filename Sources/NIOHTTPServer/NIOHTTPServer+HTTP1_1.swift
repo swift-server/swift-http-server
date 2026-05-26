@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import HTTPAPIs
+import Logging
 import NIOCore
 import NIOExtras
 import NIOHTTP1
@@ -22,58 +23,96 @@ import NIOPosix
 
 @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
 extension NIOHTTPServer {
+    /// Serves incoming plaintext HTTP/1.1 connections.
+    ///
+    /// Each connection is handled concurrently in its own child task. Individual connection errors are handled within
+    /// the child tasks and do not affect other connections.
+    ///
+    /// - Parameters:
+    ///   - serverChannel: The async channel that produces incoming HTTP/1.1 connections.
+    ///   - handler: The request handler.
+    ///
+    /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveInsecureHTTP1_1(
         serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await http1Channel in inbound {
-                    group.addTask {
-                        try await self.handleRequestChannel(
-                            channel: http1Channel,
-                            handler: handler
-                        )
+        try await serverChannel.executeThenClose { inbound in
+            // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
+            // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
+            // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
+            // `inbound`) must be caught and handled directly.
+            let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
+                do {
+                    for try await http1Channel in inbound {
+                        group.addTask {
+                            await self.handleHTTP1RequestChannel(channel: http1Channel, handler: handler)
+                        }
                     }
+
+                    return nil
+                } catch {
+                    return error
                 }
+            }
+
+            if let inboundConnectionIterationError {
+                // The error occurred while iterating the inbound connection stream
+                throw inboundConnectionIterationError
             }
         }
     }
 
-    func setupHTTP1_1ServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget
-    ) async throws -> NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never> {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelInitializer { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(
-                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                        )
+    func setupHTTP1_1ServerChannels(
+        bindTargets: [NIOHTTPServerConfiguration.BindTarget]
+    ) async throws -> [NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>] {
+        let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(
+                        self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
+                    )
 
-                        if let maxConnections = self.configuration.maxConnections {
-                            try channel.pipeline.syncOperations.addHandler(
-                                ConnectionLimitHandler(maxConnections: maxConnections)
-                            )
-                        }
+                    if let maxConnections = self.configuration.maxConnections {
+                        try channel.pipeline.syncOperations.addHandler(
+                            ConnectionLimitHandler(maxConnections: maxConnections)
+                        )
                     }
                 }
-                .bind(host: host, port: port) { channel in
-                    self.setupHTTP1_1ConnectionChildChannel(
-                        channel: channel,
-                        asyncChannelConfiguration: .init(
-                            backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                            isOutboundHalfClosureEnabled: true
-                        )
-                    )
+            }
+
+        var serverChannels = [NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>]()
+        do {
+            for bindTarget in bindTargets {
+                switch bindTarget.backing {
+                case .hostAndPort(let host, let port):
+                    let serverChannel =
+                        try await bootstrap.bind(host: host, port: port) { channel in
+                            self.setupHTTP1_1ConnectionChildChannel(
+                                channel: channel,
+                                asyncChannelConfiguration: .init(
+                                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                                    isOutboundHalfClosureEnabled: true
+                                )
+                            )
+                        }
+                    serverChannels.append(serverChannel)
                 }
-
-            try self.addressBound(serverChannel.channel.localAddress)
-
-            return serverChannel
+            }
+        } catch {
+            // A later bind failed: close any channels we already bound to avoid leaking sockets.
+            // We await the closes so the sockets are fully released by the time we throw, giving the
+            // caller deterministic semantics: when `serve` throws, all cleanup is done.
+            for serverChannel in serverChannels {
+                try? await serverChannel.channel.close()
+            }
+            throw error
         }
+
+        try self.addressesBound(serverChannels.map { $0.channel.localAddress })
+
+        return serverChannels
     }
 
     func setupHTTP1_1ConnectionChildChannel(
@@ -82,6 +121,7 @@ extension NIOHTTPServer {
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
+            try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
 
             try channel
                 .pipeline
@@ -92,6 +132,43 @@ extension NIOHTTPServer {
                 wrappingChannelSynchronously: channel,
                 configuration: asyncChannelConfiguration
             )
+        }
+    }
+
+    /// Handles an HTTP/1.1 connection channel, which may carry multiple serial requests on the
+    /// same connection (keep-alive).
+    func handleHTTP1RequestChannel(
+        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        do {
+            try await channel.executeThenClose { inbound, outbound in
+                var iterator = inbound.makeAsyncIterator()
+
+                requestLoop: while !Task.isCancelled {
+                    guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                        break requestLoop
+                    }
+
+                    guard
+                        let recoveredIterator = try await self.invokeHandler(
+                            request: httpRequest,
+                            iterator: iterator,
+                            outbound: outbound,
+                            handler: handler
+                        )
+                    else {
+                        // Handler did not fully consume the request; cannot continue on this
+                        // connection.
+                        break requestLoop
+                    }
+
+                    iterator = recoveredIterator
+                }
+            }
+        } catch {
+            self.logger.debug("Error thrown while handling HTTP/1.1 connection", metadata: ["error": "\(error)"])
+            try? await channel.channel.close()
         }
     }
 }

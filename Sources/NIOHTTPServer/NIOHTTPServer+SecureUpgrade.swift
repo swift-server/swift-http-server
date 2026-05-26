@@ -35,88 +35,174 @@ extension NIOHTTPServer {
         (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
     >
 
+    /// Serves incoming connections. Each connection undergoes ALPN negotiation to determine whether to use HTTP/1.1 or
+    /// HTTP/2, and requests are then handled over the negotiated protocol.
+    ///
+    /// Each accepted connection is handled concurrently in its own child task. Individual negotiation errors and
+    /// connection errors are handled within the child tasks and do not affect other connections.
+    ///
+    /// - Parameters:
+    ///   - serverChannel: The async channel that produces incoming connections.
+    ///   - handler: The request handler.
+    ///
+    /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveSecureUpgrade(
         serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
         handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
     ) async throws {
-        try await withThrowingDiscardingTaskGroup { group in
-            try await serverChannel.executeThenClose { inbound in
-                for try await upgradeResult in inbound {
-                    group.addTask {
-                        do {
-                            try await withThrowingDiscardingTaskGroup { connectionGroup in
-                                switch try await upgradeResult.get() {
-                                case .http1_1(let http1Channel):
-                                    let chainFuture = http1Channel.channel.nioSSL_peerValidatedCertificateChain()
-                                    Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                        connectionGroup.addTask {
-                                            try await self.handleRequestChannel(
-                                                channel: http1Channel,
-                                                handler: handler
-                                            )
-                                        }
-                                    }
-                                case .http2((let http2Connection, let http2Multiplexer)):
-                                    do {
-                                        let chainFuture = http2Connection.nioSSL_peerValidatedCertificateChain()
-                                        try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
-                                            for try await http2StreamChannel in http2Multiplexer.inbound {
-                                                connectionGroup.addTask {
-                                                    try await self.handleRequestChannel(
-                                                        channel: http2StreamChannel,
-                                                        handler: handler
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } catch {
-                                        self.logger.debug("HTTP2 connection closed: \(error)")
-                                    }
-                                }
+        try await serverChannel.executeThenClose { inbound in
+            // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
+            // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
+            // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
+            // `inbound`) must be caught and handled directly.
+            let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
+                do {
+                    for try await upgradeResult in inbound {
+                        connectionGroup.addTask {
+                            let negotiatedChannel: NegotiatedChannel
+
+                            do {
+                                negotiatedChannel = try await upgradeResult.get()
+                            } catch {
+                                self.logger.debug("Negotiating ALPN failed", metadata: ["error": "\(error)"])
+                                return
                             }
-                        } catch {
-                            self.logger.debug("Negotiating ALPN failed: \(error)")
+
+                            switch negotiatedChannel {
+                            case .http1_1(let requestChannel):
+                                await self.serveHTTP1Connection(
+                                    requestChannel: requestChannel,
+                                    handler: handler
+                                )
+
+                            case .http2((let connectionChannel, let multiplexer)):
+                                await self.serveHTTP2Connection(
+                                    connectionChannel: connectionChannel,
+                                    multiplexer: multiplexer,
+                                    handler: handler
+                                )
+                            }
                         }
                     }
+
+                    return nil
+                } catch {
+                    return error
                 }
+            }
+
+            if let inboundConnectionIterationError {
+                // The error occurred while iterating the inbound connection stream
+                throw inboundConnectionIterationError
             }
         }
     }
 
-    func setupSecureUpgradeServerChannel(
-        bindTarget: NIOHTTPServerConfiguration.BindTarget,
-        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        tlsConfiguration: TLSConfiguration
-    ) async throws -> NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never> {
-        switch bindTarget.backing {
-        case .hostAndPort(let host, let port):
-            let serverChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-                .serverChannelInitializer { channel in
-                    channel.eventLoop.makeCompletedFuture {
-                        try channel.pipeline.syncOperations.addHandler(
-                            self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                        )
+    /// Serves a HTTP/1.1 connection.
+    ///
+    /// - Parameters:
+    ///   - requestChannel: The HTTP/1.1 request channel.
+    ///   - handler: The request handler.
+    private func serveHTTP1Connection(
+        requestChannel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
 
-                        if let maxConnections = self.configuration.maxConnections {
-                            try channel.pipeline.syncOperations.addHandler(
-                                ConnectionLimitHandler(maxConnections: maxConnections)
+        await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+            await self.handleHTTP1RequestChannel(
+                channel: requestChannel,
+                handler: handler
+            )
+        }
+    }
+
+    /// Serves a HTTP/2 connection by iterating the stream channels and handling each stream concurrently.
+    ///
+    /// - Note: Stream iteration errors are logged but do not propagate to the caller.
+    ///
+    /// - Parameters:
+    ///   - connectionChannel: The underlying NIO channel for the HTTP/2 connection.
+    ///   - multiplexer: The HTTP/2 stream multiplexer.
+    ///   - handler: The request handler.
+    private func serveHTTP2Connection(
+        connectionChannel: any Channel,
+        multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        await withDiscardingTaskGroup { streamGroup in
+            do {
+                let chainFuture = connectionChannel.nioSSL_peerValidatedCertificateChain()
+
+                try await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
+                    for try await streamChannel in multiplexer.inbound {
+                        streamGroup.addTask {
+                            await self.handleHTTP2StreamChannel(
+                                channel: streamChannel,
+                                handler: handler
                             )
                         }
                     }
                 }
-                .bind(host: host, port: port) { channel in
-                    self.setupSecureUpgradeConnectionChildChannel(
-                        channel: channel,
-                        supportedHTTPVersions: supportedHTTPVersions,
-                        tlsConfiguration: tlsConfiguration
-                    )
-                }
-
-            try self.addressBound(serverChannel.channel.localAddress)
-
-            return serverChannel
+            } catch {
+                self.logger.error(
+                    "Error thrown while iterating over incoming HTTP/2 streams",
+                    metadata: ["error": "\(error)"]
+                )
+            }
         }
+    }
+
+    func setupSecureUpgradeServerChannels(
+        bindTargets: [NIOHTTPServerConfiguration.BindTarget],
+        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
+        tlsConfiguration: TLSConfiguration
+    ) async throws -> [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>] {
+        let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(
+                        self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
+                    )
+
+                    if let maxConnections = self.configuration.maxConnections {
+                        try channel.pipeline.syncOperations.addHandler(
+                            ConnectionLimitHandler(maxConnections: maxConnections)
+                        )
+                    }
+                }
+            }
+
+        var serverChannels = [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>]()
+        do {
+            for bindTarget in bindTargets {
+                switch bindTarget.backing {
+                case .hostAndPort(let host, let port):
+                    let serverChannel =
+                        try await bootstrap.bind(host: host, port: port) { channel in
+                            self.setupSecureUpgradeConnectionChildChannel(
+                                channel: channel,
+                                supportedHTTPVersions: supportedHTTPVersions,
+                                tlsConfiguration: tlsConfiguration
+                            )
+                        }
+                    serverChannels.append(serverChannel)
+                }
+            }
+        } catch {
+            // A later bind failed: close any channels we already bound to avoid leaking sockets.
+            // We await the closes so the sockets are fully released by the time we throw, giving the
+            // caller deterministic semantics: when `serve` throws, all cleanup is done.
+            for serverChannel in serverChannels {
+                try? await serverChannel.channel.close()
+            }
+            throw error
+        }
+
+        try self.addressesBound(serverChannels.map { $0.channel.localAddress })
+
+        return serverChannels
     }
 
     private func http1ConnectionInitializer(
@@ -248,6 +334,45 @@ extension NIOHTTPServer {
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.
                 return channel.close().flatMap { channel.eventLoop.makeFailedFuture(NIOHTTP2Errors.invalidALPNToken()) }
             }
+        }
+    }
+
+    /// Handles an HTTP/2 stream channel, which carries exactly one request per stream.
+    func handleHTTP2StreamChannel(
+        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
+    ) async {
+        do {
+            try await channel
+                .executeThenClose { inbound, outbound in
+                    var iterator = inbound.makeAsyncIterator()
+
+                    guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                        outbound.finish()
+                        return
+                    }
+
+                    _ = try await self.invokeHandler(
+                        request: httpRequest,
+                        iterator: iterator,
+                        outbound: outbound,
+                        handler: handler
+                    )
+
+                    // TODO: handle other state scenarios.
+                    // For example, if we didn't finish reading but we wrote back a response, we
+                    // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
+                    // didn't write back a response, then RST_STREAM is also likely appropriate but
+                    // unclear about the error.
+
+                    // Finish the outbound and wait on the close future to make sure all pending
+                    // writes are actually written.
+                    outbound.finish()
+                    try await channel.channel.closeFuture.get()
+                }
+        } catch {
+            self.logger.debug("Error thrown while handling HTTP/2 stream: \(error)")
+            try? await channel.channel.close()
         }
     }
 }
