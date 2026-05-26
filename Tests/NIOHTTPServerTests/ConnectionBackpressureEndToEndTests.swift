@@ -25,7 +25,7 @@ import Testing
 struct ConnectionBackpressureEndToEndTests {
     let serverLogger = Logger(label: "ConnectionBackpressureE2ETests")
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Requests succeed under connection limit")
     func requestsSucceedUnderConnectionLimit() async throws {
         let server = NIOHTTPServer(
@@ -82,7 +82,7 @@ struct ConnectionBackpressureEndToEndTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("More connections than maxConnections all eventually complete")
     func moreConnectionsThanLimitAllComplete() async throws {
         let server = NIOHTTPServer(
@@ -140,7 +140,7 @@ struct ConnectionBackpressureEndToEndTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("No connection limit by default")
     func noConnectionLimitByDefault() async throws {
         let server = NIOHTTPServer(

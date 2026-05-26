@@ -30,7 +30,7 @@ struct HTTPKeepAliveHandlerTests {
     /// Verifies the happy case: when a client pipelines multiple HTTP/1.1 requests
     /// on a single connection, all responses are returned in order and the connection
     /// stays alive (no `Connection: close`).
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Pipelined requests on a single connection all succeed")
     func testPipelinedRequests() async throws {
         let server = NIOHTTPServer(
@@ -100,7 +100,7 @@ struct HTTPKeepAliveHandlerTests {
     /// Verifies that when the handler writes a short response (head + end, no body)
     /// before the request `.end` has arrived, the response head includes a
     /// `Connection: close` header and the server closes the connection.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Server sends head+end (no body) before request .end — Connection: close in header")
     func testShortResponseBeforeRequestEnd() async throws {
         let server = NIOHTTPServer(
@@ -181,7 +181,7 @@ struct HTTPKeepAliveHandlerTests {
     /// the request `.end` has arrived; the client must receive that informational
     /// response immediately (without waiting for request `.end`), and the connection
     /// must remain alive after the final response.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Informational (1xx) responses pass through without buffering or closing")
     func testInformationalResponsePassesThrough() async throws {
         let server = NIOHTTPServer(
@@ -294,7 +294,7 @@ struct HTTPKeepAliveHandlerTests {
     /// everything until request `.end` arrives. Because the head is flushed before
     /// request `.end` arrives, the response carries `Connection: close` and the
     /// server closes the connection after writing response `.end`.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Bidirectional streaming works — head is flushed (with Connection: close) when a body part is written")
     func testBidirectionalStreamingOverHTTP1() async throws {
         let server = NIOHTTPServer(
@@ -390,7 +390,7 @@ struct HTTPKeepAliveHandlerTests {
     /// server reads the body chunk, the read cycle ends with the head still
     /// buffered and request `.end` still missing — the keep-alive handler must add
     /// `Connection: close`.
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Read cycle ends without request .end while head is buffered — Connection: close added")
     func testReadCycleEndsWithoutRequestEnd_AddsConnectionClose() async throws {
         let server = NIOHTTPServer(

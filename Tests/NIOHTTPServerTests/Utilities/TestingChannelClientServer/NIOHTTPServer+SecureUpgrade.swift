@@ -19,7 +19,7 @@ import NIOHTTPTypes
 @testable import HTTPAPIs
 @testable import NIOHTTPServer
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     /// Starts serving with the Secure Upgrade transport using the provided testing channel instead of using
     /// `ServerBootstrap` as `NIOHTTPServer` normally does.

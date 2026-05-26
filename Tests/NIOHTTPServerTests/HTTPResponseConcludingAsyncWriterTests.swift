@@ -28,7 +28,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
     let trailerSampleTwo: HTTPFields = [.serverTiming: "test", .cookie: "cookie"]
 
     @Test("Write single body element")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testSingleWriteAndConclude() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())
@@ -46,7 +46,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
     }
 
     @Test("Write multiple body elements")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testProduceMultipleElementsAndSingleTrailer() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())
@@ -73,7 +73,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
     }
 
     @Test("Throw while writing response")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testThrowWhileProducing() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
 
@@ -97,7 +97,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
     }
 
     @Test("Write multiple elements and multiple trailers")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testProduceMultipleElementsAndMultipleTrailers() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())
@@ -124,7 +124,7 @@ struct HTTPResponseConcludingAsyncWriterTests {
     }
 
     @Test("No body, just trailers")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testNoBodyJustTrailers() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = HTTPResponseConcludingAsyncWriter(writer: writer, writerState: .init())

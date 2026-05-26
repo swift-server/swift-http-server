@@ -18,7 +18,7 @@ import Testing
 
 @Suite("Connection Backpressure Configuration")
 struct ConnectionBackpressureConfigurationTests {
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("maxConnections validation rejects zero")
     func maxConnectionsRejectsZero() {
         #expect(throws: NIOHTTPServerConfigurationError.self) {
@@ -31,7 +31,7 @@ struct ConnectionBackpressureConfigurationTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("maxConnections validation rejects negative")
     func maxConnectionsRejectsNegative() {
         #expect(throws: NIOHTTPServerConfigurationError.self) {
@@ -44,7 +44,7 @@ struct ConnectionBackpressureConfigurationTests {
         }
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("maxConnections nil is the default")
     func maxConnectionsNilIsDefault() throws {
         let config = try NIOHTTPServerConfiguration(
@@ -55,7 +55,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(config.maxConnections == nil)
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("ConnectionTimeouts defaults has expected values")
     func connectionTimeoutsDefaults() {
         let timeouts = NIOHTTPServerConfiguration.ConnectionTimeouts.defaults
@@ -64,7 +64,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(timeouts.readBody == .seconds(60))
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Valid maxConnections is accepted")
     func validMaxConnectionsAccepted() throws {
         let config = try NIOHTTPServerConfiguration(
@@ -76,7 +76,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(config.maxConnections == 100)
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("Custom ConnectionTimeouts are preserved")
     func customConnectionTimeouts() throws {
         let config = try NIOHTTPServerConfiguration(
@@ -96,7 +96,7 @@ import Configuration
 
 @Suite("Connection Backpressure SwiftConfiguration")
 struct ConnectionBackpressureSwiftConfigurationTests {
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("SwiftConfiguration parses maxConnections")
     func parsesMaxConnections() throws {
         let provider = InMemoryProvider(values: [
@@ -112,7 +112,7 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         #expect(serverConfig.maxConnections == 500)
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("SwiftConfiguration parses connectionTimeouts")
     func parsesConnectionTimeouts() throws {
         let provider = InMemoryProvider(values: [
@@ -132,7 +132,7 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         #expect(serverConfig.connectionTimeouts.readBody == .seconds(45))
     }
 
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     @Test("SwiftConfiguration uses defaults for absent fields")
     func usesDefaultsForAbsentFields() throws {
         let provider = InMemoryProvider(values: [

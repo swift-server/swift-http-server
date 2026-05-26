@@ -36,7 +36,7 @@ struct NIOHTTPServiceLifecycleTests {
     let serviceGroupLogger = Logger(label: "Test ServiceGroup")
 
     @Test("HTTP/1.1 active connection completes when graceful shutdown triggered", )
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func activeHTTP1ConnectionCanCompleteWhenGracefulShutdown() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
@@ -125,7 +125,7 @@ struct NIOHTTPServiceLifecycleTests {
     }
 
     @Test("HTTP/1.1 active connection forcefully shutdown when server task cancelled")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func activeHTTP1ConnectionForcefullyShutdownWhenServerTaskCancelled() async throws {
         let server = NIOHTTPServer(
             logger: self.serverLogger,
@@ -206,7 +206,7 @@ struct NIOHTTPServiceLifecycleTests {
     }
 
     @Test("Active HTTP/2 connection is forcefully shut down upon graceful shutdown timeout")
-    @available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+    @available(anyAppleOS 26.0, *)
     func testActiveHTTP2ConnectionIsShutDownAfterGraceTimeout() async throws {
         let serverChain = try TestCA.makeSelfSignedChain()
 

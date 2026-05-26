@@ -79,7 +79,7 @@ import X509
 ///     }
 /// }
 /// ```
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 public struct NIOHTTPServer: HTTPServer {
     public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
     public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
@@ -331,7 +331,7 @@ public struct NIOHTTPServer: HTTPServer {
 
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
@@ -365,7 +365,7 @@ extension ChannelPipeline.SynchronousOperations {
     }
 }
 
-@available(macOS 26.2, iOS 26.2, watchOS 26.2, tvOS 26.2, visionOS 26.2, *)
+@available(anyAppleOS 26.0, *)
 extension NIOHTTP2Handler.Configuration {
     init(httpServerHTTP2Configuration http2Config: NIOHTTPServerConfiguration.HTTP2) {
         let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)
