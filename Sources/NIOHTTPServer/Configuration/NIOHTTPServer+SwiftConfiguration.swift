@@ -395,7 +395,7 @@ extension NIOHTTPServerConfiguration.HTTP2 {
     /// - `maxFrameSize` (int, optional, default: 2^14): The maximum frame size to be used in an HTTP/2 connection.
     /// - `targetWindowSize` (int, optional, default: 2^16 - 1): The target window size to be used in an HTTP/2
     ///    connection.
-    /// - `maxConcurrentStreams` (int, optional, default: nil): The maximum number of concurrent streams in an HTTP/2
+    /// - `maxConcurrentStreams` (int, optional, default: 100): The maximum number of concurrent streams in an HTTP/2
     ///    connection.
     /// - `gracefulShutdown.maximumDuration` (int, optional, default: nil): The maximum amount of time (in seconds) that
     ///   the connection has to close gracefully.
@@ -411,10 +411,7 @@ extension NIOHTTPServerConfiguration.HTTP2 {
                 forKey: "targetWindowSize",
                 default: NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize
             ),
-            /// The default value, ``NIOHTTPServerConfiguration.HTTP2.DEFAULT_TARGET_WINDOW_SIZE``, is `nil`. However,
-            /// we can only specify a non-nil `default` argument to `config.int(...)`. But `config.int(...)` already
-            /// defaults to `nil` if it can't find the `"maxConcurrentStreams"` key, so that works for us.
-            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams"),
+            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams", default: 100),
             gracefulShutdown: .init(config: config.scoped(to: "gracefulShutdown"))
         )
     }

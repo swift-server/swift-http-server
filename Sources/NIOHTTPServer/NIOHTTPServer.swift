@@ -19,6 +19,7 @@ import NIOCertificateReloading
 import NIOConcurrencyHelpers
 import NIOCore
 import NIOExtras
+import NIOHPACK
 import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPTypes
@@ -337,15 +338,13 @@ extension NIOHTTP2Handler.Configuration {
         let clampedMaxFrameSize = Self.clampMaxFrameSize(http2Config.maxFrameSize)
 
         var http2HandlerConnectionConfiguration = NIOHTTP2Handler.ConnectionConfiguration()
-        var http2HandlerHTTP2Settings = HTTP2Settings([
+        let http2HandlerHTTP2Settings = HTTP2Settings([
             HTTP2Setting(parameter: .initialWindowSize, value: clampedTargetWindowSize),
             HTTP2Setting(parameter: .maxFrameSize, value: clampedMaxFrameSize),
+            HTTP2Setting(parameter: .maxConcurrentStreams, value: http2Config.maxConcurrentStreams),
+            HTTP2Setting(parameter: .maxHeaderListSize, value: HPACKDecoder.defaultMaxHeaderListSize),
         ])
-        if let maxConcurrentStreams = http2Config.maxConcurrentStreams {
-            http2HandlerHTTP2Settings.append(
-                HTTP2Setting(parameter: .maxConcurrentStreams, value: maxConcurrentStreams)
-            )
-        }
+
         http2HandlerConnectionConfiguration.initialSettings = http2HandlerHTTP2Settings
 
         var http2HandlerStreamConfiguration = NIOHTTP2Handler.StreamConfiguration()

@@ -47,7 +47,7 @@ respective key prefix.
 | `http`                        | `versions`                        | `string array` | Required (permitted values: `"http1_1"`, `"http2"`)                                                                           | -       |
 | `http.http2`                  | `maxFrameSize`                    | `int`          | Optional                                                                                                                      | 2^14    |
 |                               | `targetWindowSize`                | `int`          | Optional                                                                                                                      | 2^16-1  |
-|                               | `maxConcurrentStreams`            | `int`          | Optional                                                                                                                      | nil     |
+|                               | `maxConcurrentStreams`            | `int`          | Optional                                                                                                                      | 100     |
 | `http.http2.gracefulShutdown` | `maximumDuration`                 | `int`          | Optional                                                                                                                      | nil     |
 | `transportSecurity`           | `mode`                            | `string`       | Required (permitted values: `"plaintext"`, `"tls"`, `"mTLS"`)                                                                 | -       |
 |                               | `credentialSource`                | `string`       | Required for `"tls"` and `"mTLS"` (permitted values: `"inline"`, `"file"`)                                                    | -       |
@@ -95,7 +95,7 @@ key were omitted.
         "http2": {
             "maxFrameSize": 16384,          // default: 2^14 (16384)
             "targetWindowSize": 65535,      // default: 2^16 - 1 (65535)
-            "maxConcurrentStreams": 100,    // default: nil (no limit)
+            "maxConcurrentStreams": 100,    // default: 100
             "gracefulShutdown": {
                 "maximumDuration": 30       // default: nil (no time limit)
             }
