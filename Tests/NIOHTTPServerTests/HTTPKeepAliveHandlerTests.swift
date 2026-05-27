@@ -491,4 +491,90 @@ struct HTTPKeepAliveHandlerTests {
             }
         )
     }
+
+    /// Verifies that the keep-alive handler is also present on the secure upgrade
+    /// HTTP/1.1 pipeline. This mirrors `testShortResponseBeforeRequestEnd` but runs
+    /// over TLS: if the keep-alive handler isn't wired into the secure pipeline,
+    /// the response head will be flushed without `Connection: close` and this test
+    /// will fail.
+    @available(anyAppleOS 26.0, *)
+    @Test("Server sends head+end before request .end over TLS — Connection: close in header")
+    func testShortResponseBeforeRequestEndOverTLS() async throws {
+        let serverChain = try TestCA.makeSelfSignedChain()
+        let server = NIOHTTPServer(
+            logger: self.serverLogger,
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .tls(
+                    credentials: .inMemory(
+                        certificateChain: serverChain.chain,
+                        privateKey: serverChain.privateKey
+                    )
+                )
+            )
+        )
+
+        try await NIOHTTPServerTests.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
+                let _ = try await reader.consumeAndConclude { partsReader in
+                    var partsReader = partsReader
+                    try await partsReader.read { _ in }
+                }
+                let writer = try await sender.send(
+                    .init(status: .ok, headerFields: [.contentLength: "0"])
+                )
+                try await writer.writeAndConclude("".utf8.span, finalElement: nil)
+            },
+            body: { serverAddress in
+                let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    .connectToTestSecureUpgradeHTTPServer(
+                        at: serverAddress,
+                        trustRoots: serverChain.chain,
+                        applicationProtocol: HTTPVersion.http1_1.alpnIdentifier
+                    )
+                let client = try await NIOHTTPServerTests.unwrapNegotiatedChannel(clientChannel, .http1_1)
+
+                try await client.executeThenClose { inbound, outbound in
+                    try await outbound.write(
+                        .head(.init(method: .post, scheme: "https", authority: "", path: "/"))
+                    )
+                    try await outbound.write(.body(ByteBuffer(string: "x")))
+
+                    var responseIterator = inbound.makeAsyncIterator()
+                    let headPart = try await responseIterator.next()
+                    guard case .head(let response) = headPart else {
+                        Issue.record("Expected .head, got \(String(describing: headPart))")
+                        return
+                    }
+                    #expect(response.status == .ok)
+                    #expect(
+                        response.headerFields[.connection] == "close",
+                        "Expected Connection: close, got headers: \(response.headerFields)"
+                    )
+
+                    var sawEnd = false
+                    while !sawEnd {
+                        let part = try await responseIterator.next()
+                        switch part {
+                        case .body:
+                            continue
+                        case .end:
+                            sawEnd = true
+                        case .none:
+                            Issue.record("Stream ended before response .end")
+                            return
+                        case .head:
+                            Issue.record("Unexpected second .head: \(String(describing: part))")
+                            return
+                        }
+                    }
+
+                    let next = try await responseIterator.next()
+                    #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
+                }
+            }
+        )
+    }
 }
