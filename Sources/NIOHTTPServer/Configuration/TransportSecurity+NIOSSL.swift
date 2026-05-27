@@ -17,41 +17,47 @@ import NIOSSL
 import X509
 
 @available(anyAppleOS 26.0, *)
-extension NIOSSL.TLSConfiguration {
-    /// Creates a `NIOSSL.TLSConfiguration` from the server's TLS credentials and mTLS trust configuration.
-    static func makeServerConfiguration(
-        tlsCredentials: NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials,
-        mTLSConfiguration: NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration?
+extension NIOSSLContext {
+    /// Creates a `NIOSSL.NIOSSLContext` from the server's transport security configuration.
+    static func makeServerContext(
+        transportSecurity: NIOHTTPServerConfiguration.TransportSecurity,
+        alpnIdentifiers: [String]
     ) throws -> Self {
-        var config: Self
+        var configuration: TLSConfiguration
 
-        switch tlsCredentials.backing {
-        case .inMemory(let certificateChain, let privateKey):
-            config = .makeServerConfiguration(
-                certificateChain: try certificateChain.map { try NIOSSLCertificateSource($0) },
-                privateKey: try NIOSSLPrivateKeySource(privateKey)
-            )
+        switch transportSecurity.backing {
+        case .plaintext:
+            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
 
-        case .reloading(let certificateReloader):
-            config = try .makeServerConfiguration(certificateReloader: certificateReloader)
+        case .tls(let tlsCredentials), .mTLS(let tlsCredentials, _):
+            switch tlsCredentials.backing {
+            case .inMemory(let certificateChain, let privateKey):
+                configuration = .makeServerConfiguration(
+                    certificateChain: try certificateChain.map { try NIOSSLCertificateSource($0) },
+                    privateKey: try NIOSSLPrivateKeySource(privateKey)
+                )
 
-        case .pemFile(let certificateChainPath, let privateKeyPath):
-            config = try .makeServerConfiguration(
-                certificateChain: NIOSSLCertificate.fromPEMFile(certificateChainPath).map { .certificate($0) },
-                privateKey: .privateKey(.init(file: privateKeyPath, format: .pem))
-            )
+            case .reloading(let certificateReloader):
+                configuration = try .makeServerConfiguration(certificateReloader: certificateReloader)
+
+            case .pemFile(let certificateChainPath, let privateKeyPath):
+                configuration = try .makeServerConfiguration(
+                    certificateChain: NIOSSLCertificate.fromPEMFile(certificateChainPath).map { .certificate($0) },
+                    privateKey: .privateKey(.init(file: privateKeyPath, format: .pem))
+                )
+            }
         }
 
-        if let mTLSConfiguration {
+        if case .mTLS(_, let mTLSConfiguration) = transportSecurity.backing {
             switch mTLSConfiguration.backing {
             case .systemDefaults:
-                config.trustRoots = .default
+                configuration.trustRoots = .default
 
             case .inMemory(let trustRoots):
-                config.trustRoots = .certificates(try trustRoots.map { try NIOSSLCertificate($0) })
+                configuration.trustRoots = .certificates(try trustRoots.map { try NIOSSLCertificate($0) })
 
             case .pemFile(let path):
-                config.trustRoots = .file(path)
+                configuration.trustRoots = .file(path)
 
             case .customCertificateVerificationCallback:
                 // There are no trust roots when a custom certificate verification callback is specified: the callback
@@ -59,9 +65,11 @@ extension NIOSSL.TLSConfiguration {
                 ()
             }
 
-            config.certificateVerification = .init(mTLSConfiguration.certificateVerification)
+            configuration.certificateVerification = .init(mTLSConfiguration.certificateVerification)
         }
 
-        return config
+        configuration.applicationProtocols = alpnIdentifiers
+
+        return try Self(configuration: configuration)
     }
 }

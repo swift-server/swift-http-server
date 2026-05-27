@@ -156,7 +156,7 @@ extension NIOHTTPServer {
     func setupSecureUpgradeServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        tlsConfiguration: TLSConfiguration
+        sslContext: NIOSSLContext
     ) async throws -> [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>] {
         let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -178,7 +178,7 @@ extension NIOHTTPServer {
                             self.setupSecureUpgradeConnectionChildChannel(
                                 channel: channel,
                                 supportedHTTPVersions: supportedHTTPVersions,
-                                tlsConfiguration: tlsConfiguration
+                                sslContext: sslContext
                             )
                         }
                     serverChannels.append(serverChannel)
@@ -263,17 +263,12 @@ extension NIOHTTPServer {
     func setupSecureUpgradeConnectionChildChannel(
         channel: any Channel,
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        tlsConfiguration: TLSConfiguration
+        sslContext: NIOSSLContext
     ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
         channel.eventLoop.makeCompletedFuture {
-            var tlsConfiguration = tlsConfiguration
-            // Set the application protocols to the appropriate value depending upon whether we want to serve HTTP/1.1,
-            // HTTP/2, or both.
-            tlsConfiguration.applicationProtocols = supportedHTTPVersions.alpnIdentifiers
-
             try channel.pipeline.syncOperations.addHandler(
                 self.makeSSLServerHandler(
-                    tlsConfiguration,
+                    sslContext,
                     self.configuration.transportSecurity.customVerificationCallback
                 )
             )
@@ -357,12 +352,12 @@ extension NIOHTTPServer {
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     func makeSSLServerHandler(
-        _ tlsConfiguration: TLSConfiguration,
+        _ sslContext: NIOSSLContext,
         _ customVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
-    ) throws -> NIOSSLServerHandler {
+    ) -> NIOSSLServerHandler {
         if let customVerificationCallback {
-            return try NIOSSLServerHandler(
-                context: .init(configuration: tlsConfiguration),
+            return NIOSSLServerHandler(
+                context: sslContext,
                 customVerificationCallbackWithMetadata: { certificates, promise in
                     promise.completeWithTask {
                         // Convert input [NIOSSLCertificate] to [X509.Certificate]
@@ -393,7 +388,7 @@ extension NIOHTTPServer {
                 }
             )
         } else {
-            return try NIOSSLServerHandler(context: .init(configuration: tlsConfiguration))
+            return NIOSSLServerHandler(context: sslContext)
         }
     }
 }
