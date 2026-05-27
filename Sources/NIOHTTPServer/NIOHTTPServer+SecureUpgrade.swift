@@ -199,26 +199,7 @@ extension NIOHTTPServer {
         return serverChannels
     }
 
-    private func http1ConnectionInitializer(
-        channel: any Channel
-    ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
-        channel.pipeline.configureHTTPServerPipeline().flatMap { _ in
-            channel.eventLoop.makeCompletedFuture {
-                try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
-                try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
-
-                return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                    wrappingChannelSynchronously: channel,
-                    configuration: .init(
-                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                        isOutboundHalfClosureEnabled: true
-                    )
-                )
-            }
-        }
-    }
-
-    private func http2ConnectionInitializer(
+    private func setupHTTP2Connection(
         channel: any Channel,
         configuration: NIOHTTPServerConfiguration.HTTP2
     ) -> EventLoopFuture<
@@ -303,10 +284,21 @@ extension NIOHTTPServer {
         NIOTypedApplicationProtocolNegotiationHandler<NegotiatedChannel> { result in
             switch (result, http2Config) {
             case (.negotiated("http/1.1"), _):
-                return self.http1ConnectionInitializer(channel: channel).map { .http1_1($0) }
+                return self.setupHTTP1_1Connection(
+                    channel: channel,
+                    asyncChannelConfiguration: .init(
+                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                        isOutboundHalfClosureEnabled: true
+                    ),
+                    isSecure: true
+                )
+                .map { .http1_1($0) }
 
             case (.negotiated("h2"), .some(let http2Config)):
-                return self.http2ConnectionInitializer(channel: channel, configuration: http2Config).map { .http2($0) }
+                return self.setupHTTP2Connection(
+                    channel: channel,
+                    configuration: http2Config
+                ).map { .http2($0) }
 
             case (.negotiated, _), (.fallback, _):
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.

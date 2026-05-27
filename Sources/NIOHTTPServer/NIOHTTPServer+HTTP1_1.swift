@@ -83,12 +83,13 @@ extension NIOHTTPServer {
                 case .hostAndPort(let host, let port):
                     let serverChannel =
                         try await bootstrap.bind(host: host, port: port) { channel in
-                            self.setupHTTP1_1ConnectionChildChannel(
+                            self.setupHTTP1_1Connection(
                                 channel: channel,
                                 asyncChannelConfiguration: .init(
                                     backPressureStrategy: .init(self.configuration.backpressureStrategy),
                                     isOutboundHalfClosureEnabled: true
-                                )
+                                ),
+                                isSecure: false
                             )
                         }
                     serverChannels.append(serverChannel)
@@ -109,12 +110,13 @@ extension NIOHTTPServer {
         return serverChannels
     }
 
-    func setupHTTP1_1ConnectionChildChannel(
+    func setupHTTP1_1Connection(
         channel: any Channel,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration
+        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
+        isSecure: Bool
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
-            try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: false))
+            try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: isSecure))
             try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
 
             return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
