@@ -300,7 +300,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
             #expect(http2.maxFrameSize == NIOHTTPServerConfiguration.HTTP2.defaultMaxFrameSize)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
-            #expect(http2.maxConcurrentStreams == nil)
+            #expect(http2.maxConcurrentStreams == 100)
             #expect(http2.gracefulShutdown == .init(maximumGracefulShutdownDuration: nil))
         }
 
@@ -335,7 +335,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
 
             #expect(http2.maxFrameSize == 5)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
-            #expect(http2.maxConcurrentStreams == nil)
+            #expect(http2.maxConcurrentStreams == 100)
             #expect(http2.gracefulShutdown.maximumGracefulShutdownDuration == nil)
         }
     }
