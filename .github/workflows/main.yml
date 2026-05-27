@@ -14,10 +14,13 @@ jobs:
     name: Unit tests
     uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
     with:
+      # Project is only 6.4+
       linux_6_0_enabled: false
       linux_6_1_enabled: false
       linux_6_2_enabled: false
-      linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      linux_6_3_enabled: false
+      # linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      linux_nightly_next_enabled: false  # should be disabled until next is 6.4
       linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
       linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
 
@@ -29,7 +32,9 @@ jobs:
     name: Release builds
     uses: apple/swift-nio/.github/workflows/release_builds.yml@main
     with:
+      # Project is only 6.4+
       linux_6_0_enabled: false
       linux_6_1_enabled: false
       linux_6_2_enabled: false
-      linux_6_3_enabled: true
+      linux_6_3_enabled: false
+      linux_nightly_next_enabled: false  # should be disabled until next is 6.4

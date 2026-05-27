@@ -131,7 +131,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public var targetWindowSize: Int
 
         /// The number of concurrent streams on the HTTP/2 connection.
-        public var maxConcurrentStreams: Int?
+        public var maxConcurrentStreams: Int
 
         /// The graceful shutdown configuration.
         public var gracefulShutdown: GracefulShutdownConfiguration
@@ -162,7 +162,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public init(
             maxFrameSize: Int = Self.defaultMaxFrameSize,
             targetWindowSize: Int = Self.defaultTargetWindowSize,
-            maxConcurrentStreams: Int? = Self.defaultMaxConcurrentStreams,
+            maxConcurrentStreams: Int = Self.defaultMaxConcurrentStreams,
             gracefulShutdown: GracefulShutdownConfiguration = .init()
         ) {
             self.maxFrameSize = maxFrameSize
@@ -178,10 +178,10 @@ public struct NIOHTTPServerConfiguration: Sendable {
         static var defaultTargetWindowSize: Int { (1 << 16) - 1 }
 
         @inlinable
-        static var defaultMaxConcurrentStreams: Int? { nil }
+        static var defaultMaxConcurrentStreams: Int { 100 }
 
-        /// Default values. The max frame size defaults to 2^14, the target window size defaults to 2^16-1, and
-        /// the max concurrent streams default to infinite.
+        /// Default values. The max frame size defaults to 2^14, the target window size defaults to 2^16-1, and the max
+        /// concurrent streams default to 100.
         public static var defaults: Self {
             Self(
                 maxFrameSize: Self.defaultMaxFrameSize,
