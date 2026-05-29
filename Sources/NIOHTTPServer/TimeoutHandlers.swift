@@ -58,9 +58,8 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 
     private func scheduleTimeout(context: ChannelHandlerContext) {
         self.scheduledTimeout?.cancel()
-        let boundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-        self.scheduledTimeout = context.eventLoop.scheduleTask(in: self.timeout) {
-            boundContext.value.close(promise: nil)
+        self.scheduledTimeout = context.eventLoop.assumeIsolated().scheduleTask(in: self.timeout) {
+            context.close(promise: nil)
         }
     }
 }
@@ -118,9 +117,8 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
     }
 
     private func scheduleTimeout(_ timeout: TimeAmount, context: ChannelHandlerContext) {
-        let boundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-        self.scheduledTimeout = context.eventLoop.scheduleTask(in: timeout) {
-            boundContext.value.close(promise: nil)
+        self.scheduledTimeout = context.eventLoop.assumeIsolated().scheduleTask(in: timeout) {
+            context.close(promise: nil)
         }
     }
 }
