@@ -291,27 +291,33 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///
     /// When this limit is reached, the server stops accepting new connections
     /// until existing ones close. `nil` means unlimited (the default).
-    public var maxConnections: Int?
+    ///
+    /// - Precondition: Must be greater than 0 if non-`nil`.
+    public var maxConnections: Int? {
+        didSet {
+            if let maxConnections, maxConnections <= 0 {
+                preconditionFailure("`maxConnections` must be greater than 0.")
+            }
+        }
+    }
 
     /// Configuration for connection timeouts.
     public var connectionTimeouts: ConnectionTimeouts
 
     /// Create a new configuration with multiple bind targets.
+    ///
+    /// Other configuration properties (``backpressureStrategy``, ``maxConnections``,
+    /// ``connectionTimeouts``) are initialized to their defaults and can be set on the resulting
+    /// value before passing it to ``NIOHTTPServer``.
+    ///
     /// - Parameters:
     ///   - bindTargets: An array of ``BindTarget`` values specifying where the server should listen.
     ///   - supportedHTTPVersions: The HTTP protocol versions the server should support.
     ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
-    ///   - backpressureStrategy: A ``BackPressureStrategy``.
-    ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
-    ///   - maxConnections: The maximum number of concurrent connections. `nil` means unlimited.
-    ///   - connectionTimeouts: The connection timeout configuration.
     public init(
         bindTargets: [BindTarget],
         supportedHTTPVersions: Set<HTTPVersion>,
-        transportSecurity: TransportSecurity,
-        backpressureStrategy: BackPressureStrategy = .defaults,
-        maxConnections: Int? = nil,
-        connectionTimeouts: ConnectionTimeouts = .defaults
+        transportSecurity: TransportSecurity
     ) throws {
         if bindTargets.isEmpty {
             throw NIOHTTPServerConfigurationError.noBindTargetsSpecified
@@ -329,42 +335,33 @@ public struct NIOHTTPServerConfiguration: Sendable {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
-        if let maxConnections, maxConnections <= 0 {
-            throw NIOHTTPServerConfigurationError.invalidMaxConnections
-        }
-
         self.bindTargets = bindTargets
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
-        self.backpressureStrategy = backpressureStrategy
-        self.maxConnections = maxConnections
-        self.connectionTimeouts = connectionTimeouts
+        self.backpressureStrategy = .defaults
+        self.maxConnections = nil
+        self.connectionTimeouts = .defaults
     }
 
     /// Create a new configuration with a single bind target.
+    ///
+    /// Other configuration properties (``backpressureStrategy``, ``maxConnections``,
+    /// ``connectionTimeouts``) are initialized to their defaults and can be set on the resulting
+    /// value before passing it to ``NIOHTTPServer``.
+    ///
     /// - Parameters:
     ///   - bindTarget: A ``BindTarget``.
     ///   - supportedHTTPVersions: The HTTP protocol versions the server should support.
     ///   - transportSecurity: The transport security mode (plaintext, TLS, or mTLS).
-    ///   - backpressureStrategy: A ``BackPressureStrategy``.
-    ///   Defaults to ``BackPressureStrategy/watermark(low:high:)`` with a low watermark of 2 and a high of 10.
-    ///   - maxConnections: The maximum number of concurrent connections. `nil` means unlimited.
-    ///   - connectionTimeouts: The connection timeout configuration.
     public init(
         bindTarget: BindTarget,
         supportedHTTPVersions: Set<HTTPVersion>,
-        transportSecurity: TransportSecurity,
-        backpressureStrategy: BackPressureStrategy = .defaults,
-        maxConnections: Int? = nil,
-        connectionTimeouts: ConnectionTimeouts = .defaults
+        transportSecurity: TransportSecurity
     ) throws {
         try self.init(
             bindTargets: [bindTarget],
             supportedHTTPVersions: supportedHTTPVersions,
-            transportSecurity: transportSecurity,
-            backpressureStrategy: backpressureStrategy,
-            maxConnections: maxConnections,
-            connectionTimeouts: connectionTimeouts
+            transportSecurity: transportSecurity
         )
     }
 }

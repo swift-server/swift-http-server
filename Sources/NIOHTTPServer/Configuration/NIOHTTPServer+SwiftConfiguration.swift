@@ -73,11 +73,11 @@ extension NIOHTTPServerConfiguration {
             transportSecurity: try .init(
                 config: snapshot.scoped(to: "transportSecurity"),
                 customCertificateVerificationCallback: customCertificateVerificationCallback
-            ),
-            backpressureStrategy: .init(config: snapshot.scoped(to: "backpressureStrategy")),
-            maxConnections: snapshot.int(forKey: "maxConnections"),
-            connectionTimeouts: .init(config: snapshot.scoped(to: "connectionTimeouts"))
+            )
         )
+        self.backpressureStrategy = .init(config: snapshot.scoped(to: "backpressureStrategy"))
+        self.maxConnections = snapshot.int(forKey: "maxConnections")
+        self.connectionTimeouts = .init(config: snapshot.scoped(to: "connectionTimeouts"))
     }
 
     /// Reads bind targets from either the singular `bindTarget` scope or the plural `bindTargets` scope.

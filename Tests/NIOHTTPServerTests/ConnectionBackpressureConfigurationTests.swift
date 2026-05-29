@@ -19,32 +19,6 @@ import Testing
 @Suite("Connection Backpressure Configuration")
 struct ConnectionBackpressureConfigurationTests {
     @available(anyAppleOS 26.0, *)
-    @Test("maxConnections validation rejects zero")
-    func maxConnectionsRejectsZero() {
-        #expect(throws: NIOHTTPServerConfigurationError.self) {
-            try NIOHTTPServerConfiguration(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext,
-                maxConnections: 0
-            )
-        }
-    }
-
-    @available(anyAppleOS 26.0, *)
-    @Test("maxConnections validation rejects negative")
-    func maxConnectionsRejectsNegative() {
-        #expect(throws: NIOHTTPServerConfigurationError.self) {
-            try NIOHTTPServerConfiguration(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext,
-                maxConnections: -1
-            )
-        }
-    }
-
-    @available(anyAppleOS 26.0, *)
     @Test("maxConnections nil is the default")
     func maxConnectionsNilIsDefault() throws {
         let config = try NIOHTTPServerConfiguration(
@@ -67,24 +41,24 @@ struct ConnectionBackpressureConfigurationTests {
     @available(anyAppleOS 26.0, *)
     @Test("Valid maxConnections is accepted")
     func validMaxConnectionsAccepted() throws {
-        let config = try NIOHTTPServerConfiguration(
+        var config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
-            transportSecurity: .plaintext,
-            maxConnections: 100
+            transportSecurity: .plaintext
         )
+        config.maxConnections = 100
         #expect(config.maxConnections == 100)
     }
 
     @available(anyAppleOS 26.0, *)
     @Test("Custom ConnectionTimeouts are preserved")
     func customConnectionTimeouts() throws {
-        let config = try NIOHTTPServerConfiguration(
+        var config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
-            transportSecurity: .plaintext,
-            connectionTimeouts: .init(idle: .seconds(10), readHeader: .seconds(5), readBody: nil)
+            transportSecurity: .plaintext
         )
+        config.connectionTimeouts = .init(idle: .seconds(10), readHeader: .seconds(5), readBody: nil)
         #expect(config.connectionTimeouts.idle == .seconds(10))
         #expect(config.connectionTimeouts.readHeader == .seconds(5))
         #expect(config.connectionTimeouts.readBody == nil)

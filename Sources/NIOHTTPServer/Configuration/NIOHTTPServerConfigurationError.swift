@@ -16,7 +16,6 @@
 enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
     case noSupportedHTTPVersionsSpecified
     case incompatibleTransportSecurity
-    case invalidMaxConnections
     case noBindTargetsSpecified
 
     var description: String {
@@ -26,9 +25,6 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
 
         case .incompatibleTransportSecurity:
             "Invalid configuration: only HTTP/1.1 can be served over plaintext. `transportSecurity` must be set to (m)TLS for serving HTTP/2."
-
-        case .invalidMaxConnections:
-            "Invalid configuration: `maxConnections` must be greater than 0."
 
         case .noBindTargetsSpecified:
             "Invalid configuration: at least one bind target must be specified."

@@ -28,15 +28,17 @@ struct ConnectionBackpressureEndToEndTests {
     @available(anyAppleOS 26.0, *)
     @Test("Requests succeed under connection limit")
     func requestsSucceedUnderConnectionLimit() async throws {
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        configuration.maxConnections = 2
+        configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
+
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext,
-                maxConnections: 2,
-                connectionTimeouts: .init(idle: nil, readHeader: nil, readBody: nil)
-            )
+            configuration: configuration
         )
 
         try await confirmation(expectedCount: 2) { responseReceived in
@@ -85,15 +87,17 @@ struct ConnectionBackpressureEndToEndTests {
     @available(anyAppleOS 26.0, *)
     @Test("More connections than maxConnections all eventually complete")
     func moreConnectionsThanLimitAllComplete() async throws {
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        configuration.maxConnections = 2
+        configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
+
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext,
-                maxConnections: 2,
-                connectionTimeouts: .init(idle: nil, readHeader: nil, readBody: nil)
-            )
+            configuration: configuration
         )
 
         // Open 5 connections with maxConnections: 2. All should eventually complete
@@ -143,14 +147,16 @@ struct ConnectionBackpressureEndToEndTests {
     @available(anyAppleOS 26.0, *)
     @Test("No connection limit by default")
     func noConnectionLimitByDefault() async throws {
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
+
         let server = NIOHTTPServer(
             logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext,
-                connectionTimeouts: .init(idle: nil, readHeader: nil, readBody: nil)
-            )
+            configuration: configuration
         )
 
         let numConnections = 5
