@@ -179,21 +179,14 @@ public struct NIOHTTPServer: HTTPServer {
             return try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
                 .map { .plaintextHTTP1_1($0) }
 
-        case .tls(let credentials):
+        case .tls, .mTLS:
             return try await self.setupSecureUpgradeServerChannels(
                 bindTargets: self.configuration.bindTargets,
                 supportedHTTPVersions: self.configuration.supportedHTTPVersions,
-                tlsConfiguration: try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
-            ).map { .secureUpgrade($0) }
-
-        case .mTLS(let credentials, let mTLSConfiguration):
-            return try await self.setupSecureUpgradeServerChannels(
-                bindTargets: self.configuration.bindTargets,
-                supportedHTTPVersions: self.configuration.supportedHTTPVersions,
-                tlsConfiguration: try .makeServerConfiguration(
-                    tlsCredentials: credentials,
-                    mTLSConfiguration: mTLSConfiguration
-                )
+                sslContext: .makeServerContext(
+                    transportSecurity: self.configuration.transportSecurity,
+                    alpnIdentifiers: self.configuration.supportedHTTPVersions.alpnIdentifiers
+                ),
             ).map { .secureUpgrade($0) }
         }
     }

@@ -156,7 +156,7 @@ extension NIOHTTPServer {
     func setupSecureUpgradeServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        tlsConfiguration: TLSConfiguration
+        sslContext: NIOSSLContext
     ) async throws -> [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>] {
         let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -184,7 +184,7 @@ extension NIOHTTPServer {
                             self.setupSecureUpgradeConnectionChildChannel(
                                 channel: channel,
                                 supportedHTTPVersions: supportedHTTPVersions,
-                                tlsConfiguration: tlsConfiguration
+                                sslContext: sslContext
                             )
                         }
                     serverChannels.append(serverChannel)
@@ -205,30 +205,7 @@ extension NIOHTTPServer {
         return serverChannels
     }
 
-    private func http1ConnectionInitializer(
-        channel: any Channel
-    ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
-        channel.pipeline.configureHTTPServerPipeline().flatMap { _ in
-            channel.eventLoop.makeCompletedFuture {
-                try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: true))
-
-                try channel
-                    .pipeline
-                    .syncOperations
-                    .addTimeoutHandlers(self.configuration.connectionTimeouts)
-
-                return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                    wrappingChannelSynchronously: channel,
-                    configuration: .init(
-                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                        isOutboundHalfClosureEnabled: true
-                    )
-                )
-            }
-        }
-    }
-
-    private func http2ConnectionInitializer(
+    private func setupHTTP2Connection(
         channel: any Channel,
         configuration: NIOHTTPServerConfiguration.HTTP2
     ) -> EventLoopFuture<
@@ -286,17 +263,12 @@ extension NIOHTTPServer {
     func setupSecureUpgradeConnectionChildChannel(
         channel: any Channel,
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        tlsConfiguration: TLSConfiguration
+        sslContext: NIOSSLContext
     ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
         channel.eventLoop.makeCompletedFuture {
-            var tlsConfiguration = tlsConfiguration
-            // Set the application protocols to the appropriate value depending upon whether we want to serve HTTP/1.1,
-            // HTTP/2, or both.
-            tlsConfiguration.applicationProtocols = supportedHTTPVersions.alpnIdentifiers
-
             try channel.pipeline.syncOperations.addHandler(
                 self.makeSSLServerHandler(
-                    tlsConfiguration,
+                    sslContext,
                     self.configuration.transportSecurity.customVerificationCallback
                 )
             )
@@ -325,10 +297,21 @@ extension NIOHTTPServer {
         NIOTypedApplicationProtocolNegotiationHandler<NegotiatedChannel> { result in
             switch (result, http2Config) {
             case (.negotiated("http/1.1"), _):
-                return self.http1ConnectionInitializer(channel: channel).map { .http1_1($0) }
+                return self.setupHTTP1_1Connection(
+                    channel: channel,
+                    asyncChannelConfiguration: .init(
+                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                        isOutboundHalfClosureEnabled: true
+                    ),
+                    isSecure: true
+                )
+                .map { .http1_1($0) }
 
             case (.negotiated("h2"), .some(let http2Config)):
-                return self.http2ConnectionInitializer(channel: channel, configuration: http2Config).map { .http2($0) }
+                return self.setupHTTP2Connection(
+                    channel: channel,
+                    configuration: http2Config
+                ).map { .http2($0) }
 
             case (.negotiated, _), (.fallback, _):
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.
@@ -380,12 +363,12 @@ extension NIOHTTPServer {
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     func makeSSLServerHandler(
-        _ tlsConfiguration: TLSConfiguration,
+        _ sslContext: NIOSSLContext,
         _ customVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
-    ) throws -> NIOSSLServerHandler {
+    ) -> NIOSSLServerHandler {
         if let customVerificationCallback {
-            return try NIOSSLServerHandler(
-                context: .init(configuration: tlsConfiguration),
+            return NIOSSLServerHandler(
+                context: sslContext,
                 customVerificationCallbackWithMetadata: { certificates, promise in
                     promise.completeWithTask {
                         // Convert input [NIOSSLCertificate] to [X509.Certificate]
@@ -416,7 +399,7 @@ extension NIOHTTPServer {
                 }
             )
         } else {
-            return try NIOSSLServerHandler(context: .init(configuration: tlsConfiguration))
+            return NIOSSLServerHandler(context: sslContext)
         }
     }
 }

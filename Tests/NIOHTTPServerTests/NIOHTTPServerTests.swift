@@ -356,8 +356,15 @@ struct NIOHTTPServerTests {
                     try await outbound.write(.head(.init(method: .post, scheme: "https", authority: "", path: "/")))
                     var responseIterator = inbound.makeAsyncIterator()
 
+                    // For HTTP/1.1, the keep-alive handler flushes the response head with
+                    // `Connection: close` because a body part is written before the request
+                    // `.end` arrives. HTTP/2 has no equivalent header.
+                    var expectedHead = Self.responseHead(status: .ok, for: httpVersion)
+                    if httpVersion == .http1_1 {
+                        expectedHead.headerFields[.connection] = "close"
+                    }
                     let head = try await responseIterator.next()
-                    #expect(head == .head(Self.responseHead(status: .ok, for: httpVersion)))
+                    #expect(head == .head(expectedHead))
 
                     for i in 1...5 {
                         let body = ByteBuffer(bytes: [UInt8(i)])

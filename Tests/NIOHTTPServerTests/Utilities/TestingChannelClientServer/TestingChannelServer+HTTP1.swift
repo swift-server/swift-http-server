@@ -79,9 +79,10 @@ struct TestingChannelHTTP1Server {
         let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
 
         // Set up the required channel handlers on `serverTestConnectionChannel`
-        let serverAsyncConnectionChannel = try await self.server.setupHTTP1_1ConnectionChildChannel(
+        let serverAsyncConnectionChannel = try await self.server.setupHTTP1_1Connection(
             channel: serverTestConnectionChannel,
-            asyncChannelConfiguration: .init()
+            asyncChannelConfiguration: .init(),
+            isSecure: false
         ).get()
 
         // Write the connection channel to the server channel to simulate an incoming connection

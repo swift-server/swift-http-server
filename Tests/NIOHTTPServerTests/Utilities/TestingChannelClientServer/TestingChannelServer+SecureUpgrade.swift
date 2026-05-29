@@ -74,28 +74,17 @@ struct TestingChannelSecureUpgradeServer {
         // Create a connection channel: we will write this to the server channel to simulate an incoming connection.
         let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
 
-        let tlsConfiguration: TLSConfiguration
-
-        switch self.server.configuration.transportSecurity.backing {
-        case .plaintext:
-            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
-
-        case .tls(let credentials):
-            tlsConfiguration = try .makeServerConfiguration(tlsCredentials: credentials, mTLSConfiguration: nil)
-
-        case .mTLS(let credentials, let trustConfiguration):
-            tlsConfiguration = try .makeServerConfiguration(
-                tlsCredentials: credentials,
-                mTLSConfiguration: trustConfiguration
-            )
-        }
+        let sslContext = try NIOSSLContext.makeServerContext(
+            transportSecurity: self.server.configuration.transportSecurity,
+            alpnIdentifiers: self.server.configuration.supportedHTTPVersions.alpnIdentifiers
+        )
 
         // Set up the required channel handlers on `serverTestConnectionChannel`
         let negotiatedServerConnectionFuture = try await serverTestConnectionChannel.eventLoop.flatSubmit {
             self.server.setupSecureUpgradeConnectionChildChannel(
                 channel: serverTestConnectionChannel,
                 supportedHTTPVersions: self.server.configuration.supportedHTTPVersions,
-                tlsConfiguration: tlsConfiguration
+                sslContext: sslContext
             )
         }.get()
 
