@@ -528,13 +528,13 @@ struct HTTPKeepAliveHandlerTests {
                 try await writer.writeAndConclude("".utf8.span, finalElement: nil)
             },
             body: { serverAddress in
-                let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                     .connectToTestSecureUpgradeHTTPServer(
                         at: serverAddress,
                         trustRoots: serverChain.chain,
                         applicationProtocol: HTTPVersion.http1_1.alpnIdentifier
                     )
-                let client = try await NIOHTTPServerTests.unwrapNegotiatedChannel(clientChannel, .http1_1)
+                    .unwrapChannel(expectedHTTPVersion: .http1_1)
 
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(

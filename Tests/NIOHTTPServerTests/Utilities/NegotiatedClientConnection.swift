@@ -16,6 +16,7 @@ import NIOCore
 import NIOHTTP2
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP2
+import Testing
 
 /// A testing utility that wraps the result of ALPN negotiation for HTTP/1.1 or HTTP/2 client connections.
 ///
@@ -58,6 +59,33 @@ enum NegotiatedClientConnection {
                     )
                 }
             }
+        }
+    }
+}
+
+extension NegotiatedClientConnection {
+    /// Unwraps a negotiated channel, asserting it matches the expected `httpVersion`. For HTTP/2, opens and returns a
+    /// new stream channel.
+    func unwrapChannel(
+        expectedHTTPVersion: HTTPVersion,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
+        switch self {
+        case .http1(let http1Channel):
+            #expect(
+                expectedHTTPVersion == .http1_1,
+                "Unexpectedly established an HTTP/1 connection.",
+                sourceLocation: sourceLocation
+            )
+            return http1Channel
+
+        case .http2(let http2StreamManager):
+            #expect(
+                expectedHTTPVersion == .http2,
+                "Unexpectedly established an HTTP/2 connection.",
+                sourceLocation: sourceLocation
+            )
+            return try await http2StreamManager.openStream()
         }
     }
 }

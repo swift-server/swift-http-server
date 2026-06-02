@@ -88,7 +88,12 @@ public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
 
-    let serverQuiescingHelper: ServerQuiescingHelper
+    /// The event loop group on which the server runs.
+    ///
+    /// This event loop group is used for every channel the server binds. It also provides the event loop that fulfills
+    /// the listening address promise and the group from which a `ServerQuiescingHelper` is created for each bound
+    /// channel.
+    let eventLoopGroup: MultiThreadedEventLoopGroup
 
     var listeningAddressState: NIOLockedValueBox<State>
 
@@ -109,10 +114,8 @@ public struct NIOHTTPServer: HTTPServer {
         self.configuration = configuration
 
         // TODO: If we allow users to pass in an event loop, use that instead of the singleton MTELG.
-        let eventLoopGroup: MultiThreadedEventLoopGroup = .singletonMultiThreadedEventLoopGroup
-        self.listeningAddressState = .init(.idle(eventLoopGroup.any().makePromise()))
-
-        self.serverQuiescingHelper = .init(group: eventLoopGroup)
+        self.eventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        self.listeningAddressState = .init(.idle(self.eventLoopGroup.any().makePromise()))
     }
 
     /// Starts an HTTP server with the specified request handler.
@@ -123,13 +126,9 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// ## All-or-nothing listening
     ///
-    /// The server treats its set of listening addresses as a single unit. If any one of the bound addresses
-    /// stops listening — whether due to its underlying socket closing, an unrecoverable error on the
-    /// listening channel, or any other reason — the server stops listening on **all** remaining addresses
-    /// and this method returns. After that point, ``listeningAddresses`` will throw
-    /// ``ListeningAddressError/serverClosed``.
-    ///
-    /// This also applies during graceful shutdown and task cancellation: all channels are shut down together.
+    /// The server treats its set of listening addresses as a single unit. If an unrecoverable error occurs on any of
+    /// the listening channels, the server stops listening on **all** remaining addresses and this method returns. After
+    /// that point, ``listeningAddresses`` will throw ``ListeningAddressError/serverClosed``.
     ///
     /// - Parameter handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP
     ///   requests. The handler receives each request along with a body reader and response sender function.
@@ -164,7 +163,7 @@ public struct NIOHTTPServer: HTTPServer {
             try await withGracefulShutdownHandler {
                 try await self._serve(serverChannels: serverChannels, handler: handler)
             } onGracefulShutdown: {
-                self.beginGracefulShutdown()
+                self.beginGracefulShutdown(serverChannels: serverChannels)
             }
         } onCancel: {
             // Forcefully close down the server channels
@@ -177,7 +176,9 @@ public struct NIOHTTPServer: HTTPServer {
         switch self.configuration.transportSecurity.backing {
         case .plaintext:
             return try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
-                .map { .plaintextHTTP1_1($0) }
+                .map { channel, quiescingHelper in
+                    .plaintextHTTP1_1(channel: channel, quiescingHelper: quiescingHelper)
+                }
 
         case .tls, .mTLS:
             return try await self.setupSecureUpgradeServerChannels(
@@ -187,7 +188,9 @@ public struct NIOHTTPServer: HTTPServer {
                     transportSecurity: self.configuration.transportSecurity,
                     alpnIdentifiers: self.configuration.supportedHTTPVersions.alpnIdentifiers
                 ),
-            ).map { .secureUpgrade($0) }
+            ).map { channel, quiescingHelper in
+                .secureUpgrade(channel: channel, quiescingHelper: quiescingHelper)
+            }
         }
     }
 
@@ -199,19 +202,22 @@ public struct NIOHTTPServer: HTTPServer {
             for serverChannel in serverChannels {
                 group.addTask {
                     switch serverChannel {
-                    case .plaintextHTTP1_1(let http1Channel):
+                    case .plaintextHTTP1_1(let http1Channel, _):
                         try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
 
-                    case .secureUpgrade(let secureUpgradeChannel):
+                    case .secureUpgrade(let secureUpgradeChannel, _):
                         try await self.serveSecureUpgrade(serverChannel: secureUpgradeChannel, handler: handler)
                     }
                 }
             }
 
-            // Wait for the first channel to complete (either normally or by throwing).
-            // If any channel stops serving, bring down all remaining channels.
-            try await group.next()
-            group.cancelAll()
+            // If an error occurs in any channel, bring down all other channels too and propagate the error.
+            do {
+                for try await _ in group {}
+            } catch {
+                // Propagate the error. This will cancel the entire group.
+                throw error
+            }
         }
     }
 
@@ -303,9 +309,16 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     /// Initiates a graceful shutdown, allowing existing connections to drain before closing.
-    private func beginGracefulShutdown() {
+    private func beginGracefulShutdown(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
-        self.serverQuiescingHelper.initiateShutdown(promise: nil)
+
+        for serverChannel in serverChannels {
+            switch serverChannel {
+            case .plaintextHTTP1_1(_, let quiescingHelper),
+                .secureUpgrade(_, let quiescingHelper):
+                quiescingHelper.initiateShutdown(promise: nil)
+            }
+        }
     }
 
     /// Forcefully closes the server channels without waiting for existing connections to drain.
@@ -314,10 +327,10 @@ public struct NIOHTTPServer: HTTPServer {
 
         for serverChannel in serverChannels {
             switch serverChannel {
-            case .plaintextHTTP1_1(let http1Channel):
+            case .plaintextHTTP1_1(let http1Channel, _):
                 http1Channel.channel.close(promise: nil)
 
-            case .secureUpgrade(let secureUpgradeChannel):
+            case .secureUpgrade(let secureUpgradeChannel, _):
                 secureUpgradeChannel.channel.close(promise: nil)
             }
         }

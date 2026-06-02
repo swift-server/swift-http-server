@@ -157,44 +157,44 @@ extension NIOHTTPServer {
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
         sslContext: NIOSSLContext
-    ) async throws -> [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>] {
-        let bootstrap = ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+    ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
+        let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-            .serverChannelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(
-                        self.serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                    )
-                }
-            }
 
-        var serverChannels = [NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>]()
+        var serverChannels = [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)]()
         do {
             for bindTarget in bindTargets {
                 switch bindTarget.backing {
                 case .hostAndPort(let host, let port):
-                    let serverChannel =
-                        try await bootstrap.bind(host: host, port: port) { channel in
-                            self.setupSecureUpgradeConnectionChildChannel(
-                                channel: channel,
-                                supportedHTTPVersions: supportedHTTPVersions,
-                                sslContext: sslContext
+                    let serverQuiescingHelper = ServerQuiescingHelper(group: self.eventLoopGroup)
+
+                    let serverChannel = try await bootstrap.serverChannelInitializer { channel in
+                        channel.eventLoop.makeCompletedFuture {
+                            try channel.pipeline.syncOperations.addHandler(
+                                serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                             )
                         }
-                    serverChannels.append(serverChannel)
+                    }.bind(host: host, port: port) { channel in
+                        self.setupSecureUpgradeConnectionChildChannel(
+                            channel: channel,
+                            supportedHTTPVersions: supportedHTTPVersions,
+                            sslContext: sslContext
+                        )
+                    }
+                    serverChannels.append((serverChannel, serverQuiescingHelper))
                 }
             }
         } catch {
             // A later bind failed: close any channels we already bound to avoid leaking sockets.
             // We await the closes so the sockets are fully released by the time we throw, giving the
             // caller deterministic semantics: when `serve` throws, all cleanup is done.
-            for serverChannel in serverChannels {
+            for (serverChannel, _) in serverChannels {
                 try? await serverChannel.channel.close()
             }
             throw error
         }
 
-        try self.addressesBound(serverChannels.map { $0.channel.localAddress })
+        try self.addressesBound(serverChannels.map { (serverChannel, _) in serverChannel.channel.localAddress })
 
         return serverChannels
     }

@@ -15,6 +15,7 @@
 import AsyncStreaming
 import HTTPTypes
 import Logging
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTPTypes
 import NIOPosix
@@ -32,20 +33,16 @@ struct NIOHTTPServiceLifecycleTests {
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
 
-    let serverLogger = Logger(label: "Test Server")
-    let serviceGroupLogger = Logger(label: "Test ServiceGroup")
+    let serverLogger = Logger(label: "NIOHTTPServiceLifecycleTests")
+    let serviceGroupLogger = Logger(label: "NIOHTTPServiceLifecycleTests_ServiceGroup")
 
-    @Test("HTTP/1.1 active connection completes when graceful shutdown triggered", )
+    @Test(
+        "Active connection completes when graceful shutdown triggered",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
     @available(anyAppleOS 26.0, *)
-    func activeHTTP1ConnectionCanCompleteWhenGracefulShutdown() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
-        )
+    func activeConnectionCanCompleteWhenGracefullyShutdown(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         // This promise will be fulfilled when the server receives the first part of the body. Once this happens, we can
         // initiate the graceful shutdown and then send the remaining body. If graceful shutdown is respected, we should
@@ -85,7 +82,12 @@ struct NIOHTTPServiceLifecycleTests {
                     let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                        .connectToTestHTTP1Server(at: serverAddress)
+                        .connectToTestSecureUpgradeHTTPServer(
+                            at: serverAddress,
+                            trustRoots: serverChain.chain,
+                            applicationProtocol: httpVersion.alpnIdentifier
+                        )
+                        .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                     try await client.executeThenClose { inbound, outbound in
                         try await outbound.write(Self.reqHead)
@@ -124,17 +126,13 @@ struct NIOHTTPServiceLifecycleTests {
         }
     }
 
-    @Test("HTTP/1.1 active connection forcefully shutdown when server task cancelled")
+    @Test(
+        "Active connection forcefully shutdown when server task cancelled",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
     @available(anyAppleOS 26.0, *)
-    func activeHTTP1ConnectionForcefullyShutdownWhenServerTaskCancelled() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
-        )
+    func activeConnectionForcefullyShutdownWhenServerTaskCancelled(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         // This promise will be fulfilled when the server receives the first part of the request body. Once this
         // happens, we cancel the server task and test whether the in-flight request's connection was forcefully shut.
@@ -171,7 +169,12 @@ struct NIOHTTPServiceLifecycleTests {
                 let serverAddress = try await server.listeningAddresses.first!
 
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
+                    .connectToTestSecureUpgradeHTTPServer(
+                        at: serverAddress,
+                        trustRoots: serverChain.chain,
+                        applicationProtocol: httpVersion.alpnIdentifier
+                    )
+                    .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(Self.reqHead)
@@ -292,6 +295,160 @@ struct NIOHTTPServiceLifecycleTests {
 
                             connectionForcefullyShutdown()
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test(
+        "Active connections across different listeners can complete when graceful shutdown triggered",
+        arguments: [
+            (HTTPVersion.http1_1, HTTPVersion.http1_1),
+            (HTTPVersion.http1_1, HTTPVersion.http2),
+            (HTTPVersion.http2, HTTPVersion.http1_1),
+            (HTTPVersion.http2, HTTPVersion.http2),
+        ]
+    )
+    @available(anyAppleOS 26.0, *)
+    func activeConnectionsAcrossDifferentListenersCanCompleteWhenGracefullyShutdown(
+        firstClientHTTPVersion: HTTPVersion,
+        secondClientHTTPVersion: HTTPVersion
+    ) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(
+            bindTargets: [
+                // Configure two bind targets. We want to test whether graceful shutdown works independently on each
+                // bind target.
+                .hostAndPort(host: "127.0.0.1", port: 0),
+                .hostAndPort(host: "127.0.0.1", port: 0),
+            ],
+            logger: self.serverLogger
+        )
+
+        // The test needs both clients to have an active in-flight request before triggering graceful shutdown. To
+        // express this, we create two promises (one for each bind target), which will be fulfilled by the server's
+        // request handler once it has *started* processing the corresponding request.
+        let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
+        let firstTargetRequestStartedPromise = elg.any().makePromise(of: Void.self)
+        let secondTargetRequestStartedPromise = elg.any().makePromise(of: Void.self)
+
+        // The server handler needs to know which of the two promises to fulfill. Since the second client only sends
+        // its request after the server has started processing the first client's request, we set up a counter so that
+        // the server can know to fulfill `firstTargetRequestStartedPromise` on the first request and
+        // `secondTargetRequestStartedPromise` on the second request.
+        let requestNumber = NIOLockedValueBox(0)
+
+        let serverService = ClosureService {
+            try await server.serve { request, requestContext, requestReader, responseSender in
+                _ = try await requestReader.consumeAndConclude { bodyReader in
+                    var bodyReader = bodyReader
+                    try await bodyReader.read { _ in }
+
+                    let count = requestNumber.withLockedValue { n in
+                        n += 1
+                        return n
+                    }
+
+                    if count == 1 {
+                        firstTargetRequestStartedPromise.succeed()
+                    } else if count == 2 {
+                        secondTargetRequestStartedPromise.succeed()
+                    }
+
+                    var requestFinished = false
+                    while !requestFinished {
+                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
+                    }
+                }
+
+                let responseBodyWriter = try await responseSender.send(.init(status: .ok))
+                try await responseBodyWriter.produceAndConclude { writer in
+                    var writer = writer
+                    try await writer.write([1, 2].span)
+                    return .none
+                }
+            }
+        }
+
+        try await confirmation(expectedCount: 2) { responseReceived in
+            try await testGracefulShutdown { trigger in
+                try await withThrowingTaskGroup { group in
+                    let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
+                    group.addTask { try await serviceGroup.run() }
+
+                    let firstServerAddress = try await server.listeningAddresses[0]
+                    let secondServerAddress = try await server.listeningAddresses[1]
+
+                    let firstClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestSecureUpgradeHTTPServer(
+                            at: firstServerAddress,
+                            trustRoots: serverChain.chain,
+                            applicationProtocol: firstClientHTTPVersion.alpnIdentifier
+                        )
+                        .unwrapChannel(expectedHTTPVersion: firstClientHTTPVersion)
+
+                    try await firstClient.executeThenClose { firstInbound, firstOutbound in
+                        try await firstOutbound.write(Self.reqHead)
+                        try await firstOutbound.write(Self.reqBody)
+
+                        // Wait until the server has received the body part.
+                        try await firstTargetRequestStartedPromise.futureResult.get()
+
+                        let secondClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                            .connectToTestSecureUpgradeHTTPServer(
+                                at: secondServerAddress,
+                                trustRoots: serverChain.chain,
+                                applicationProtocol: secondClientHTTPVersion.alpnIdentifier
+                            )
+                            .unwrapChannel(expectedHTTPVersion: secondClientHTTPVersion)
+
+                        try await secondClient.executeThenClose { secondInbound, secondOutbound in
+                            try await secondOutbound.write(Self.reqHead)
+                            try await secondOutbound.write(Self.reqBody)
+
+                            // Wait until the server has received the body part.
+                            try await secondTargetRequestStartedPromise.futureResult.get()
+
+                            // Now start the shutdown.
+                            trigger.triggerGracefulShutdown()
+
+                            // The second client should be able to complete its request.
+                            try await secondOutbound.write(Self.reqBody)
+                            try await secondOutbound.write(Self.reqEnd)
+
+                            for try await response in secondInbound {
+                                switch response {
+                                case .head(let head):
+                                    #expect(head.status == .ok)
+                                case .body(let body):
+                                    #expect(body == .init([1, 2]))
+                                case .end(let trailers):
+                                    #expect(trailers == nil)
+                                }
+                            }
+
+                            responseReceived()
+                        }
+
+                        // And so should the first client.
+                        try await firstOutbound.write(Self.reqBody)
+                        try await firstOutbound.write(Self.reqEnd)
+
+                        for try await response in firstInbound {
+                            switch response {
+                            case .head(let head):
+                                #expect(head.status == .ok)
+                            case .body(let body):
+                                #expect(body == .init([1, 2]))
+                            case .end(let trailers):
+                                #expect(trailers == nil)
+                            }
+                        }
+
+                        responseReceived()
+
+                        // The server should now shut down. Wait for this.
+                        try await group.waitForAll()
                     }
                 }
             }
