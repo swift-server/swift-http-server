@@ -150,6 +150,18 @@ extension NIOHTTPServer {
                     metadata: ["error": "\(error)"]
                 )
             }
+
+            do {
+                try await connectionChannel.close()
+            } catch ChannelError.alreadyClosed {
+                // We swallow the error here because the connection channel may already have closed at this point, e.g.
+                // if the client sent a TCP FIN or a TLS CLOSE_NOTIFY that the event loop processed before we got here.
+            } catch {
+                self.logger.error(
+                    "Error thrown while closing the HTTP/2 connection channel",
+                    metadata: ["error": "\(error)"]
+                )
+            }
         }
     }
 

@@ -19,6 +19,7 @@ import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTPTypes
 import NIOPosix
+import NIOSSL
 import ServiceLifecycle
 import ServiceLifecycleTestKit
 import Testing
@@ -123,6 +124,94 @@ struct NIOHTTPServiceLifecycleTests {
                     }
                 }
             }
+        }
+    }
+
+    @Test(
+        "Server closes active connection upon forceful shutdown",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
+    @available(anyAppleOS 26.0, *)
+    func testServerClosesActiveConnectionOnForcefulShutdown(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
+
+        // This promise will be fulfilled when the server receives the first part of the request body. Once this
+        // happens, we cancel the server task and test whether the client's socket channel has closed.
+        let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
+        let firstChunkReadPromise = elg.any().makePromise(of: Void.self)
+
+        let serverService = ClosureService {
+            await #expect(throws: CancellationError.self) {
+                try await server.serve { request, requestContext, requestReader, responseSender in
+                    // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
+                    _ = try await requestReader.consumeAndConclude { bodyReader in
+                        var bodyReader = bodyReader
+
+                        let error = try await #require(throws: EitherError<Error, Never>.self) {
+                            try await bodyReader.read { _ in }
+
+                            firstChunkReadPromise.succeed()
+
+                            // The following call will block: the client will never send a request end part. This is
+                            // intentional because we want to keep the connection alive.
+                            try await bodyReader.read { _ in }
+                        }
+                        #expect(throws: CancellationError.self) { try error.unwrap() }
+                    }
+                }
+            }
+        }
+
+        try await withThrowingTaskGroup { group in
+            let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
+            group.addTask { try await serviceGroup.run() }
+
+            let serverAddress = try await server.listeningAddresses.first!
+
+            let tlsConfig = try TLSConfiguration.makeTestClientConfiguration(
+                testTrustRoots: serverChain.chain,
+                applicationProtocol: httpVersion.alpnIdentifier
+            )
+
+            let (clientConnectionChannel, alpnResultFuture) =
+                try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup).connect(
+                    to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
+                ) { socketChannel in
+                    socketChannel.configureTestClientSSLPipeline(tlsConfig: tlsConfig).flatMap {
+                        socketChannel.configureTestSecureUpgradeClientPipeline().map { connectionChannel in
+                            (socketChannel, connectionChannel)
+                        }
+                    }
+                }
+
+            let alpnResult = try await alpnResultFuture.get()
+            let clientRequestChannel = try await NegotiatedClientConnection(negotiationResult: alpnResult)
+                .unwrapChannel(expectedHTTPVersion: httpVersion)
+
+            try await clientRequestChannel.executeThenClose { inbound, outbound in
+                try await outbound.write(Self.reqHead)
+
+                // Write the first body part.
+                try await outbound.write(Self.reqBody)
+
+                // Wait until the server has received the first body part.
+                try await firstChunkReadPromise.futureResult.get()
+
+                // Cancel the server task.
+                group.cancelAll()
+                // Wait for the server to shut down.
+                try await group.waitForAll()
+
+                // Wait for the client channel to be fully closed.
+                try await clientRequestChannel.channel.closeFuture.get()
+
+                // We shouldn't be able to complete our request; the server should have shut down.
+                await #expect(throws: ChannelError.ioOnClosedChannel) {
+                    try await outbound.write(Self.reqBody)
+                }
+            }
+
+            try await clientConnectionChannel.closeFuture.get()
         }
     }
 
