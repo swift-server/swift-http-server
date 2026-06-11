@@ -151,6 +151,8 @@ extension NIOHTTPServer {
                 )
             }
 
+            // The `multiplexer.inbound` iteration exits when our task is cancelled, or when the HTTP/2 stream
+            // multiplexer finishes or throws. In any case, we are done with this connection here, so tear it down.
             do {
                 try await connectionChannel.close()
             } catch ChannelError.alreadyClosed {
