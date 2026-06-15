@@ -103,7 +103,7 @@ extension NIOHTTPServer {
                 nonisolated(unsafe) let iter = self.iterator.take()
                 self.state.wrapped.withLock { state in
                     state.finishedReading = true
-                    _ = state.iterator.swap(newValue: iter)
+                    _ = unsafe state.iterator.swap(newValue: iter)
                 }
                 trailerFields = trailer
             case .none:

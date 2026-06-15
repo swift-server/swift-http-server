@@ -16,6 +16,7 @@
 import PackageDescription
 
 let extraSettings: [SwiftSetting] = [
+    .strictMemorySafety(),
     .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
     .enableExperimentalFeature("LifetimeDependence"),
     .enableExperimentalFeature("Lifetimes"),
