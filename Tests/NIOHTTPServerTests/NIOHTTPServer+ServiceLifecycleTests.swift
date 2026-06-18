@@ -136,21 +136,18 @@ struct NIOHTTPServiceLifecycleTests {
         let serverService = ClosureService {
             await #expect(throws: CancellationError.self) {
                 try await server.serve { request, requestContext, requestReader, responseSender in
+                    var requestReader = requestReader
                     // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
-                    _ = try await requestReader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await requestReader.read { _, _ in }
 
-                        let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read { _ in }
+                        firstChunkReadPromise.succeed()
 
-                            firstChunkReadPromise.succeed()
-
-                            // The following call will block: the client will never send a request end part. This is
-                            // intentional because we want to keep the connection alive.
-                            try await bodyReader.read { _ in }
-                        }
-                        #expect(throws: CancellationError.self) { try error.unwrap() }
+                        // The following call will block: the client will never send a request end part. This is
+                        // intentional because we want to keep the connection alive.
+                        try await requestReader.read { _, _ in }
                     }
+                    #expect(throws: CancellationError.self) { try error.unwrap() }
                 }
             }
         }
