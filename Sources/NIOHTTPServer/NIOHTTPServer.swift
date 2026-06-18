@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPAPIs
-import HTTPTypes
+@_exported public import HTTPAPIs
 public import Logging
 import NIOCertificateReloading
 import NIOConcurrencyHelpers
@@ -34,7 +33,7 @@ import X509
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
-/// The `Server` class provides a high-level interface for creating HTTP servers with support for:
+/// `NIOHTTPServer` provides a high-level interface for creating HTTP servers with support for:
 /// - TLS/SSL encryption
 /// - Custom request handlers
 /// - Configurable binding targets
@@ -45,45 +44,26 @@ import X509
 /// ## Usage
 ///
 /// ```swift
-/// let configuration = NIOHTTPServerConfiguration(
-///     bindTarget: .hostAndPort(host: "localhost", port: 8080),
-///     tlsConfiguration: .insecure()
+/// let server = NIOHTTPServer(
+///     logger: logger,
+///     configuration: try .init(
+///         bindTarget: .hostAndPort(host: "localhost", port: 8080),
+///         supportedHTTPVersions: [.http1_1],
+///         transportSecurity: .plaintext
+///     )
 /// )
 ///
-/// try await Server.serve(
-///     logger: logger,
-///     configuration: configuration
-/// ) { request, bodyReader, sendResponse in
-///     // Read the entire request body
-///     let (bodyData, trailers) = try await bodyReader.consumeAndConclude { reader in
-///         var data = [UInt8]()
-///         var shouldContinue = true
-///         while shouldContinue {
-///             try await reader.read { span in
-///                 guard let span else {
-///                     shouldContinue = false
-///                     return
-///                 }
-///                 data.append(contentsOf: span)
-///             }
-///         }
-///         return data
-///     }
-///
-///     // Create and send response
-///     var response = HTTPResponse(status: .ok)
-///     response.headerFields[.contentType] = "text/plain"
-///     let responseWriter = try await sendResponse(response)
-///     try await responseWriter.produceAndConclude { writer in
-///         try await writer.write("Hello, World!".utf8CString.dropLast().span)
-///         return ((), nil)
-///     }
+/// try await server.serve { request, requestContext, reader, responseSender in
+///     var body = UniqueArray<UInt8>(copying: "Hello, World!".utf8)
+///     try await responseSender.sendAndFinish(
+///         HTTPResponse(status: .ok, headerFields: [.contentType: "text/plain"]),
+///         buffer: &body
+///     )
 /// }
 /// ```
 @available(anyAppleOS 26.0, *)
 public struct NIOHTTPServer: HTTPServer {
-    public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
-    public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
+    public struct RequestContext: HTTPServerCapability.RequestContext, Sendable {}
 
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
@@ -150,9 +130,15 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// try await server.serve(handler: MyHandler())
     /// ```
-    public func serve(
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+    public func serve<Handler: HTTPServerRequestHandler>(handler: Handler) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         // Ensure the listening address promise is always completed on the way out, regardless of whether
         // binding succeeded, the serve loop returned normally, or an error propagated.
         defer { self.finishListeningAddressPromise() }
@@ -194,10 +180,18 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
-    private func _serve(
+    private func _serve<Handler: HTTPServerRequestHandler>(
         serverChannels: [ServerChannel],
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for serverChannel in serverChannels {
                 group.addTask {
@@ -247,31 +241,31 @@ public struct NIOHTTPServer: HTTPServer {
     /// Shared core: invokes the request handler with the appropriate reader/writer state.
     /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
     /// or `nil` if the request could not be fully consumed.
-    func invokeHandler(
+    func invokeHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
         iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator? {
-        let readerState = HTTPRequestConcludingAsyncReader.ReaderState(iterator: iterator)
-        let writerState = HTTPResponseConcludingAsyncWriter.WriterState()
+        handler: Handler
+    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
+        let readerState = Reader.ReaderState(iterator: iterator)
+        let writerState = ResponseSender.WriterState()
 
         do {
             try await handler.handle(
                 request: request,
-                requestContext: HTTPRequestContext(),
-                requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
+                requestContext: RequestContext(),
+                reader: Reader(
                     readerState: readerState
                 ),
-                responseSender: HTTPResponseSender { response in
-                    try await outbound.write(.head(response))
-                    return HTTPResponseConcludingAsyncWriter(
-                        writer: outbound,
-                        writerState: writerState
-                    )
-                } sendInformational: { response in
-                    try await outbound.write(.head(response))
-                }
+                responseSender: ResponseSender(writer: outbound, writerState: writerState)
             )
         } catch {
             logger.error("Error thrown while handling request: \(error)")

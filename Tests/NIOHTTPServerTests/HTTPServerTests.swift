@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPTypes
+import BasicContainers
 import Logging
 import NIOHTTPServer
 import Testing
@@ -33,31 +33,22 @@ struct HTTPServerTests {
 
         try await withThrowingTaskGroup { group in
             group.addTask {
-                try await server.serve { request, context, requestBodyAndTrailers, responseSender in
-                    _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
-                    // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
-                    //            _ = try await requestBodyAndTrailers.collect(upTo: 100) { _ in }
+                try await server.serve { request, context, reader, responseSender in
+                    _ = try await reader.collect(upTo: 100) { _ in }
+                    // Uncommenting this would cause a "reader consumed more than once" error.
+                    //            _ = try await reader.collect(upTo: 100) { _ in }
 
-                    let responseConcludingWriter = try await responseSender.send(HTTPResponse(status: .ok))
+                    let responseWriter = try await responseSender.send(HTTPResponse(status: .ok))
                     // Uncommenting this would cause a "responseSender consumed more than once" error.
-                    //            let responseConcludingWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
+                    //            let responseWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
 
-                    // Uncommenting this would cause a "requestBodyAndTrailers consumed more than once" error.
-                    //            _ = try await requestBodyAndTrailers.consumeAndConclude { reader in
-                    //                var reader = reader
-                    //                try await reader.read { elem in }
-                    //            }
+                    var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                    try await responseWriter.finish(buffer: &buffer)
 
-                    try await responseConcludingWriter.produceAndConclude { writer in
-                        var writer = writer
-                        try await writer.write([1, 2].span)
-                        return nil
-                    }
-
-                    // Uncommenting this would cause a "responseConcludingWriter consumed more than once" error.
-                    //            try await responseConcludingWriter.writeAndConclude(
-                    //                element: [1, 2].span,
-                    //                finalElement: HTTPFields(dictionaryLiteral: (.acceptEncoding, "Encoding"))
+                    // Uncommenting this would cause a "responseWriter consumed more than once" error.
+                    //            try await responseWriter.finish(
+                    //                buffer: &buffer,
+                    //                finalElement: [.acceptEncoding: "Encoding"]
                     //            )
                 }
             }

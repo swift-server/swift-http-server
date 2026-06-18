@@ -16,6 +16,7 @@
 import PackageDescription
 
 let extraSettings: [SwiftSetting] = [
+    .strictMemorySafety(),
     .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
     .enableExperimentalFeature("LifetimeDependence"),
     .enableExperimentalFeature("Lifetimes"),
@@ -49,33 +50,25 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            revision: "d58fd6fa157e08bff44aa360ff83ebd424783392"
+            revision: "c12fdd4c48953a691b1ce52357101e844e5f0887"
         ),
-        .package(
-            url: "https://github.com/apple/swift-async-algorithms.git",
-            revision: "3bd2de010e30f8d41481e6c7a49a7e7222a878cf",
-            traits: ["UnstableAsyncStreaming"]
-        ),
-        .package(url: "https://github.com/apple/swift-http-types.git", from: "1.0.0"),
-        .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.0.0"),
-        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.16.0"),
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.4.1"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.1"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.13.2"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.36.0"),
-        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.30.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
+        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.34.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
-        .package(url: "https://github.com/apple/swift-configuration.git", from: "1.0.0"),
-        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.10.0"),
+        .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0"),
+        .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
     ],
     targets: [
         .executableTarget(
             name: "Example",
             dependencies: [
-                .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Tracing", package: "swift-distributed-tracing"),
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
                 "NIOHTTPServer",
             ],
             swiftSettings: extraSettings
@@ -83,9 +76,7 @@ let package = Package(
         .target(
             name: "NIOHTTPServer",
             dependencies: [
-                .product(name: "AsyncStreaming", package: "swift-async-algorithms"),
                 .product(name: "X509", package: "swift-certificates"),
-                .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),

@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
-import HTTPTypes
+import BasicContainers
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
@@ -53,24 +52,18 @@ struct NIOHTTPServiceLifecycleTests {
 
         let serverService = ClosureService {
             try await server.serve { request, requestContext, requestReader, responseSender in
-                _ = try await requestReader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    try await bodyReader.read { _ in }
+                var requestReader = requestReader
+                try await requestReader.read { _, _ in }
 
-                    firstChunkReadPromise.succeed()
+                firstChunkReadPromise.succeed()
 
-                    var requestFinished = false
-                    while !requestFinished {
-                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
-                    }
+                var requestFinished = false
+                while !requestFinished {
+                    try await requestReader.read { if $1 != nil { requestFinished = true } }
                 }
 
-                let responseBodyWriter = try await responseSender.send(.init(status: .ok))
-                try await responseBodyWriter.produceAndConclude { writer in
-                    var writer = writer
-                    try await writer.write([1, 2].span)
-                    return .none
-                }
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
             }
         }
 
@@ -231,21 +224,19 @@ struct NIOHTTPServiceLifecycleTests {
         let serverService = ClosureService {
             await #expect(throws: CancellationError.self) {
                 try await server.serve { request, requestContext, requestReader, responseSender in
+                    var requestReader = requestReader
                     // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
-                    _ = try await requestReader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
 
-                        let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read { _ in }
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await requestReader.read { _, _ in }
 
-                            firstChunkReadPromise.succeed()
+                        firstChunkReadPromise.succeed()
 
-                            // The following call will block: the client will never send a request end part. This is
-                            // intentional because we want to keep the connection alive.
-                            try await bodyReader.read { _ in }
-                        }
-                        #expect(throws: CancellationError.self) { try error.unwrap() }
+                        // The following call will block: the client will never send a request end part. This is
+                        // intentional because we want to keep the connection alive.
+                        try await requestReader.read { _, _ in }
                     }
+                    #expect(throws: CancellationError.self) { try error.unwrap() }
                 }
             }
         }
@@ -323,21 +314,19 @@ struct NIOHTTPServiceLifecycleTests {
 
         let serverService = ClosureService {
             try await server.serve { request, requestContext, requestReader, responseSender in
+                var requestReader = requestReader
                 // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
-                _ = try await requestReader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
 
-                    let error = try await #require(throws: EitherError<Error, Never>.self) {
-                        try await bodyReader.read { _ in }
+                let error = try await #require(throws: EitherError<Error, Never>.self) {
+                    try await requestReader.read { _, _ in }
 
-                        firstChunkReadPromise.succeed()
+                    firstChunkReadPromise.succeed()
 
-                        // The following call will block: the client will never send a request end part. This is
-                        // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
-                        try await bodyReader.read { _ in }
-                    }
-                    #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
+                    // The following call will block: the client will never send a request end part. This is
+                    // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
+                    try await requestReader.read { _, _ in }
                 }
+                #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
             }
         }
 
@@ -429,33 +418,27 @@ struct NIOHTTPServiceLifecycleTests {
 
         let serverService = ClosureService {
             try await server.serve { request, requestContext, requestReader, responseSender in
-                _ = try await requestReader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    try await bodyReader.read { _ in }
+                var requestReader = requestReader
+                try await requestReader.read { _, _ in }
 
-                    let count = requestNumber.withLockedValue { n in
-                        n += 1
-                        return n
-                    }
-
-                    if count == 1 {
-                        firstTargetRequestStartedPromise.succeed()
-                    } else if count == 2 {
-                        secondTargetRequestStartedPromise.succeed()
-                    }
-
-                    var requestFinished = false
-                    while !requestFinished {
-                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
-                    }
+                let count = requestNumber.withLockedValue { n in
+                    n += 1
+                    return n
                 }
 
-                let responseBodyWriter = try await responseSender.send(.init(status: .ok))
-                try await responseBodyWriter.produceAndConclude { writer in
-                    var writer = writer
-                    try await writer.write([1, 2].span)
-                    return .none
+                if count == 1 {
+                    firstTargetRequestStartedPromise.succeed()
+                } else if count == 2 {
+                    secondTargetRequestStartedPromise.succeed()
                 }
+
+                var requestFinished = false
+                while !requestFinished {
+                    try await requestReader.read { if $1 != nil { requestFinished = true } }
+                }
+
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
             }
         }
 

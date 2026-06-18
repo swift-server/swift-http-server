@@ -12,9 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
-import HTTPAPIs
-import HTTPTypes
+import BasicContainers
 import Logging
 import NIOCore
 import NIOEmbedded
@@ -80,22 +78,16 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
                 #expect(request == Self.makeRequest(method: .post, scheme: "http", for: .http1_1))
 
-                var buffer = ByteBuffer()
-                let (_, finalElement) = try await reader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    return try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                        buffer.writeBytes(body.span.bytes)
-                    }
+                let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
+                    var buffer = ByteBuffer()
+                    buffer.writeBytes(body.span.bytes)
+                    return buffer
                 }
                 #expect(buffer == Self.bodyData)
                 #expect(finalElement == Self.trailer)
 
-                let responseBodySender = try await responseWriter.send(.init(status: .ok))
-                try await responseBodySender.produceAndConclude { responseBodyWriter in
-                    var responseBodyWriter = responseBodyWriter
-                    try await responseBodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                    return Self.trailer
-                }
+                var responseBody = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                try await responseWriter.sendAndFinish(.init(status: .ok), buffer: &responseBody, trailer: Self.trailer)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -154,23 +146,21 @@ struct NIOHTTPServerTests {
                     let peerChain = try #require(try await NIOHTTPServer.connectionContext.peerCertificateChain)
                     #expect(Array(peerChain) == [clientChain.leaf])
 
-                    let (buffer, finalElement) = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
+                    let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) {
+                        body in
                         var buffer = ByteBuffer()
-                        _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                            buffer.writeBytes(body.span.bytes)
-                        }
+                        buffer.writeBytes(body.span.bytes)
                         return buffer
                     }
                     #expect(buffer == Self.bodyData)
                     #expect(finalElement == Self.trailer)
 
-                    let sender = try await responseWriter.send(.init(status: .ok))
-                    try await sender.produceAndConclude { bodyWriter in
-                        var bodyWriter = bodyWriter
-                        try await bodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                        return Self.trailer
-                    }
+                    var responseBody = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                    try await responseWriter.sendAndFinish(
+                        .init(status: .ok),
+                        buffer: &responseBody,
+                        trailer: Self.trailer
+                    )
                 },
                 body: { serverAddress in
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -211,15 +201,11 @@ struct NIOHTTPServerTests {
             try await Self.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseSender in
+                    var responseSender = responseSender
                     try await responseSender.sendInformational(.init(status: .continue))
                     try await responseSender.sendInformational(.init(status: .earlyHints))
-                    let writer = try await responseSender.send(.init(status: .ok))
-
-                    try await writer.produceAndConclude { bodyWriter in
-                        var bodyWriter = bodyWriter
-                        try await bodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                        return Self.trailer
-                    }
+                    var buffer = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                    try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: Self.trailer)
                 },
                 body: { serverAddress in
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -264,27 +250,24 @@ struct NIOHTTPServerTests {
             try await Self.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseSender in
+                    var reader = reader
                     #expect(request == Self.makeRequest(method: .post, for: httpVersion))
 
-                    _ = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
-
-                        // This should fail: the client has closed the stream without sending an end part.
-                        let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read { _ in }
-                        }
-
-                        switch httpVersion {
-                        case .http1_1:
-                            #expect(throws: HTTPParserError.invalidEOFState) { try error.unwrap() }
-
-                        case .http2:
-                            let h2Error = try #require(throws: NIOHTTP2Errors.StreamClosed.self) { try error.unwrap() }
-                            #expect(h2Error.errorCode == .cancel)
-                        }
-
-                        requestReadPromise.succeed()
+                    // This should fail: the client has closed the stream without sending an end part.
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await reader.read { _, _ in }
                     }
+
+                    switch httpVersion {
+                    case .http1_1:
+                        #expect(throws: HTTPParserError.invalidEOFState) { try error.unwrap() }
+
+                    case .http2:
+                        let h2Error = try #require(throws: NIOHTTP2Errors.StreamClosed.self) { try error.unwrap() }
+                        #expect(h2Error.errorCode == .cancel)
+                    }
+
+                    requestReadPromise.succeed()
                 },
                 body: { serverAddress in
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -320,28 +303,22 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, requestReader, responseSender in
                 #expect(request == Self.makeRequest(method: .post, for: httpVersion))
 
-                var maybeReader = Optional(requestReader)
+                var responseBodyWriter = try await responseSender.send(HTTPResponse(status: .ok))
 
-                try await responseSender.send(HTTPResponse(status: .ok)).produceAndConclude { responseBodyWriter in
-                    var responseBodyWriter = responseBodyWriter
+                var count = 1
+                let finalElement = try await requestReader.forEachBuffer { buffer in
+                    if buffer.isEmpty { return }
 
-                    let reader = maybeReader.take()!
+                    var chunk = ByteBuffer()
+                    chunk.writeBytes(buffer.span.bytes)
+                    #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
+                    count += 1
 
-                    let (_, finalElement) = try await reader.consumeAndConclude { bodyAsyncReader in
-                        var count = 1
-                        try await bodyAsyncReader.forEachBuffer { buffer in
-                            var chunk = ByteBuffer()
-                            chunk.writeBytes(buffer.span.bytes)
-                            #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
-                            count += 1
-
-                            try await responseBodyWriter.write(buffer.span)
-                        }
-                    }
-                    #expect(finalElement == Self.trailer)
-
-                    return Self.trailer
+                    try await responseBodyWriter.write(buffer: &buffer)
                 }
+                #expect(finalElement == Self.trailer)
+
+                try await responseBodyWriter.finish(trailer: Self.trailer)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -959,8 +936,9 @@ extension NIOHTTPServerTests {
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
-            NIOHTTPServer.RequestConcludingReader,
-            NIOHTTPServer.ResponseConcludingWriter
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
         >,
         body: (NIOHTTPServer.SocketAddress) async throws -> Void
     ) async throws {
@@ -977,8 +955,9 @@ extension NIOHTTPServerTests {
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
-            NIOHTTPServer.RequestConcludingReader,
-            NIOHTTPServer.ResponseConcludingWriter
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
         >,
         body: ([NIOHTTPServer.SocketAddress]) async throws -> Void
     ) async throws {
@@ -999,23 +978,13 @@ extension NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     static func echoResponse(
         readUpTo limit: Int,
-        reader: consuming HTTPRequestConcludingAsyncReader,
-        sender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+        reader: consuming NIOHTTPServer.Reader,
+        sender: consuming NIOHTTPServer.ResponseSender
     ) async throws {
-        let (requestBody, trailers) = try await reader.consumeAndConclude { bodyReader in
-            var bodyReader = bodyReader
-            return try await bodyReader.collect(upTo: limit) { inputSpan in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(inputSpan.span.bytes)
-                return buffer
-            }
+        var buffer = UniqueArray<UInt8>()
+        let (_, trailer) = try await reader.collect(upTo: limit) { inputSpan in
+            buffer.append(copying: inputSpan)
         }
-
-        let writer = try await sender.send(.init(status: .ok))
-        try await writer.produceAndConclude { bodyWriter in
-            var bodyWriter = bodyWriter
-            try await bodyWriter.write(requestBody.readableBytesUInt8Span)
-            return trailers
-        }
+        try await sender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: trailer)
     }
 }

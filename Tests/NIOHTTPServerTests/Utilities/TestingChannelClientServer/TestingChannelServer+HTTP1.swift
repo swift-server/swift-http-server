@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
 import Logging
 import NIOCore
 import NIOEmbedded
@@ -41,7 +40,11 @@ struct TestingChannelHTTP1Server {
     /// provides `Self` to the `body` closure.
     static func serve(
         logger: Logger,
-        handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
+        handler: some HTTPServerRequestHandler<
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
+        >,
         body: (Self) async throws -> Void
     ) async throws {
         let server = NIOHTTPServer(

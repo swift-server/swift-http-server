@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
-import HTTPTypes
+import BasicContainers
 import Logging
 import NIOCore
 import NIOHTTPTypes
@@ -115,18 +114,15 @@ struct HTTPKeepAliveHandlerTests {
         try await NIOHTTPServerTests.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
+                var reader = reader
                 // Read just one byte of the body to confirm we got past the head, then
                 // write a body-less response (head + end only). Because the head is
                 // still buffered by the keep-alive handler when `.end` is written, the
                 // handler amends the head with `Connection: close` before flushing.
-                let _ = try await reader.consumeAndConclude { partsReader in
-                    var partsReader = partsReader
-                    try await partsReader.read { _ in }
-                }
-                let writer = try await sender.send(
+                try await reader.read { _, _ in }
+                try await sender.sendAndFinish(
                     .init(status: .ok, headerFields: [.contentLength: "0"])
                 )
-                try await writer.writeAndConclude("".utf8.span, finalElement: nil)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -196,6 +192,7 @@ struct HTTPKeepAliveHandlerTests {
         try await NIOHTTPServerTests.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { request, _, reader, sender in
+                var sender = sender
                 // Only the first request exercises informational semantics; the
                 // pipelined second request (path "/second") just verifies keep-alive.
                 if request.path == "/" {
@@ -203,16 +200,14 @@ struct HTTPKeepAliveHandlerTests {
                 }
 
                 // Read the full request body (until .end).
-                let _ = try await reader.consumeAndConclude { partsReader in
-                    var partsReader = partsReader
-                    try await partsReader.collect(upTo: 1024) { _ in }
-                }
+                let _ = try await reader.collect(upTo: 1024) { _ in }
 
                 // Write the final response.
-                let writer = try await sender.send(
-                    .init(status: .ok, headerFields: [.contentLength: "5"])
+                var buffer = UniqueArray(copying: "hello".utf8)
+                try await sender.sendAndFinish(
+                    .init(status: .ok, headerFields: [.contentLength: "5"]),
+                    buffer: &buffer
                 )
-                try await writer.writeAndConclude("hello".utf8.span, finalElement: nil)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -311,18 +306,8 @@ struct HTTPKeepAliveHandlerTests {
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
                 // Echo request body parts back as response body parts, concurrently
                 // with reading from the request body.
-                var maybeReader = Optional(reader)
                 let writer = try await sender.send(.init(status: .ok))
-                try await writer.produceAndConclude { responseBodyWriter in
-                    var responseBodyWriter = responseBodyWriter
-                    let reader = maybeReader.take()!
-                    let _ = try await reader.consumeAndConclude { bodyReader in
-                        try await bodyReader.forEachBuffer { buffer in
-                            try await responseBodyWriter.write(buffer.span)
-                        }
-                    }
-                    return nil
-                }
+                try await reader.pipe(into: writer)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -422,11 +407,9 @@ struct HTTPKeepAliveHandlerTests {
                 _ = await canFinishIterator.next()
 
                 // Drain the request body + end and then write the response body + end.
-                let _ = try await reader.consumeAndConclude { partsReader in
-                    var partsReader = partsReader
-                    try await partsReader.collect(upTo: 1024) { _ in }
-                }
-                try await writer.writeAndConclude("hello".utf8.span, finalElement: nil)
+                _ = try await reader.collect(upTo: 1024) { _ in }
+                var buffer = UniqueArray(copying: "hello".utf8)
+                try await writer.finish(buffer: &buffer)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -518,14 +501,11 @@ struct HTTPKeepAliveHandlerTests {
         try await NIOHTTPServerTests.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
-                let _ = try await reader.consumeAndConclude { partsReader in
-                    var partsReader = partsReader
-                    try await partsReader.read { _ in }
-                }
-                let writer = try await sender.send(
+                var reader = reader
+                try await reader.read { _, _ in }
+                try await sender.sendAndFinish(
                     .init(status: .ok, headerFields: [.contentLength: "0"])
                 )
-                try await writer.writeAndConclude("".utf8.span, finalElement: nil)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)

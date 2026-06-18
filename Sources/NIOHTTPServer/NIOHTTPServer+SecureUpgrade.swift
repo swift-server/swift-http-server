@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
 import Logging
 import NIOCertificateReloading
 import NIOCore
@@ -46,10 +45,18 @@ extension NIOHTTPServer {
     ///   - handler: The request handler.
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
-    func serveSecureUpgrade(
+    func serveSecureUpgrade<Handler: HTTPServerRequestHandler>(
         serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         try await serverChannel.executeThenClose { inbound in
             // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
             // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
@@ -103,10 +110,18 @@ extension NIOHTTPServer {
     /// - Parameters:
     ///   - requestChannel: The HTTP/1.1 request channel.
     ///   - handler: The request handler.
-    private func serveHTTP1Connection(
+    private func serveHTTP1Connection<Handler: HTTPServerRequestHandler>(
         requestChannel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async {
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
 
         await Self.$connectionContext.withValue(ConnectionContext(chainFuture)) {
@@ -125,11 +140,19 @@ extension NIOHTTPServer {
     ///   - connectionChannel: The underlying NIO channel for the HTTP/2 connection.
     ///   - multiplexer: The HTTP/2 stream multiplexer.
     ///   - handler: The request handler.
-    private func serveHTTP2Connection(
+    private func serveHTTP2Connection<Handler: HTTPServerRequestHandler>(
         connectionChannel: any Channel,
         multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async {
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         await withDiscardingTaskGroup { streamGroup in
             do {
                 let chainFuture = connectionChannel.nioSSL_peerValidatedCertificateChain()
@@ -317,10 +340,18 @@ extension NIOHTTPServer {
     }
 
     /// Handles an HTTP/2 stream channel, which carries exactly one request per stream.
-    func handleHTTP2StreamChannel(
+    func handleHTTP2StreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async {
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         do {
             try await channel
                 .executeThenClose { inbound, outbound in

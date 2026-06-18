@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
+import BasicContainers
 import Logging
 import NIOSSL
 import Testing
@@ -27,13 +27,8 @@ struct NIOHTTPServerEndToEndTests {
         try await TestingChannelHTTP1Server.serve(
             logger: Logger(label: "NIOHTTPServerEndToEndTests"),
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
-                let sender = try await resSender.send(.init(status: .ok))
-
-                try await sender.produceAndConclude { writer in
-                    var writer = writer
-                    try await writer.write([1, 2].span)
-                    return [.serverTiming: "test"]
-                }
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await resSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: [.serverTiming: "test"])
             }
         ) { server in
             try await server.withConnectedClient { connectionChannel in
@@ -88,13 +83,8 @@ struct NIOHTTPServerEndToEndTests {
             ),
             supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
-                let sender = try await resSender.send(.init(status: .ok))
-
-                try await sender.produceAndConclude { writer in
-                    var writer = writer
-                    try await writer.write([1, 2].span)
-                    return [.serverTiming: "test"]
-                }
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await resSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: [.serverTiming: "test"])
             }
         ) { server in
             try await server.withConnectedClient(clientTLSConfig: clientTLSConfig) { negotiatedConnectionChannel in

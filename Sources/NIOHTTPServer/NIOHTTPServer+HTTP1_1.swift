@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
 import Logging
 import NIOCore
 import NIOExtras
@@ -33,10 +32,18 @@ extension NIOHTTPServer {
     ///   - handler: The request handler.
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
-    func serveInsecureHTTP1_1(
+    func serveInsecureHTTP1_1<Handler: HTTPServerRequestHandler>(
         serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         try await serverChannel.executeThenClose { inbound in
             // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
             // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
@@ -133,10 +140,18 @@ extension NIOHTTPServer {
 
     /// Handles an HTTP/1.1 connection channel, which may carry multiple serial requests on the
     /// same connection (keep-alive).
-    func handleHTTP1RequestChannel(
+    func handleHTTP1RequestChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async {
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         do {
             try await channel.executeThenClose { inbound, outbound in
                 var iterator = inbound.makeAsyncIterator()
