@@ -23,7 +23,7 @@ import Testing
 @Suite("ConnectionIdleTimeoutHandler")
 struct ConnectionIdleTimeoutHandlerTests {
 
-    @Test("Connection closed after idle timeout")
+    @Test("Connection closed after idle timeout with no request")
     func closedAfterIdleTimeout() throws {
         let channel = EmbeddedChannel()
         let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
@@ -31,52 +31,90 @@ struct ConnectionIdleTimeoutHandlerTests {
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Advance past the timeout with no activity
+        // Advance past the timeout with no request in flight
         channel.embeddedEventLoop.advanceTime(by: .seconds(6))
 
         #expect(!channel.isActive)
     }
 
-    @Test("Read resets idle timeout")
-    func readResetsTimeout() throws {
+    @Test("Idle timer is cancelled while a request is in flight")
+    func idleCancelledWhileRequestInFlight() throws {
         let channel = EmbeddedChannel()
         let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Advance partway, then trigger a read
-        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
-        try channel.writeInbound(ByteBuffer(bytes: [1, 2, 3]))
+        // Send a request head before the idle timeout would fire.
+        let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
 
-        // Advance past the original timeout but within the reset timeout
-        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        // Advance well past the original idle window. Idle should not fire because a request is
+        // in flight (response not yet written).
+        channel.embeddedEventLoop.advanceTime(by: .seconds(60))
+
         #expect(channel.isActive)
+    }
 
-        // Now advance past the reset timeout
-        channel.embeddedEventLoop.advanceTime(by: .seconds(2))
+    @Test("Body parts do not reset idle (because idle is paused)")
+    func bodyPartsDoNotMatter() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeInbound(HTTPRequestPart.body(ByteBuffer(bytes: [1, 2, 3])))
+
+        // Idle is paused while a request is in flight; it doesn't matter that we got body bytes.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(10))
+        #expect(channel.isActive)
+    }
+
+    @Test("Idle timer is rearmed after response end (between requests)")
+    func idleRearmedAfterResponseEnd() throws {
+        let channel = EmbeddedChannel()
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // Process a request fully.
+        let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
+
+        // No new request — advance past the idle window. Connection should close.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
         #expect(!channel.isActive)
     }
 
-    @Test("Write resets idle timeout")
-    func writeResetsTimeout() throws {
+    @Test("Idle timer is cancelled when next request begins on a keep-alive connection")
+    func idleCancelledOnNextRequest() throws {
         let channel = EmbeddedChannel()
         let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
         try channel.pipeline.syncOperations.addHandler(handler)
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // Advance partway, then trigger a write
-        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
-        try channel.writeOutbound(ByteBuffer(bytes: [1, 2, 3]))
+        // First request/response cycle.
+        let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
 
-        // Advance past the original timeout but within the reset timeout
+        // Wait partway, then start a second request before idle fires.
         channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        try channel.writeInbound(HTTPRequestPart.head(head))
+
+        // Advance well past — idle should be paused again.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(60))
         #expect(channel.isActive)
-
-        // Now advance past the reset timeout
-        channel.embeddedEventLoop.advanceTime(by: .seconds(2))
-        #expect(!channel.isActive)
     }
 
     @Test("Cleanup on handler removal")
@@ -207,7 +245,14 @@ struct RequestTimeoutHandlerTests {
         channel.embeddedEventLoop.advanceTime(by: .seconds(8))
         try channel.writeInbound(HTTPRequestPart.end(nil))
 
-        channel.embeddedEventLoop.advanceTime(by: .seconds(20))
+        // Right after `.end`, the header timeout is re-armed for the next request. Send a fresh
+        // head before that timer fires so the connection stays open.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(3))
+        try channel.writeInbound(HTTPRequestPart.head(head))
+
+        // Body timer is now ticking on the second request — finish within the body timeout.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(5))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
 
         #expect(channel.isActive)
     }
@@ -237,6 +282,25 @@ struct RequestTimeoutHandlerTests {
         try channel.writeInbound(HTTPRequestPart.head(head))
 
         channel.embeddedEventLoop.advanceTime(by: .seconds(11))
+
+        #expect(!channel.isActive)
+    }
+
+    @Test("Header timeout is re-armed after end so subsequent requests are protected")
+    func headerTimeoutRearmedAfterEnd() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: nil)
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // First request completes successfully within the header timeout window.
+        let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+
+        // Now no second request arrives within the header timeout — connection should be closed.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
 
         #expect(!channel.isActive)
     }

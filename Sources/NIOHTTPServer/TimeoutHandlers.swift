@@ -15,19 +15,22 @@
 import NIOCore
 import NIOHTTPTypes
 
-/// A channel handler that closes the connection after a period of inactivity.
+/// A channel handler that closes an HTTP/1.1 connection after a period in which no request is in
+/// flight.
 ///
-/// The timeout is scheduled when the channel becomes active and is rescheduled
-/// whenever a read or write occurs. If the timeout fires without any activity,
-/// the connection is closed.
+/// The timer runs only between requests: it is scheduled when the channel becomes active and
+/// after each response `.end` is written. It is cancelled when an inbound request `.head` is
+/// observed. While a request is being processed, request-level timeouts (see
+/// ``RequestTimeoutHandler``) are responsible for protecting the server.
 ///
-/// This replaces the combination of NIO's `IdleStateHandler` and a separate
-/// handler to react to idle events.
+/// This handler is used on the per-connection channel for HTTP/1.1 only. For HTTP/2, idle
+/// behaviour is delegated to `NIOHTTP2ServerConnectionManagementHandler`'s `maxIdleTime`, which
+/// already understands stream lifecycle.
 final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler {
-    typealias InboundIn = NIOAny
-    typealias InboundOut = NIOAny
-    typealias OutboundIn = NIOAny
-    typealias OutboundOut = NIOAny
+    typealias InboundIn = HTTPRequestPart
+    typealias InboundOut = HTTPRequestPart
+    typealias OutboundIn = HTTPResponsePart
+    typealias OutboundOut = HTTPResponsePart
 
     private let timeout: TimeAmount
     private var scheduledTimeout: Scheduled<Void>?
@@ -37,18 +40,28 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
     }
 
     func channelActive(context: ChannelHandlerContext) {
+        // Connection just opened, no request yet — start the idle timer.
         self.scheduleTimeout(context: context)
         context.fireChannelActive()
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        self.scheduleTimeout(context: context)
+        let part = self.unwrapInboundIn(data)
+        if case .head = part {
+            // A request just started; pause idle until the response is fully written.
+            self.scheduledTimeout?.cancel()
+            self.scheduledTimeout = nil
+        }
         context.fireChannelRead(data)
     }
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-        self.scheduleTimeout(context: context)
+        let part = self.unwrapOutboundIn(data)
         context.write(data, promise: promise)
+        if case .end = part {
+            // The response is complete; the connection is now between requests, so re-arm idle.
+            self.scheduleTimeout(context: context)
+        }
     }
 
     func handlerRemoved(context: ChannelHandlerContext) {
@@ -66,12 +79,14 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 
 /// A channel handler that enforces timeouts on receiving request headers and body.
 ///
-/// This combines header and body read timeouts into a single handler with a
-/// state machine:
+/// State machine:
 /// - On channel active, a header timeout is scheduled (if configured).
-/// - When `.head` is received, the header timeout is cancelled and a body
-///   timeout is scheduled (if configured).
-/// - When `.end` is received, the body timeout is cancelled.
+/// - When `.head` is received, the header timeout is cancelled and a body timeout is scheduled
+///   (if configured).
+/// - When `.end` is received, the body timeout is cancelled and the header timeout is rescheduled
+///   so that the next request on a keep-alive connection is also protected. (For HTTP/2 streams
+///   this is a no-op in practice: each stream sees only one request and is closed shortly after
+///   `.end`.)
 ///
 /// If either timeout fires, the connection is closed.
 final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandler {
@@ -107,6 +122,10 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
         case .end:
             self.scheduledTimeout?.cancel()
             self.scheduledTimeout = nil
+            // Re-arm the header timer so the next request on this connection is also protected.
+            if let readHeaderTimeout {
+                self.scheduleTimeout(readHeaderTimeout, context: context)
+            }
         }
         context.fireChannelRead(data)
     }

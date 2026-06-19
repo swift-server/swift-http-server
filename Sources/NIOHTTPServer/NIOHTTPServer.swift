@@ -329,15 +329,15 @@ public struct NIOHTTPServer: HTTPServer {
 extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
-    /// Only handlers for non-nil timeouts are installed. This is called for both
-    /// HTTP/1.1 per-connection channels and HTTP/2 per-stream channels.
+    /// Only handlers for non-nil timeouts are installed. Called for HTTP/1.1 connection channels.
     func addTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         try self.addIdleTimeoutHandlers(timeouts)
         try self.addReadTimeoutHandlers(timeouts)
     }
 
-    /// Adds only idle timeout handlers to the channel. Used for HTTP/2 connection-level channels
-    /// where read header/body timeouts are handled per-stream.
+    /// Adds the connection idle timeout handler to the channel. Used by HTTP/1.1 connection
+    /// channels. (HTTP/2 delegates idle handling to `NIOHTTP2ServerConnectionManagementHandler`'s
+    /// `maxIdleTime`, which is stream-aware.)
     func addIdleTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         if let idle = timeouts.idle {
             try self.addHandler(
@@ -346,8 +346,8 @@ extension ChannelPipeline.SynchronousOperations {
         }
     }
 
-    /// Adds only read header and body timeout handlers to the channel. Used for HTTP/2 per-stream
-    /// channels where idle timeout is handled at the connection level.
+    /// Adds only read header and body timeout handlers to the channel. Used for HTTP/1.1
+    /// connection channels and HTTP/2 per-stream channels.
     func addReadTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         let readHeader = timeouts.readHeader.map { TimeAmount($0) }
         let readBody = timeouts.readBody.map { TimeAmount($0) }

@@ -236,8 +236,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// slow or idle connections. Individual timeouts can be disabled by setting
     /// them to `nil`.
     public struct ConnectionTimeouts: Sendable {
-        /// Maximum time an established connection can remain idle (no data read or written)
-        /// before being closed. `nil` means no idle timeout.
+        /// Maximum time the connection may sit with no request in flight before being closed.
+        ///
+        /// On HTTP/1.1, the timer runs between requests on a keep-alive connection: it starts
+        /// when the connection becomes active and is rescheduled after each response `.end` is
+        /// written. The timer is cancelled when an inbound request `.head` is observed.
+        ///
+        /// On HTTP/2, this is delegated to `NIOHTTP2ServerConnectionManagementHandler`'s
+        /// `maxIdleTime`, which fires when no streams have been open for the configured duration
+        /// and triggers a graceful shutdown.
+        ///
+        /// `nil` means no idle timeout.
         public var idle: Duration?
 
         /// Maximum time allowed to receive the complete request headers

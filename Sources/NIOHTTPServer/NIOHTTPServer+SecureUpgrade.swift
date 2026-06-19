@@ -215,16 +215,10 @@ extension NIOHTTPServer {
         )
     > {
         channel.eventLoop.makeCompletedFuture {
-            // Add idle timeout at the connection level for HTTP/2
-            try channel
-                .pipeline
-                .syncOperations
-                .addIdleTimeoutHandlers(self.configuration.connectionTimeouts)
-
             return try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
                 mode: .server,
                 connectionManagerConfiguration: .init(
-                    maxIdleTime: nil,
+                    maxIdleTime: self.configuration.connectionTimeouts.idle.map { TimeAmount($0) },
                     maxAge: nil,
                     maxGraceTime: configuration.gracefulShutdown.maximumGracefulShutdownDuration
                         .map { TimeAmount($0) },
