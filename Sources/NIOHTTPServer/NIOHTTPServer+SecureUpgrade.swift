@@ -252,7 +252,7 @@ extension NIOHTTPServer {
         )
     > {
         channel.eventLoop.makeCompletedFuture {
-            return try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
+            try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
                 mode: .server,
                 connectionManagerConfiguration: .init(
                     maxIdleTime: self.configuration.connectionTimeouts.idle.map { TimeAmount($0) },
