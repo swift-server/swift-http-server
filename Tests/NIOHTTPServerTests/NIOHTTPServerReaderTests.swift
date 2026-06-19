@@ -12,9 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
 import BasicContainers
-import HTTPTypes
 import NIOCore
 import NIOHTTP1
 import NIOHTTPTypes
@@ -24,7 +22,7 @@ import Testing
 @testable import NIOHTTPServer
 
 @Suite
-struct HTTPRequestConcludingAsyncReaderTests {
+struct NIOHTTPServerReaderTests {
     @Test("Head request not allowed")
     @available(anyAppleOS 26.0, *)
     func testWriteHeadRequestPartFatalError() async throws {
@@ -36,14 +34,11 @@ struct HTTPRequestConcludingAsyncReaderTests {
             source.yield(.head(.init(method: .get, scheme: "http", authority: "", path: "")))
             source.finish()
 
-            let requestReader = HTTPRequestConcludingAsyncReader(
+            var requestReader = NIOHTTPServer.Reader(
                 readerState: .init(iterator: stream.makeAsyncIterator())
             )
 
-            _ = try await requestReader.consumeAndConclude { bodyReader in
-                var bodyReader = bodyReader
-                try await bodyReader.read { _ in }
-            }
+            try await requestReader.read { _, _ in }
         }
     }
 
@@ -57,17 +52,13 @@ struct HTTPRequestConcludingAsyncReaderTests {
             source.yield(.body(.init()))
             source.finish()
 
-            let requestReader = HTTPRequestConcludingAsyncReader(
+            var requestReader = NIOHTTPServer.Reader(
                 readerState: .init(iterator: stream.makeAsyncIterator())
             )
 
-            _ = try await requestReader.consumeAndConclude { bodyReader in
-                var bodyReader = bodyReader
-
-                try await bodyReader.read { _ in }
-                // The stream has finished without an end part. Calling `read` now should result in a fatal error.
-                try await bodyReader.read { _ in }
-            }
+            try await requestReader.read { _, _ in }
+            // The stream has finished without an end part. Calling `read` now should result in a fatal error.
+            try await requestReader.read { _, _ in }
         }
     }
 
@@ -83,29 +74,19 @@ struct HTTPRequestConcludingAsyncReaderTests {
     func testRequestWithConcludingElement(body: ByteBuffer, trailers: HTTPFields) async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
-        // First write the request
         source.yield(.body(body))
         source.yield(.end(trailers))
         source.finish()
 
-        // Then start reading the request
-        let requestReader = HTTPRequestConcludingAsyncReader(readerState: .init(iterator: stream.makeAsyncIterator()))
-        let (requestBody, finalElement) = try await requestReader.consumeAndConclude { bodyReader in
-            var bodyReader = bodyReader
+        var requestReader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
+        var requestBody = ByteBuffer()
 
-            var requestBody = ByteBuffer()
-            // Read the body chunk
-            try await bodyReader.read { buffer in
-                _ = requestBody.writeBytes(buffer.span.bytes)
-            }
+        _ = try await requestReader.read { buffer, _ in
+            _ = requestBody.writeBytes(buffer.span.bytes)
+        }
 
-            // Now read the trailer. We should get back an empty element here, but the trailer should be available in
-            // the tuple returned by `consumeAndConclude`
-            try await bodyReader.read { element in
-                #expect(element.count == 0)
-            }
-
-            return requestBody
+        let finalElement = try await requestReader.read { _, finalElement in
+            finalElement
         }
 
         #expect(requestBody == body)
@@ -137,19 +118,19 @@ struct HTTPRequestConcludingAsyncReaderTests {
             }
 
             group.addTask {
-                let requestReader = HTTPRequestConcludingAsyncReader(
+                let requestReader = NIOHTTPServer.Reader(
                     readerState: .init(iterator: stream.makeAsyncIterator())
                 )
-                let (_, finalElement) = try await requestReader.consumeAndConclude { bodyReader in
-                    // Read all body chunks
-                    var chunksProcessed = 0
-                    try await bodyReader.forEachBuffer { buffer in
-                        var chunk = ByteBuffer()
-                        chunk.writeBytes(buffer.span.bytes)
-                        #expect(bodyChunks[chunksProcessed] == chunk)
+                // Read all body chunks
+                var chunksProcessed = 0
+                let finalElement = try await requestReader.forEachBuffer { buffer in
+                    if buffer.isEmpty { return }
 
-                        chunksProcessed += 1
-                    }
+                    var chunk = ByteBuffer()
+                    chunk.writeBytes(buffer.span.bytes)
+                    #expect(bodyChunks[chunksProcessed] == chunk)
+
+                    chunksProcessed += 1
                 }
 
                 #expect(finalElement == trailers)
@@ -169,22 +150,18 @@ struct HTTPRequestConcludingAsyncReaderTests {
         source.yield(.end([.cookie: "test"]))
         source.finish()
 
-        let requestReader = HTTPRequestConcludingAsyncReader(
+        var requestReader = NIOHTTPServer.Reader(
             readerState: .init(iterator: stream.makeAsyncIterator())
         )
 
-        _ = await requestReader.consumeAndConclude { bodyReader in
-            var bodyReader = bodyReader
-
-            // Check that the read error is propagated
-            await #expect(throws: TestError.errorWhileReading) {
-                do {
-                    try await bodyReader.read { (element) throws(TestError) in
-                        throw TestError.errorWhileReading
-                    }
-                } catch let eitherError as EitherError<Error, TestError> {
-                    try eitherError.unwrap()
+        // Check that the read error is propagated
+        await #expect(throws: TestError.errorWhileReading) {
+            do {
+                try await requestReader.read { _, _ throws(TestError) in
+                    throw TestError.errorWhileReading
                 }
+            } catch let eitherError as EitherError<Error, TestError> {
+                try eitherError.unwrap()
             }
         }
     }
@@ -198,25 +175,21 @@ struct HTTPRequestConcludingAsyncReaderTests {
         source.yield(.body(.init(repeating: 5, count: 10)))
         source.finish()
 
-        let requestReader = HTTPRequestConcludingAsyncReader(
-            readerState: .init(iterator: stream.makeAsyncIterator())
-        )
+        // There are more bytes available than our limit.
+        await #expect(throws: AsyncReaderLeftOverElementsError.self) {
+            let requestReader = NIOHTTPServer.Reader(
+                readerState: .init(iterator: stream.makeAsyncIterator())
+            )
 
-        _ = await requestReader.consumeAndConclude { requestBodyReader in
-            var requestBodyReader = requestBodyReader
-
-            // There are more bytes available than our limit.
-            await #expect(throws: AsyncReaderLeftOverElementsError.self) {
+            do {
+                _ = try await requestReader.collect(upTo: 9) { _ in }
+            } catch let eitherEitherError
+                as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never>
+            {
                 do {
-                    try await requestBodyReader.collect(upTo: 9) { _ in }
-                } catch let eitherEitherError
-                    as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never>
-                {
-                    do {
-                        try eitherEitherError.unwrap()
-                    } catch let eitherError as EitherError<Error, AsyncReaderLeftOverElementsError> {
-                        try eitherError.unwrap()
-                    }
+                    try eitherEitherError.unwrap()
+                } catch let eitherError as EitherError<Error, AsyncReaderLeftOverElementsError> {
+                    try eitherError.unwrap()
                 }
             }
         }

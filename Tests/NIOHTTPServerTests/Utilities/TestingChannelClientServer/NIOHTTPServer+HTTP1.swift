@@ -16,17 +16,24 @@ import NIOCore
 import NIOEmbedded
 import NIOHTTPTypes
 
-@testable import HTTPAPIs
 @testable import NIOHTTPServer
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     /// Starts serving plaintext HTTP/1.1 using the provided testing channel instead of using `ServerBootstrap` as
     /// `NIOHTTPServer` normally does.
-    func serveInsecureHTTP1_1WithTestChannel(
+    func serveInsecureHTTP1_1WithTestChannel<Handler: HTTPServerRequestHandler>(
         testChannel: NIOAsyncTestingChannel,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         // The server requires a NIOAsyncChannel, so we create one from the test channel
         let serverTestAsyncChannel = try await testChannel.eventLoop.submit {
             try NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>(

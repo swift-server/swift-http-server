@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPTypes
 import NIOCore
 import NIOHTTPTypes
 

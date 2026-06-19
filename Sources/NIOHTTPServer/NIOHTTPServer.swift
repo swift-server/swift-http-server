@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-public import HTTPAPIs
-import HTTPTypes
+@_exported public import HTTPAPIs
 public import Logging
 import NIOCertificateReloading
 import NIOConcurrencyHelpers
@@ -34,7 +33,7 @@ import X509
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
-/// The `Server` class provides a high-level interface for creating HTTP servers with support for:
+/// `NIOHTTPServer` provides a high-level interface for creating HTTP servers with support for:
 /// - TLS/SSL encryption
 /// - Custom request handlers
 /// - Configurable binding targets
@@ -45,50 +44,36 @@ import X509
 /// ## Usage
 ///
 /// ```swift
-/// let configuration = NIOHTTPServerConfiguration(
-///     bindTarget: .hostAndPort(host: "localhost", port: 8080),
-///     tlsConfiguration: .insecure()
+/// let server = NIOHTTPServer(
+///     logger: logger,
+///     configuration: try .init(
+///         bindTarget: .hostAndPort(host: "localhost", port: 8080),
+///         supportedHTTPVersions: [.http1_1],
+///         transportSecurity: .plaintext
+///     )
 /// )
 ///
-/// try await Server.serve(
-///     logger: logger,
-///     configuration: configuration
-/// ) { request, bodyReader, sendResponse in
-///     // Read the entire request body
-///     let (bodyData, trailers) = try await bodyReader.consumeAndConclude { reader in
-///         var data = [UInt8]()
-///         var shouldContinue = true
-///         while shouldContinue {
-///             try await reader.read { span in
-///                 guard let span else {
-///                     shouldContinue = false
-///                     return
-///                 }
-///                 data.append(contentsOf: span)
-///             }
-///         }
-///         return data
-///     }
-///
-///     // Create and send response
-///     var response = HTTPResponse(status: .ok)
-///     response.headerFields[.contentType] = "text/plain"
-///     let responseWriter = try await sendResponse(response)
-///     try await responseWriter.produceAndConclude { writer in
-///         try await writer.write("Hello, World!".utf8CString.dropLast().span)
-///         return ((), nil)
-///     }
+/// try await server.serve { request, requestContext, reader, responseSender in
+///     var body = UniqueArray<UInt8>(copying: "Hello, World!".utf8)
+///     try await responseSender.sendAndFinish(
+///         HTTPResponse(status: .ok, headerFields: [.contentType: "text/plain"]),
+///         buffer: &body
+///     )
 /// }
 /// ```
 @available(anyAppleOS 26.0, *)
 public struct NIOHTTPServer: HTTPServer {
-    public typealias RequestConcludingReader = HTTPRequestConcludingAsyncReader
-    public typealias ResponseConcludingWriter = HTTPResponseConcludingAsyncWriter
+    public struct RequestContext: HTTPServerCapability.RequestContext, Sendable {}
 
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
 
-    let serverQuiescingHelper: ServerQuiescingHelper
+    /// The event loop group on which the server runs.
+    ///
+    /// This event loop group is used for every channel the server binds. It also provides the event loop that fulfills
+    /// the listening address promise and the group from which a `ServerQuiescingHelper` is created for each bound
+    /// channel.
+    let eventLoopGroup: MultiThreadedEventLoopGroup
 
     var listeningAddressState: NIOLockedValueBox<State>
 
@@ -109,10 +94,8 @@ public struct NIOHTTPServer: HTTPServer {
         self.configuration = configuration
 
         // TODO: If we allow users to pass in an event loop, use that instead of the singleton MTELG.
-        let eventLoopGroup: MultiThreadedEventLoopGroup = .singletonMultiThreadedEventLoopGroup
-        self.listeningAddressState = .init(.idle(eventLoopGroup.any().makePromise()))
-
-        self.serverQuiescingHelper = .init(group: eventLoopGroup)
+        self.eventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        self.listeningAddressState = .init(.idle(self.eventLoopGroup.any().makePromise()))
     }
 
     /// Starts an HTTP server with the specified request handler.
@@ -123,13 +106,9 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// ## All-or-nothing listening
     ///
-    /// The server treats its set of listening addresses as a single unit. If any one of the bound addresses
-    /// stops listening — whether due to its underlying socket closing, an unrecoverable error on the
-    /// listening channel, or any other reason — the server stops listening on **all** remaining addresses
-    /// and this method returns. After that point, ``listeningAddresses`` will throw
-    /// ``ListeningAddressError/serverClosed``.
-    ///
-    /// This also applies during graceful shutdown and task cancellation: all channels are shut down together.
+    /// The server treats its set of listening addresses as a single unit. If an unrecoverable error occurs on any of
+    /// the listening channels, the server stops listening on **all** remaining addresses and this method returns. After
+    /// that point, ``listeningAddresses`` will throw ``ListeningAddressError/serverClosed``.
     ///
     /// - Parameter handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP
     ///   requests. The handler receives each request along with a body reader and response sender function.
@@ -151,9 +130,15 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// try await server.serve(handler: MyHandler())
     /// ```
-    public func serve(
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+    public func serve<Handler: HTTPServerRequestHandler>(handler: Handler) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         // Ensure the listening address promise is always completed on the way out, regardless of whether
         // binding succeeded, the serve loop returned normally, or an error propagated.
         defer { self.finishListeningAddressPromise() }
@@ -164,7 +149,7 @@ public struct NIOHTTPServer: HTTPServer {
             try await withGracefulShutdownHandler {
                 try await self._serve(serverChannels: serverChannels, handler: handler)
             } onGracefulShutdown: {
-                self.beginGracefulShutdown()
+                self.beginGracefulShutdown(serverChannels: serverChannels)
             }
         } onCancel: {
             // Forcefully close down the server channels
@@ -177,7 +162,9 @@ public struct NIOHTTPServer: HTTPServer {
         switch self.configuration.transportSecurity.backing {
         case .plaintext:
             return try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
-                .map { .plaintextHTTP1_1($0) }
+                .map { channel, quiescingHelper in
+                    .plaintextHTTP1_1(channel: channel, quiescingHelper: quiescingHelper)
+                }
 
         case .tls, .mTLS:
             return try await self.setupSecureUpgradeServerChannels(
@@ -187,31 +174,44 @@ public struct NIOHTTPServer: HTTPServer {
                     transportSecurity: self.configuration.transportSecurity,
                     alpnIdentifiers: self.configuration.supportedHTTPVersions.alpnIdentifiers
                 ),
-            ).map { .secureUpgrade($0) }
+            ).map { channel, quiescingHelper in
+                .secureUpgrade(channel: channel, quiescingHelper: quiescingHelper)
+            }
         }
     }
 
-    private func _serve(
+    private func _serve<Handler: HTTPServerRequestHandler>(
         serverChannels: [ServerChannel],
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws {
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for serverChannel in serverChannels {
                 group.addTask {
                     switch serverChannel {
-                    case .plaintextHTTP1_1(let http1Channel):
+                    case .plaintextHTTP1_1(let http1Channel, _):
                         try await self.serveInsecureHTTP1_1(serverChannel: http1Channel, handler: handler)
 
-                    case .secureUpgrade(let secureUpgradeChannel):
+                    case .secureUpgrade(let secureUpgradeChannel, _):
                         try await self.serveSecureUpgrade(serverChannel: secureUpgradeChannel, handler: handler)
                     }
                 }
             }
 
-            // Wait for the first channel to complete (either normally or by throwing).
-            // If any channel stops serving, bring down all remaining channels.
-            try await group.next()
-            group.cancelAll()
+            // If an error occurs in any channel, bring down all other channels too and propagate the error.
+            do {
+                for try await _ in group {}
+            } catch {
+                // Propagate the error. This will cancel the entire group.
+                throw error
+            }
         }
     }
 
@@ -241,31 +241,31 @@ public struct NIOHTTPServer: HTTPServer {
     /// Shared core: invokes the request handler with the appropriate reader/writer state.
     /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
     /// or `nil` if the request could not be fully consumed.
-    func invokeHandler(
+    func invokeHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
         iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        handler: some HTTPServerRequestHandler<RequestConcludingReader, ResponseConcludingWriter>
-    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator? {
-        let readerState = HTTPRequestConcludingAsyncReader.ReaderState(iterator: iterator)
-        let writerState = HTTPResponseConcludingAsyncWriter.WriterState()
+        handler: Handler
+    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    where
+        Handler.RequestContext: ~Copyable,
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.Reader: ~Copyable,
+        Handler.ResponseSender == ResponseSender,
+        Handler.ResponseSender: ~Copyable
+    {
+        let readerState = Reader.ReaderState(iterator: iterator)
+        let writerState = ResponseSender.WriterState()
 
         do {
             try await handler.handle(
                 request: request,
-                requestContext: HTTPRequestContext(),
-                requestBodyAndTrailers: HTTPRequestConcludingAsyncReader(
+                requestContext: RequestContext(),
+                reader: Reader(
                     readerState: readerState
                 ),
-                responseSender: HTTPResponseSender { response in
-                    try await outbound.write(.head(response))
-                    return HTTPResponseConcludingAsyncWriter(
-                        writer: outbound,
-                        writerState: writerState
-                    )
-                } sendInformational: { response in
-                    try await outbound.write(.head(response))
-                }
+                responseSender: ResponseSender(writer: outbound, writerState: writerState)
             )
         } catch {
             logger.error("Error thrown while handling request: \(error)")
@@ -303,9 +303,16 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     /// Initiates a graceful shutdown, allowing existing connections to drain before closing.
-    private func beginGracefulShutdown() {
+    private func beginGracefulShutdown(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
-        self.serverQuiescingHelper.initiateShutdown(promise: nil)
+
+        for serverChannel in serverChannels {
+            switch serverChannel {
+            case .plaintextHTTP1_1(_, let quiescingHelper),
+                .secureUpgrade(_, let quiescingHelper):
+                quiescingHelper.initiateShutdown(promise: nil)
+            }
+        }
     }
 
     /// Forcefully closes the server channels without waiting for existing connections to drain.
@@ -314,10 +321,10 @@ public struct NIOHTTPServer: HTTPServer {
 
         for serverChannel in serverChannels {
             switch serverChannel {
-            case .plaintextHTTP1_1(let http1Channel):
+            case .plaintextHTTP1_1(let http1Channel, _):
                 http1Channel.channel.close(promise: nil)
 
-            case .secureUpgrade(let secureUpgradeChannel):
+            case .secureUpgrade(let secureUpgradeChannel, _):
                 secureUpgradeChannel.channel.close(promise: nil)
             }
         }

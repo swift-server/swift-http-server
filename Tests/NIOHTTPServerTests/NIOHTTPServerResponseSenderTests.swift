@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
-import HTTPTypes
+import BasicContainers
 import NIOCore
 import NIOHTTPTypes
 import Testing
@@ -21,22 +20,14 @@ import Testing
 @testable import NIOHTTPServer
 
 @Suite
-struct HTTPResponseSenderTests {
+struct NIOHTTPServerResponseSenderTests {
     @Test("Informational header without informational status code")
     @available(anyAppleOS 26.0, *)
     func testInformationalResponseStatusCodePrecondition() async throws {
         // Sending an informational header with a non-1xx status code shouldn't be allowed
         try await #require(processExitsWith: .failure) {
             let (outboundWriter, _) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-            let sender = HTTPResponseSender { response in
-                try await outboundWriter.write(.head(response))
-                return HTTPResponseConcludingAsyncWriter(
-                    writer: outboundWriter,
-                    writerState: .init()
-                )
-            } sendInformational: { response in
-                try await outboundWriter.write(.head(response))
-            }
+            var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
 
             try await sender.sendInformational(.init(status: .ok, headerFields: [.contentType: "application/json"]))
         }
@@ -46,15 +37,7 @@ struct HTTPResponseSenderTests {
     @available(anyAppleOS 26.0, *)
     func testSendMultipleInformationalResponses() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        let sender = HTTPResponseSender { response in
-            try await outboundWriter.write(.head(response))
-            return HTTPResponseConcludingAsyncWriter(
-                writer: outboundWriter,
-                writerState: .init()
-            )
-        } sendInformational: { response in
-            try await outboundWriter.write(.head(response))
-        }
+        var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
 
         // Send two informational responses
         let firstInfoHead = HTTPResponse(status: .continue, headerFields: [.contentType: "application/json"])
@@ -63,16 +46,12 @@ struct HTTPResponseSenderTests {
         try await sender.sendInformational(secondInfoHead)
 
         // Then send the final response
-        let finalResponseHead = HTTPResponse(status: .ok, headerFields: [:])
+        let finalResponseHead = HTTPResponse(status: .ok)
         let finalResponseBody = [UInt8]([1, 2])
         let finalResponseTrailer: HTTPFields = [.cookie: "cookie"]
 
-        let responseWriter = try await sender.send(.init(status: .ok, headerFields: [:]))
-        try await responseWriter.produceAndConclude { bodyTrailerWriter in
-            var bodyTrailerWriter = bodyTrailerWriter
-            try await bodyTrailerWriter.write(finalResponseBody.span)
-            return finalResponseTrailer
-        }
+        var buffer = UniqueArray(copying: finalResponseBody)
+        try await sender.sendAndFinish(finalResponseHead, buffer: &buffer, trailer: finalResponseTrailer)
 
         var responseIterator = sink.makeAsyncIterator()
         let firstHead = try #require(await responseIterator.next())

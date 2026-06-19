@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTPAPIs
 import Logging
 import NIOCore
 import NIOEmbedded
@@ -36,7 +35,11 @@ struct TestingChannelSecureUpgradeServer {
         logger: Logger,
         transportSecurity: NIOHTTPServerConfiguration.TransportSecurity,
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        handler: some HTTPServerRequestHandler<HTTPRequestConcludingAsyncReader, HTTPResponseConcludingAsyncWriter>,
+        handler: some HTTPServerRequestHandler<
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
+        >,
         body: (Self) async throws -> Void
     ) async throws {
         let server = NIOHTTPServer(

@@ -12,10 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+import BasicContainers
 import Crypto
 import Foundation
-import HTTPAPIs
-import HTTPTypes
 import Instrumentation
 import Logging
 import NIOHTTPServer
@@ -34,7 +33,6 @@ struct Example {
         var logger = Logger(label: "Logger")
         logger.logLevel = .trace
 
-        // Using the new extension method that doesn't require type hints
         let privateKey = P256.Signing.PrivateKey()
         let server = NIOHTTPServer(
             logger: logger,
@@ -64,8 +62,8 @@ struct Example {
         )
 
         try await server.serve { request, requestContext, requestBodyAndTrailers, responseSender in
-            let writer = try await responseSender.send(HTTPResponse(status: .ok))
-            try await writer.writeAndConclude("Well, hello!".utf8.span, finalElement: nil)
+            var body = UniqueArray<UInt8>(copying: "Well, hello!".utf8)
+            try await responseSender.sendAndFinish(HTTPResponse(status: .ok), buffer: &body)
         }
     }
 }

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOExtras
 import NIOHTTPTypes
 
 @available(anyAppleOS 26.0, *)
@@ -20,7 +21,14 @@ extension NIOHTTPServer {
     /// Abstracts over the two types of server channels ``NIOHTTPServer`` can create: plaintext HTTP/1.1 and Secure
     /// Upgrade.
     enum ServerChannel {
-        case plaintextHTTP1_1(NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>)
-        case secureUpgrade(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>)
+        case plaintextHTTP1_1(
+            channel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
+            quiescingHelper: ServerQuiescingHelper
+        )
+
+        case secureUpgrade(
+            channel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
+            quiescingHelper: ServerQuiescingHelper
+        )
     }
 }

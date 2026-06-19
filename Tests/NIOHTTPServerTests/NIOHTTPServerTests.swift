@@ -12,9 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
-import HTTPAPIs
-import HTTPTypes
+import BasicContainers
 import Logging
 import NIOCore
 import NIOEmbedded
@@ -39,7 +37,7 @@ struct NIOHTTPServerTests {
     @Test("Obtain the listening address correctly")
     func testListeningAddress() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 1234),
                 supportedHTTPVersions: [.http1_1],
@@ -67,7 +65,7 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     func testPlaintext() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
@@ -80,22 +78,16 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
                 #expect(request == Self.makeRequest(method: .post, scheme: "http", for: .http1_1))
 
-                var buffer = ByteBuffer()
-                let (_, finalElement) = try await reader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    return try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                        buffer.writeBytes(body.span.bytes)
-                    }
+                let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
+                    var buffer = ByteBuffer()
+                    buffer.writeBytes(body.span.bytes)
+                    return buffer
                 }
                 #expect(buffer == Self.bodyData)
                 #expect(finalElement == Self.trailer)
 
-                let responseBodySender = try await responseWriter.send(.init(status: .ok))
-                try await responseBodySender.produceAndConclude { responseBodyWriter in
-                    var responseBodyWriter = responseBodyWriter
-                    try await responseBodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                    return Self.trailer
-                }
+                var responseBody = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                try await responseWriter.sendAndFinish(.init(status: .ok), buffer: &responseBody, trailer: Self.trailer)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
@@ -154,33 +146,31 @@ struct NIOHTTPServerTests {
                     let peerChain = try #require(try await NIOHTTPServer.connectionContext.peerCertificateChain)
                     #expect(Array(peerChain) == [clientChain.leaf])
 
-                    let (buffer, finalElement) = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
+                    let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) {
+                        body in
                         var buffer = ByteBuffer()
-                        _ = try await bodyReader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                            buffer.writeBytes(body.span.bytes)
-                        }
+                        buffer.writeBytes(body.span.bytes)
                         return buffer
                     }
                     #expect(buffer == Self.bodyData)
                     #expect(finalElement == Self.trailer)
 
-                    let sender = try await responseWriter.send(.init(status: .ok))
-                    try await sender.produceAndConclude { bodyWriter in
-                        var bodyWriter = bodyWriter
-                        try await bodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                        return Self.trailer
-                    }
+                    var responseBody = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                    try await responseWriter.sendAndFinish(
+                        .init(status: .ok),
+                        buffer: &responseBody,
+                        trailer: Self.trailer
+                    )
                 },
                 body: { serverAddress in
-                    let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestSecureUpgradeHTTPServerOverMTLS(
                             at: serverAddress,
                             clientChain: clientChain,
                             trustRoots: [serverChain.ca],
                             applicationProtocol: httpVersion.alpnIdentifier
                         )
-                    let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
+                        .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                     try await client.executeThenClose { inbound, outbound in
                         try await outbound.write(.head(.init(method: .post, scheme: "https", authority: "", path: "/")))
@@ -205,30 +195,26 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Multiple informational response headers", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testMultipleInformationalResponseHeaders(httpVersion: HTTPVersion) async throws {
-        let (server, serverChain) = try self.makeSecureUpgradeServer()
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         try await confirmation { responseReceived in
             try await Self.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseSender in
+                    var responseSender = responseSender
                     try await responseSender.sendInformational(.init(status: .continue))
                     try await responseSender.sendInformational(.init(status: .earlyHints))
-                    let writer = try await responseSender.send(.init(status: .ok))
-
-                    try await writer.produceAndConclude { bodyWriter in
-                        var bodyWriter = bodyWriter
-                        try await bodyWriter.write(Self.bodyData.readableBytesUInt8Span)
-                        return Self.trailer
-                    }
+                    var buffer = UniqueArray<UInt8>(copying: Self.bodyData.readableBytesUInt8Span)
+                    try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: Self.trailer)
                 },
                 body: { serverAddress in
-                    let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestSecureUpgradeHTTPServer(
                             at: serverAddress,
                             trustRoots: serverChain.chain,
                             applicationProtocol: httpVersion.alpnIdentifier
                         )
-                    let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
+                        .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                     try await client.executeThenClose { inbound, outbound in
                         try await outbound.write(.head(.init(method: .get, scheme: "https", authority: "", path: "/")))
@@ -255,7 +241,7 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Client closes stream without sending end part", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testRequestWithoutEndPart(httpVersion: HTTPVersion) async throws {
-        let (server, serverChain) = try self.makeSecureUpgradeServer()
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
         let requestReadPromise = elg.any().makePromise(of: Void.self)
@@ -264,36 +250,33 @@ struct NIOHTTPServerTests {
             try await Self.withServer(
                 server: server,
                 serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseSender in
+                    var reader = reader
                     #expect(request == Self.makeRequest(method: .post, for: httpVersion))
 
-                    _ = try await reader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
-
-                        // This should fail: the client has closed the stream without sending an end part.
-                        let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read { _ in }
-                        }
-
-                        switch httpVersion {
-                        case .http1_1:
-                            #expect(throws: HTTPParserError.invalidEOFState) { try error.unwrap() }
-
-                        case .http2:
-                            let h2Error = try #require(throws: NIOHTTP2Errors.StreamClosed.self) { try error.unwrap() }
-                            #expect(h2Error.errorCode == .cancel)
-                        }
-
-                        requestReadPromise.succeed()
+                    // This should fail: the client has closed the stream without sending an end part.
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await reader.read { _, _ in }
                     }
+
+                    switch httpVersion {
+                    case .http1_1:
+                        #expect(throws: HTTPParserError.invalidEOFState) { try error.unwrap() }
+
+                    case .http2:
+                        let h2Error = try #require(throws: NIOHTTP2Errors.StreamClosed.self) { try error.unwrap() }
+                        #expect(h2Error.errorCode == .cancel)
+                    }
+
+                    requestReadPromise.succeed()
                 },
                 body: { serverAddress in
-                    let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                    let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                         .connectToTestSecureUpgradeHTTPServer(
                             at: serverAddress,
                             trustRoots: serverChain.chain,
                             applicationProtocol: httpVersion.alpnIdentifier
                         )
-                    let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
+                        .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                     try await client.executeThenClose { inbound, outbound in
                         // Only send a request head; finish the stream immediately afterwards.
@@ -313,44 +296,38 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Bi-directional streaming", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testBidirectionalStreaming(httpVersion: HTTPVersion) async throws {
-        let (server, serverChain) = try self.makeSecureUpgradeServer()
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         try await Self.withServer(
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, requestReader, responseSender in
                 #expect(request == Self.makeRequest(method: .post, for: httpVersion))
 
-                var maybeReader = Optional(requestReader)
+                var responseBodyWriter = try await responseSender.send(HTTPResponse(status: .ok))
 
-                try await responseSender.send(HTTPResponse(status: .ok)).produceAndConclude { responseBodyWriter in
-                    var responseBodyWriter = responseBodyWriter
+                var count = 1
+                let finalElement = try await requestReader.forEachBuffer { buffer in
+                    if buffer.isEmpty { return }
 
-                    let reader = maybeReader.take()!
+                    var chunk = ByteBuffer()
+                    chunk.writeBytes(buffer.span.bytes)
+                    #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
+                    count += 1
 
-                    let (_, finalElement) = try await reader.consumeAndConclude { bodyAsyncReader in
-                        var count = 1
-                        try await bodyAsyncReader.forEachBuffer { buffer in
-                            var chunk = ByteBuffer()
-                            chunk.writeBytes(buffer.span.bytes)
-                            #expect(chunk == ByteBuffer(bytes: [UInt8(count)]))
-                            count += 1
-
-                            try await responseBodyWriter.write(buffer.span)
-                        }
-                    }
-                    #expect(finalElement == Self.trailer)
-
-                    return Self.trailer
+                    try await responseBodyWriter.write(buffer: &buffer)
                 }
+                #expect(finalElement == Self.trailer)
+
+                try await responseBodyWriter.finish(trailer: Self.trailer)
             },
             body: { serverAddress in
-                let clientChannel = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                     .connectToTestSecureUpgradeHTTPServer(
                         at: serverAddress,
                         trustRoots: serverChain.chain,
                         applicationProtocol: httpVersion.alpnIdentifier
                     )
-                let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
+                    .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(.head(.init(method: .post, scheme: "https", authority: "", path: "/")))
@@ -438,7 +415,7 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Multiple concurrent connections", arguments: [HTTPVersion.http1_1, HTTPVersion.http2])
     func testMultipleConcurrentConnections(httpVersion: HTTPVersion) async throws {
-        let (server, serverChain) = try self.makeSecureUpgradeServer()
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         // We will create 10 connections and send a request from each connection. The server will fulfill the
         // `allOtherRequestsCanProceedPromise` promise after seeing the 10th request. All other requests will be blocked
@@ -470,16 +447,14 @@ struct NIOHTTPServerTests {
                     await withThrowingTaskGroup { group in
                         for _ in 1...numConnections {
                             group.addTask {
-                                let clientChannel = try await ClientBootstrap(
-                                    group: .singletonMultiThreadedEventLoopGroup
-                                )
-                                .connectToTestSecureUpgradeHTTPServer(
-                                    at: serverAddress,
-                                    trustRoots: serverChain.chain,
-                                    applicationProtocol: httpVersion.alpnIdentifier
-                                )
+                                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                                    .connectToTestSecureUpgradeHTTPServer(
+                                        at: serverAddress,
+                                        trustRoots: serverChain.chain,
+                                        applicationProtocol: httpVersion.alpnIdentifier
+                                    )
+                                    .unwrapChannel(expectedHTTPVersion: httpVersion)
 
-                                let client = try await Self.unwrapNegotiatedChannel(clientChannel, httpVersion)
                                 try await client.executeThenClose { inbound, outbound in
                                     try await outbound.write(
                                         .head(.init(method: .post, scheme: "https", authority: "", path: "/"))
@@ -507,7 +482,7 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Multiple concurrent HTTP/2 streams")
     func testMultipleConcurrentHTTP2Streams() async throws {
-        let (server, serverChain) = try self.makeSecureUpgradeServer()
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         let numStreams = 10
         let requestCounter = Mutex(0)
@@ -577,7 +552,7 @@ struct NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     @Test("Server can still process other connections despite one failing")
     func testServerCanContinueDespiteFailedConnection() async throws {
-        let server = try self.makePlaintextHTTP1Server()
+        let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: self.serverLogger)
 
         let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
         let firstRequestErrorCaught = elg.any().makePromise(of: Void.self)
@@ -637,7 +612,7 @@ struct NIOHTTPServerTests {
     @Test("Bind to multiple addresses")
     func testMultipleBindAddresses() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTargets: [
                     .hostAndPort(host: "127.0.0.1", port: 0),
@@ -662,7 +637,7 @@ struct NIOHTTPServerTests {
     @Test("Serve requests on multiple addresses independently")
     func testServeOnMultipleAddresses() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTargets: [
                     .hostAndPort(host: "127.0.0.1", port: 0),
@@ -732,7 +707,7 @@ struct NIOHTTPServerTests {
     @Test("All addresses stop together and listeningAddresses throws after server stops")
     func testAllAddressesStopTogether() async throws {
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTargets: [
                     .hostAndPort(host: "127.0.0.1", port: 0),
@@ -823,7 +798,7 @@ struct NIOHTTPServerTests {
         // Configure a server that binds to [firstPort, occupiedPort]. The first bind should succeed,
         // the second should fail with "address already in use", causing cleanup of the first channel.
         let server = NIOHTTPServer(
-            logger: Logger(label: "NIOHTTPServerTests"),
+            logger: self.serverLogger,
             configuration: try .init(
                 bindTargets: [
                     .hostAndPort(host: "127.0.0.1", port: firstPort),
@@ -860,9 +835,9 @@ extension NIOHTTPServerTests {
     static let reqEnd = HTTPRequestPart.end(trailer)
 
     @available(anyAppleOS 26.0, *)
-    func makePlaintextHTTP1Server() throws -> NIOHTTPServer {
+    static func makePlaintextHTTP1Server(logger: Logger) throws -> NIOHTTPServer {
         let server = NIOHTTPServer(
-            logger: self.serverLogger,
+            logger: logger,
             configuration: try .init(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
@@ -874,13 +849,16 @@ extension NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    func makeSecureUpgradeServer() throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
+    static func makeSecureUpgradeServer(
+        bindTargets: [NIOHTTPServerConfiguration.BindTarget] = [.hostAndPort(host: "127.0.0.1", port: 0)],
+        logger: Logger
+    ) throws -> (NIOHTTPServer, ChainPrivateKeyPair) {
         let serverChain = try TestCA.makeSelfSignedChain()
 
         let server = NIOHTTPServer(
-            logger: self.serverLogger,
+            logger: logger,
             configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                bindTargets: bindTargets,
                 supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
                 transportSecurity: .tls(
                     credentials: .inMemory(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
@@ -924,32 +902,6 @@ extension NIOHTTPServerTests {
         }
     }
 
-    /// Unwraps a negotiated channel, asserting it matches the expected `httpVersion`. For HTTP/2, opens and returns a
-    /// new stream channel.
-    static func unwrapNegotiatedChannel(
-        _ negotiatedChannel: NegotiatedClientConnection,
-        _ httpVersion: HTTPVersion,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
-        switch negotiatedChannel {
-        case .http1(let http1Channel):
-            #expect(
-                httpVersion == .http1_1,
-                "Unexpectedly established an HTTP/1 connection.",
-                sourceLocation: sourceLocation
-            )
-            return http1Channel
-
-        case .http2(let http2StreamManager):
-            #expect(
-                httpVersion == .http2,
-                "Unexpectedly established an HTTP/2 connection.",
-                sourceLocation: sourceLocation
-            )
-            return try await http2StreamManager.openStream()
-        }
-    }
-
     /// Returns the body encoding header fields required for the given HTTP version.
     static func makeBodyEncodingHeaders(for httpVersion: HTTPVersion) -> HTTPFields {
         switch httpVersion {
@@ -984,8 +936,9 @@ extension NIOHTTPServerTests {
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
-            NIOHTTPServer.RequestConcludingReader,
-            NIOHTTPServer.ResponseConcludingWriter
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
         >,
         body: (NIOHTTPServer.SocketAddress) async throws -> Void
     ) async throws {
@@ -1002,8 +955,9 @@ extension NIOHTTPServerTests {
     static func withServer(
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<
-            NIOHTTPServer.RequestConcludingReader,
-            NIOHTTPServer.ResponseConcludingWriter
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
         >,
         body: ([NIOHTTPServer.SocketAddress]) async throws -> Void
     ) async throws {
@@ -1024,23 +978,13 @@ extension NIOHTTPServerTests {
     @available(anyAppleOS 26.0, *)
     static func echoResponse(
         readUpTo limit: Int,
-        reader: consuming HTTPRequestConcludingAsyncReader,
-        sender: consuming HTTPResponseSender<HTTPResponseConcludingAsyncWriter>
+        reader: consuming NIOHTTPServer.Reader,
+        sender: consuming NIOHTTPServer.ResponseSender
     ) async throws {
-        let (requestBody, trailers) = try await reader.consumeAndConclude { bodyReader in
-            var bodyReader = bodyReader
-            return try await bodyReader.collect(upTo: limit) { inputSpan in
-                var buffer = ByteBuffer()
-                buffer.writeBytes(inputSpan.span.bytes)
-                return buffer
-            }
+        var buffer = UniqueArray<UInt8>()
+        let (_, trailer) = try await reader.collect(upTo: limit) { inputSpan in
+            buffer.append(copying: inputSpan)
         }
-
-        let writer = try await sender.send(.init(status: .ok))
-        try await writer.produceAndConclude { bodyWriter in
-            var bodyWriter = bodyWriter
-            try await bodyWriter.write(requestBody.readableBytesUInt8Span)
-            return trailers
-        }
+        try await sender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: trailer)
     }
 }

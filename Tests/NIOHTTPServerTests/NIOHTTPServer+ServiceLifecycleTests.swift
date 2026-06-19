@@ -12,12 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-import AsyncStreaming
-import HTTPTypes
+import BasicContainers
 import Logging
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTPTypes
 import NIOPosix
+import NIOSSL
 import ServiceLifecycle
 import ServiceLifecycleTestKit
 import Testing
@@ -32,20 +33,16 @@ struct NIOHTTPServiceLifecycleTests {
     static let trailer: HTTPFields = [.trailer: "test_trailer"]
     static let reqEnd = HTTPRequestPart.end(trailer)
 
-    let serverLogger = Logger(label: "Test Server")
-    let serviceGroupLogger = Logger(label: "Test ServiceGroup")
+    let serverLogger = Logger(label: "NIOHTTPServiceLifecycleTests")
+    let serviceGroupLogger = Logger(label: "NIOHTTPServiceLifecycleTests_ServiceGroup")
 
-    @Test("HTTP/1.1 active connection completes when graceful shutdown triggered", )
+    @Test(
+        "Active connection completes when graceful shutdown triggered",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
     @available(anyAppleOS 26.0, *)
-    func activeHTTP1ConnectionCanCompleteWhenGracefulShutdown() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
-        )
+    func activeConnectionCanCompleteWhenGracefullyShutdown(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         // This promise will be fulfilled when the server receives the first part of the body. Once this happens, we can
         // initiate the graceful shutdown and then send the remaining body. If graceful shutdown is respected, we should
@@ -55,24 +52,18 @@ struct NIOHTTPServiceLifecycleTests {
 
         let serverService = ClosureService {
             try await server.serve { request, requestContext, requestReader, responseSender in
-                _ = try await requestReader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
-                    try await bodyReader.read { _ in }
+                var requestReader = requestReader
+                try await requestReader.read { _, _ in }
 
-                    firstChunkReadPromise.succeed()
+                firstChunkReadPromise.succeed()
 
-                    var requestFinished = false
-                    while !requestFinished {
-                        try await bodyReader.read { if $0.isEmpty { requestFinished = true } }
-                    }
+                var requestFinished = false
+                while !requestFinished {
+                    try await requestReader.read { if $1 != nil { requestFinished = true } }
                 }
 
-                let responseBodyWriter = try await responseSender.send(.init(status: .ok))
-                try await responseBodyWriter.produceAndConclude { writer in
-                    var writer = writer
-                    try await writer.write([1, 2].span)
-                    return .none
-                }
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
             }
         }
 
@@ -85,7 +76,12 @@ struct NIOHTTPServiceLifecycleTests {
                     let serverAddress = try await server.listeningAddresses.first!
 
                     let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                        .connectToTestHTTP1Server(at: serverAddress)
+                        .connectToTestSecureUpgradeHTTPServer(
+                            at: serverAddress,
+                            trustRoots: serverChain.chain,
+                            applicationProtocol: httpVersion.alpnIdentifier
+                        )
+                        .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                     try await client.executeThenClose { inbound, outbound in
                         try await outbound.write(Self.reqHead)
@@ -124,17 +120,98 @@ struct NIOHTTPServiceLifecycleTests {
         }
     }
 
-    @Test("HTTP/1.1 active connection forcefully shutdown when server task cancelled")
+    @Test(
+        "Server closes active connection upon forceful shutdown",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
     @available(anyAppleOS 26.0, *)
-    func activeHTTP1ConnectionForcefullyShutdownWhenServerTaskCancelled() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
+    func testServerClosesActiveConnectionOnForcefulShutdown(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
+
+        // This promise will be fulfilled when the server receives the first part of the request body. Once this
+        // happens, we cancel the server task and test whether the client's socket channel has closed.
+        let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
+        let firstChunkReadPromise = elg.any().makePromise(of: Void.self)
+
+        let serverService = ClosureService {
+            await #expect(throws: CancellationError.self) {
+                try await server.serve { request, requestContext, requestReader, responseSender in
+                    var requestReader = requestReader
+                    // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await requestReader.read { _, _ in }
+
+                        firstChunkReadPromise.succeed()
+
+                        // The following call will block: the client will never send a request end part. This is
+                        // intentional because we want to keep the connection alive.
+                        try await requestReader.read { _, _ in }
+                    }
+                    #expect(throws: CancellationError.self) { try error.unwrap() }
+                }
+            }
+        }
+
+        try await withThrowingTaskGroup { group in
+            let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
+            group.addTask { try await serviceGroup.run() }
+
+            let serverAddress = try await server.listeningAddresses.first!
+
+            let tlsConfig = try TLSConfiguration.makeTestClientConfiguration(
+                testTrustRoots: serverChain.chain,
+                applicationProtocol: httpVersion.alpnIdentifier
             )
-        )
+
+            let (clientConnectionChannel, alpnResultFuture) =
+                try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup).connect(
+                    to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
+                ) { socketChannel in
+                    socketChannel.configureTestClientSSLPipeline(tlsConfig: tlsConfig).flatMap {
+                        socketChannel.configureTestSecureUpgradeClientPipeline().map { connectionChannel in
+                            (socketChannel, connectionChannel)
+                        }
+                    }
+                }
+
+            let alpnResult = try await alpnResultFuture.get()
+            let clientRequestChannel = try await NegotiatedClientConnection(negotiationResult: alpnResult)
+                .unwrapChannel(expectedHTTPVersion: httpVersion)
+
+            try await clientRequestChannel.executeThenClose { inbound, outbound in
+                try await outbound.write(Self.reqHead)
+
+                // Write the first body part.
+                try await outbound.write(Self.reqBody)
+
+                // Wait until the server has received the first body part.
+                try await firstChunkReadPromise.futureResult.get()
+
+                // Cancel the server task.
+                group.cancelAll()
+                // Wait for the server to shut down.
+                try await group.waitForAll()
+
+                // Wait for the client channel to be fully closed.
+                try await clientRequestChannel.channel.closeFuture.get()
+
+                // We shouldn't be able to complete our request; the server should have shut down.
+                await #expect(throws: ChannelError.ioOnClosedChannel) {
+                    try await outbound.write(Self.reqBody)
+                }
+            }
+
+            try await clientConnectionChannel.closeFuture.get()
+        }
+    }
+
+    @Test(
+        "Active connection forcefully shutdown when server task cancelled",
+        arguments: [HTTPVersion.http1_1, HTTPVersion.http2]
+    )
+    @available(anyAppleOS 26.0, *)
+    func activeConnectionForcefullyShutdownWhenServerTaskCancelled(httpVersion: HTTPVersion) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: self.serverLogger)
 
         // This promise will be fulfilled when the server receives the first part of the request body. Once this
         // happens, we cancel the server task and test whether the in-flight request's connection was forcefully shut.
@@ -144,21 +221,19 @@ struct NIOHTTPServiceLifecycleTests {
         let serverService = ClosureService {
             await #expect(throws: CancellationError.self) {
                 try await server.serve { request, requestContext, requestReader, responseSender in
+                    var requestReader = requestReader
                     // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
-                    _ = try await requestReader.consumeAndConclude { bodyReader in
-                        var bodyReader = bodyReader
 
-                        let error = try await #require(throws: EitherError<Error, Never>.self) {
-                            try await bodyReader.read { _ in }
+                    let error = try await #require(throws: EitherError<Error, Never>.self) {
+                        try await requestReader.read { _, _ in }
 
-                            firstChunkReadPromise.succeed()
+                        firstChunkReadPromise.succeed()
 
-                            // The following call will block: the client will never send a request end part. This is
-                            // intentional because we want to keep the connection alive.
-                            try await bodyReader.read { _ in }
-                        }
-                        #expect(throws: CancellationError.self) { try error.unwrap() }
+                        // The following call will block: the client will never send a request end part. This is
+                        // intentional because we want to keep the connection alive.
+                        try await requestReader.read { _, _ in }
                     }
+                    #expect(throws: CancellationError.self) { try error.unwrap() }
                 }
             }
         }
@@ -171,7 +246,12 @@ struct NIOHTTPServiceLifecycleTests {
                 let serverAddress = try await server.listeningAddresses.first!
 
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
+                    .connectToTestSecureUpgradeHTTPServer(
+                        at: serverAddress,
+                        trustRoots: serverChain.chain,
+                        applicationProtocol: httpVersion.alpnIdentifier
+                    )
+                    .unwrapChannel(expectedHTTPVersion: httpVersion)
 
                 try await client.executeThenClose { inbound, outbound in
                     try await outbound.write(Self.reqHead)
@@ -231,21 +311,19 @@ struct NIOHTTPServiceLifecycleTests {
 
         let serverService = ClosureService {
             try await server.serve { request, requestContext, requestReader, responseSender in
+                var requestReader = requestReader
                 // Read the first chunk, signal `firstChunkReadPromise`, then try to read the second chunk.
-                _ = try await requestReader.consumeAndConclude { bodyReader in
-                    var bodyReader = bodyReader
 
-                    let error = try await #require(throws: EitherError<Error, Never>.self) {
-                        try await bodyReader.read { _ in }
+                let error = try await #require(throws: EitherError<Error, Never>.self) {
+                    try await requestReader.read { _, _ in }
 
-                        firstChunkReadPromise.succeed()
+                    firstChunkReadPromise.succeed()
 
-                        // The following call will block: the client will never send a request end part. This is
-                        // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
-                        try await bodyReader.read { _ in }
-                    }
-                    #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
+                    // The following call will block: the client will never send a request end part. This is
+                    // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
+                    try await requestReader.read { _, _ in }
                 }
+                #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
             }
         }
 
@@ -292,6 +370,154 @@ struct NIOHTTPServiceLifecycleTests {
 
                             connectionForcefullyShutdown()
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test(
+        "Active connections across different listeners can complete when graceful shutdown triggered",
+        arguments: [
+            (HTTPVersion.http1_1, HTTPVersion.http1_1),
+            (HTTPVersion.http1_1, HTTPVersion.http2),
+            (HTTPVersion.http2, HTTPVersion.http1_1),
+            (HTTPVersion.http2, HTTPVersion.http2),
+        ]
+    )
+    @available(anyAppleOS 26.0, *)
+    func activeConnectionsAcrossDifferentListenersCanCompleteWhenGracefullyShutdown(
+        firstClientHTTPVersion: HTTPVersion,
+        secondClientHTTPVersion: HTTPVersion
+    ) async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(
+            bindTargets: [
+                // Configure two bind targets. We want to test whether graceful shutdown works independently on each
+                // bind target.
+                .hostAndPort(host: "127.0.0.1", port: 0),
+                .hostAndPort(host: "127.0.0.1", port: 0),
+            ],
+            logger: self.serverLogger
+        )
+
+        // The test needs both clients to have an active in-flight request before triggering graceful shutdown. To
+        // express this, we create two promises (one for each bind target), which will be fulfilled by the server's
+        // request handler once it has *started* processing the corresponding request.
+        let elg = MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
+        let firstTargetRequestStartedPromise = elg.any().makePromise(of: Void.self)
+        let secondTargetRequestStartedPromise = elg.any().makePromise(of: Void.self)
+
+        // The server handler needs to know which of the two promises to fulfill. Since the second client only sends
+        // its request after the server has started processing the first client's request, we set up a counter so that
+        // the server can know to fulfill `firstTargetRequestStartedPromise` on the first request and
+        // `secondTargetRequestStartedPromise` on the second request.
+        let requestNumber = NIOLockedValueBox(0)
+
+        let serverService = ClosureService {
+            try await server.serve { request, requestContext, requestReader, responseSender in
+                var requestReader = requestReader
+                try await requestReader.read { _, _ in }
+
+                let count = requestNumber.withLockedValue { n in
+                    n += 1
+                    return n
+                }
+
+                if count == 1 {
+                    firstTargetRequestStartedPromise.succeed()
+                } else if count == 2 {
+                    secondTargetRequestStartedPromise.succeed()
+                }
+
+                var requestFinished = false
+                while !requestFinished {
+                    try await requestReader.read { if $1 != nil { requestFinished = true } }
+                }
+
+                var buffer = UniqueArray<UInt8>(copying: [1, 2])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
+            }
+        }
+
+        try await confirmation(expectedCount: 2) { responseReceived in
+            try await testGracefulShutdown { trigger in
+                try await withThrowingTaskGroup { group in
+                    let serviceGroup = ServiceGroup(services: [serverService], logger: self.serviceGroupLogger)
+                    group.addTask { try await serviceGroup.run() }
+
+                    let firstServerAddress = try await server.listeningAddresses[0]
+                    let secondServerAddress = try await server.listeningAddresses[1]
+
+                    let firstClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                        .connectToTestSecureUpgradeHTTPServer(
+                            at: firstServerAddress,
+                            trustRoots: serverChain.chain,
+                            applicationProtocol: firstClientHTTPVersion.alpnIdentifier
+                        )
+                        .unwrapChannel(expectedHTTPVersion: firstClientHTTPVersion)
+
+                    try await firstClient.executeThenClose { firstInbound, firstOutbound in
+                        try await firstOutbound.write(Self.reqHead)
+                        try await firstOutbound.write(Self.reqBody)
+
+                        // Wait until the server has received the body part.
+                        try await firstTargetRequestStartedPromise.futureResult.get()
+
+                        let secondClient = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                            .connectToTestSecureUpgradeHTTPServer(
+                                at: secondServerAddress,
+                                trustRoots: serverChain.chain,
+                                applicationProtocol: secondClientHTTPVersion.alpnIdentifier
+                            )
+                            .unwrapChannel(expectedHTTPVersion: secondClientHTTPVersion)
+
+                        try await secondClient.executeThenClose { secondInbound, secondOutbound in
+                            try await secondOutbound.write(Self.reqHead)
+                            try await secondOutbound.write(Self.reqBody)
+
+                            // Wait until the server has received the body part.
+                            try await secondTargetRequestStartedPromise.futureResult.get()
+
+                            // Now start the shutdown.
+                            trigger.triggerGracefulShutdown()
+
+                            // The second client should be able to complete its request.
+                            try await secondOutbound.write(Self.reqBody)
+                            try await secondOutbound.write(Self.reqEnd)
+
+                            for try await response in secondInbound {
+                                switch response {
+                                case .head(let head):
+                                    #expect(head.status == .ok)
+                                case .body(let body):
+                                    #expect(body == .init([1, 2]))
+                                case .end(let trailers):
+                                    #expect(trailers == nil)
+                                }
+                            }
+
+                            responseReceived()
+                        }
+
+                        // And so should the first client.
+                        try await firstOutbound.write(Self.reqBody)
+                        try await firstOutbound.write(Self.reqEnd)
+
+                        for try await response in firstInbound {
+                            switch response {
+                            case .head(let head):
+                                #expect(head.status == .ok)
+                            case .body(let body):
+                                #expect(body == .init([1, 2]))
+                            case .end(let trailers):
+                                #expect(trailers == nil)
+                            }
+                        }
+
+                        responseReceived()
+
+                        // The server should now shut down. Wait for this.
+                        try await group.waitForAll()
                     }
                 }
             }

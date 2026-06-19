@@ -20,7 +20,7 @@ jobs:
       linux_6_2_enabled: false
       linux_6_3_enabled: false
       # linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_nightly_next_enabled: false  # should be disabled until next is 6.4
+      linux_nightly_next_enabled: true
       linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
       linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
 
@@ -37,4 +37,4 @@ jobs:
       linux_6_1_enabled: false
       linux_6_2_enabled: false
       linux_6_3_enabled: false
-      linux_nightly_next_enabled: false  # should be disabled until next is 6.4
+      linux_nightly_next_enabled: true
