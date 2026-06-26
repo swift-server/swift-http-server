@@ -131,6 +131,26 @@ struct ConnectionIdleTimeoutHandlerTests {
 
         #expect(channel.isActive)
     }
+
+    @Test("Idle timer starts when handler is added to an already-active channel")
+    func idleTimerStartsWhenAddedToActiveChannel() throws {
+        let channel = EmbeddedChannel()
+
+        // Activate the channel *before* adding the handler. This mirrors the secure HTTP/1.1 path,
+        // where the timeout handlers are installed after ALPN negotiation completes — by which point
+        // the channel is already active and `channelActive` will never fire for them again.
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+        #expect(channel.isActive)
+
+        let handler = ConnectionIdleTimeoutHandler(timeout: .seconds(5))
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        // The idle timer must have been armed in `handlerAdded`, so the connection closes once the
+        // timeout elapses with no request in flight.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
+    }
 }
 
 @Suite("RequestTimeoutHandler")
@@ -338,5 +358,27 @@ struct RequestTimeoutHandlerTests {
         channel.embeddedEventLoop.advanceTime(by: .seconds(10))
 
         #expect(channel.isActive)
+    }
+
+    // MARK: - Added to an already-active channel
+
+    @Test("Header timeout starts when handler is added to an already-active channel")
+    func headerTimeoutStartsWhenAddedToActiveChannel() throws {
+        let channel = EmbeddedChannel()
+
+        // Activate the channel *before* adding the handler. This mirrors the secure HTTP/1.1 path,
+        // where the timeout handlers are installed after ALPN negotiation completes — by which point
+        // the channel is already active and `channelActive` will never fire for them again.
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+        #expect(channel.isActive)
+
+        let handler = RequestTimeoutHandler(readHeaderTimeout: .seconds(5), readBodyTimeout: nil)
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        // The header timer must have been armed in `handlerAdded`, so the connection closes once the
+        // timeout elapses with no request headers received.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
     }
 }

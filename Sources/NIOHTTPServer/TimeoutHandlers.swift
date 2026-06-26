@@ -39,6 +39,15 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
         self.timeout = timeout
     }
 
+    func handlerAdded(context: ChannelHandlerContext) {
+        // If the handler is added to a channel that is already active, `channelActive` won't be
+        // called for it (e.g. on the secure HTTP/1.1 path, where the timeout handlers are installed
+        // after ALPN negotiation completes), so start the idle timer here instead.
+        if context.channel.isActive {
+            self.scheduleTimeout(context: context)
+        }
+    }
+
     func channelActive(context: ChannelHandlerContext) {
         // Connection just opened, no request yet — start the idle timer.
         self.scheduleTimeout(context: context)
@@ -101,10 +110,17 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
         self.readBodyTimeout = readBodyTimeout
     }
 
-    func channelActive(context: ChannelHandlerContext) {
-        if let readHeaderTimeout {
-            self.scheduleTimeout(readHeaderTimeout, context: context)
+    func handlerAdded(context: ChannelHandlerContext) {
+        // If the handler is added to a channel that is already active, `channelActive` won't be
+        // called for it (e.g. on the secure HTTP/1.1 path, where the timeout handlers are installed
+        // after ALPN negotiation completes), so start the header timeout here instead.
+        if context.channel.isActive {
+            self.scheduleHeaderTimeoutIfNeeded(context: context)
         }
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        self.scheduleHeaderTimeoutIfNeeded(context: context)
         context.fireChannelActive()
     }
 
@@ -133,6 +149,12 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
     func handlerRemoved(context: ChannelHandlerContext) {
         self.scheduledTimeout?.cancel()
         self.scheduledTimeout = nil
+    }
+
+    private func scheduleHeaderTimeoutIfNeeded(context: ChannelHandlerContext) {
+        if let readHeaderTimeout {
+            self.scheduleTimeout(readHeaderTimeout, context: context)
+        }
     }
 
     private func scheduleTimeout(_ timeout: TimeAmount, context: ChannelHandlerContext) {
