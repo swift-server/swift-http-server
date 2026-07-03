@@ -185,16 +185,20 @@ struct NIOHTTPServerReaderTests {
             buffer.reserveCapacity(9)
             do {
                 _ = try await requestReader.collect(exactlyInto: &buffer)
-            } catch let error as EitherError<
-                any Error,
-                EitherError<AsyncReaderLeftOverElementsError, AsyncReaderInsufficientElementsError>
-            > {
+            } catch let error
+                as EitherError<
+                    any Error,
+                    EitherError<AsyncReaderLeftOverElementsError, AsyncReaderInsufficientElementsError>
+                >
+            {
                 do {
                     try error.unwrap()
-                } catch let inner as EitherError<
-                    AsyncReaderLeftOverElementsError,
-                    AsyncReaderInsufficientElementsError
-                > {
+                } catch let inner
+                    as EitherError<
+                        AsyncReaderLeftOverElementsError,
+                        AsyncReaderInsufficientElementsError
+                    >
+                {
                     try inner.unwrap()
                 }
             }
