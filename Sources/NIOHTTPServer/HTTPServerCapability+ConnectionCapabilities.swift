@@ -41,4 +41,21 @@ extension HTTPServerCapability {
         /// The peer's validated certificate chain, when available.
         var peerCertificateChain: X509.ValidatedCertificateChain? { get async throws }
     }
+
+    /// A request-context capability that lets a request handler signal that the
+    /// connection should close after the current response.
+    ///
+    /// Servers whose request context conforms to this capability allow handlers
+    /// to indicate that the underlying connection should be closed once the
+    /// in-flight response has been sent. Implementations make the signal
+    /// effective on a best-effort basis (HTTP/1.1 typically appends
+    /// `Connection: close` and closes the channel; HTTP/2 typically sends
+    /// `GOAWAY` and lets in-flight streams complete normally).
+    public protocol CloseableConnection: RequestContext {
+        /// Signal that the connection should close after the current response.
+        ///
+        /// Non-blocking and idempotent. Subsequent calls have no additional
+        /// effect.
+        func signalConnectionClose()
+    }
 }

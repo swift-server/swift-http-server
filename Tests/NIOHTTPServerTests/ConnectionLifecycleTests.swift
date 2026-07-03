@@ -293,6 +293,291 @@ struct ConnectionLifecycleTests {
         #expect(state.observedFinalCounter.withLockedValue { $0 } == numStreams)
     }
 
+    /// HTTP/1.1: a request handler that signals close has its response carry
+    /// `Connection: close`, and a follow-up read on the same socket returns nil.
+    @available(anyAppleOS 26.0, *)
+    @Test("signalConnectionClose() on HTTP/1.1")
+    func testSignalConnectionCloseHTTP1_1() async throws {
+        let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler {
+                request,
+                requestContext,
+                reader,
+                responseSender in
+                requestContext.signalConnectionClose()
+                var buffer = UniqueArray<UInt8>(copying: [])
+                try await responseSender.sendAndFinish(.init(status: .unauthorized), buffer: &buffer)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .connectToTestHTTP1Server(at: serverAddress)
+            try await client.executeThenClose { inbound, outbound in
+                try await outbound.write(.head(.init(method: .get, scheme: "http", authority: "", path: "/")))
+                try await outbound.write(.end(nil))
+
+                var iterator = inbound.makeAsyncIterator()
+                let head = try await iterator.next()
+                guard case .head(let response) = head else {
+                    Issue.record("Expected response head but got \(String(describing: head))")
+                    return
+                }
+                #expect(response.status == .unauthorized)
+                #expect(response.headerFields[.connection] == "close")
+
+                while let part = try await iterator.next() {
+                    if case .end = part { break }
+                }
+
+                let afterEnd = try await iterator.next()
+                #expect(afterEnd == nil)
+            }
+        }
+    }
+
+    /// HTTP/2: a request handler that signals close causes the connection to
+    /// stop accepting new streams. In-flight streams complete normally before
+    /// the connection is torn down.
+    @available(anyAppleOS 26.0, *)
+    @Test("signalConnectionClose() on HTTP/2")
+    func testSignalConnectionCloseHTTP2() async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        let numInflight = 3
+        let allRequestsReceived = elg.any().makePromise(of: Void.self)
+        let arrivedCounter = NIOLockedValueBox(0)
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler {
+                request,
+                requestContext,
+                reader,
+                responseSender in
+                let arrived = arrivedCounter.withLockedValue { value -> Int in
+                    value += 1
+                    return value
+                }
+                if arrived == numInflight {
+                    requestContext.signalConnectionClose()
+                    allRequestsReceived.succeed()
+                } else {
+                    try await allRequestsReceived.futureResult.get()
+                }
+                var buffer = UniqueArray<UInt8>(copying: [])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let clientChannel = try await ClientBootstrap(group: elg)
+                .connectToTestSecureUpgradeHTTPServer(
+                    at: serverAddress,
+                    trustRoots: serverChain.chain,
+                    applicationProtocol: HTTPVersion.http2.alpnIdentifier
+                )
+            guard case .http2(let streamManager) = clientChannel else {
+                Issue.record("Expected HTTP/2 channel, got \(clientChannel).")
+                return
+            }
+
+            try await withThrowingTaskGroup { group in
+                for _ in 1...numInflight {
+                    group.addTask {
+                        let stream = try await streamManager.openStream()
+                        try await stream.executeThenClose { inbound, outbound in
+                            try await outbound.write(
+                                .head(.init(method: .get, scheme: "https", authority: "", path: "/"))
+                            )
+                            try await outbound.write(.end(nil))
+                            var iterator = inbound.makeAsyncIterator()
+                            var sawHead = false
+                            while let part = try await iterator.next() {
+                                if case .head(let response) = part {
+                                    #expect(response.status == .ok)
+                                    sawHead = true
+                                }
+                                if case .end = part { break }
+                            }
+                            #expect(sawHead, "All in-flight streams should complete normally with status ok")
+                        }
+                    }
+                }
+                try await group.waitForAll()
+            }
+        }
+    }
+
+    /// HTTP/1.1: calling `signalConnectionClose()` twice within a single request
+    /// handler is harmless — the response still carries a single
+    /// `Connection: close` header and the channel is closed exactly once.
+    @available(anyAppleOS 26.0, *)
+    @Test("signalConnectionClose() is idempotent (HTTP/1.1)")
+    func testSignalConnectionCloseIdempotent() async throws {
+        let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler {
+                request,
+                requestContext,
+                reader,
+                responseSender in
+                requestContext.signalConnectionClose()
+                requestContext.signalConnectionClose()
+                requestContext.signalConnectionClose()
+                var buffer = UniqueArray<UInt8>(copying: [])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .connectToTestHTTP1Server(at: serverAddress)
+            try await client.executeThenClose { inbound, outbound in
+                try await outbound.write(.head(.init(method: .get, scheme: "http", authority: "", path: "/")))
+                try await outbound.write(.end(nil))
+
+                var iterator = inbound.makeAsyncIterator()
+                let head = try await iterator.next()
+                guard case .head(let response) = head else {
+                    Issue.record("Expected response head but got \(String(describing: head))")
+                    return
+                }
+                #expect(response.headerFields[.connection] == "close")
+                // Look for any duplicate `Connection` headers; the field should
+                // appear exactly once with value "close".
+                let connectionValues = response.headerFields[values: .connection]
+                #expect(connectionValues == ["close"])
+
+                while let part = try await iterator.next() {
+                    if case .end = part { break }
+                }
+                let _trailing = try await iterator.next()
+                #expect(_trailing == nil)
+            }
+        }
+    }
+
+    /// HTTP/1.1: calling `signalConnectionClose()` AFTER the response head has
+    /// already been written. The channel still closes after the response `.end`,
+    /// but the head can't be amended — it's already on the wire. The client
+    /// observes the response without a `Connection: close` header followed by
+    /// EOF.
+    @available(anyAppleOS 26.0, *)
+    @Test("signalConnectionClose() after response head is written (HTTP/1.1)")
+    func testSignalConnectionCloseAfterHead() async throws {
+        let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler {
+                request,
+                requestContext,
+                reader,
+                responseSender in
+                let writer = try await responseSender.send(.init(status: .ok))
+                requestContext.signalConnectionClose()
+                var buffer = UniqueArray<UInt8>(copying: [0x21])
+                try await writer.finish(buffer: &buffer, finalElement: nil)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .connectToTestHTTP1Server(at: serverAddress)
+            try await client.executeThenClose { inbound, outbound in
+                try await outbound.write(.head(.init(method: .get, scheme: "http", authority: "", path: "/")))
+                try await outbound.write(.end(nil))
+
+                var iterator = inbound.makeAsyncIterator()
+                let head = try await iterator.next()
+                guard case .head(let response) = head else {
+                    Issue.record("Expected response head but got \(String(describing: head))")
+                    return
+                }
+                #expect(response.status == .ok)
+                // We deliberately don't assert anything about the `Connection`
+                // header here: `responseSender.send(_:)` returns once the head
+                // is yielded to the async-stream queue, which may be before the
+                // keep-alive handler has actually processed it on the event
+                // loop. So the flag set immediately after `send` is sometimes
+                // still observed in time to amend the head. The reliable
+                // observable is that the channel closes after the response.
+
+                while let part = try await iterator.next() {
+                    if case .end = part { break }
+                }
+                let _trailing = try await iterator.next()
+                #expect(_trailing == nil)
+            }
+        }
+    }
+
+    /// HTTP/2: after a stream signals close, the connection drains existing
+    /// streams and rejects new stream creation. Opening a stream against the
+    /// already-quiesced connection fails (NIOHTTP2's GOAWAY mechanics).
+    /// TODO: this test is disabled since it's currently flaky; because of a bug in NIO where inbound NIOAsyncChannels are
+    /// dropped if not consumed, and a precondition fails because they've not been finished.
+    @available(anyAppleOS 26.0, *)
+    @Test("HTTP/2 rejects new streams after signalConnectionClose()", .disabled())
+    func testHTTP2RejectsNewStreamsAfterClose() async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler {
+                request,
+                requestContext,
+                reader,
+                responseSender in
+                requestContext.signalConnectionClose()
+                var buffer = UniqueArray<UInt8>(copying: [])
+                try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let clientChannel = try await ClientBootstrap(group: elg)
+                .connectToTestSecureUpgradeHTTPServer(
+                    at: serverAddress,
+                    trustRoots: serverChain.chain,
+                    applicationProtocol: HTTPVersion.http2.alpnIdentifier
+                )
+            guard case .http2(let streamManager) = clientChannel else {
+                Issue.record("Expected HTTP/2 channel, got \(clientChannel).")
+                return
+            }
+
+            // First stream completes normally and signals connection close.
+            let stream = try await streamManager.openStream()
+            try await stream.executeThenClose { inbound, outbound in
+                try await outbound.write(.head(.init(method: .get, scheme: "https", authority: "", path: "/")))
+                try await outbound.write(.end(nil))
+                var iterator = inbound.makeAsyncIterator()
+                while let part = try await iterator.next() {
+                    if case .end = part { break }
+                }
+            }
+
+            // After the close signal has been observed by the connection-management
+            // handler, opening a new stream should fail. We poll for a short
+            // window since the GOAWAY processing is asynchronous to the response
+            // we just observed.
+            var rejected = false
+            for _ in 0..<50 {
+                do {
+                    _ = try await streamManager.openStream()
+                } catch {
+                    rejected = true
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            #expect(rejected, "Expected new-stream creation to fail after GOAWAY.")
+        }
+    }
+
     /// A throwing connection handler is logged at debug level by the server but
     /// doesn't bring it down: a subsequent connection on the same server is
     /// served normally.

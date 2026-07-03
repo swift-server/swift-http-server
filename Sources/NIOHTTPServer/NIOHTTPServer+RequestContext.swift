@@ -22,6 +22,7 @@ extension NIOHTTPServer {
     /// Conforms to:
     /// - ``HTTPServerCapability/ConnectionInfo`` — peer / local addresses.
     /// - ``HTTPServerCapability/PeerCertificate`` — mTLS-validated peer chain.
+    /// - ``HTTPServerCapability/CloseableConnection`` — `signalConnectionClose()`.
     ///
     /// Generic library code can constrain on these capabilities to access
     /// per-request data without depending on ``NIOHTTPServer`` directly.
@@ -63,5 +64,20 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.PeerCertificate {
         get async throws {
             try await self.connectionContext.peerCertificateChain
         }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOHTTPServer.RequestContext: HTTPServerCapability.CloseableConnection {
+    /// Signal that the connection should close after the current response.
+    ///
+    /// Non-blocking and idempotent. Effective after the current response:
+    ///
+    /// - On HTTP/1.1, the response carries `Connection: close` and the
+    ///   channel is closed once the response has been written.
+    /// - On HTTP/2, the connection sends `GOAWAY`; in-flight streams
+    ///   complete normally before the connection closes.
+    public func signalConnectionClose() {
+        self.connectionContext.signalConnectionClose()
     }
 }
