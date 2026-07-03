@@ -181,15 +181,21 @@ struct NIOHTTPServerReaderTests {
                 readerState: .init(iterator: stream.makeAsyncIterator())
             )
 
+            var buffer = UniqueArray<UInt8>()
+            buffer.reserveCapacity(9)
             do {
-                _ = try await requestReader.collect(upTo: 9) { _ in }
-            } catch let eitherEitherError
-                as EitherError<EitherError<Error, AsyncReaderLeftOverElementsError>, Never>
-            {
+                _ = try await requestReader.collect(exactlyInto: &buffer)
+            } catch let error as EitherError<
+                any Error,
+                EitherError<AsyncReaderLeftOverElementsError, AsyncReaderInsufficientElementsError>
+            > {
                 do {
-                    try eitherEitherError.unwrap()
-                } catch let eitherError as EitherError<Error, AsyncReaderLeftOverElementsError> {
-                    try eitherError.unwrap()
+                    try error.unwrap()
+                } catch let inner as EitherError<
+                    AsyncReaderLeftOverElementsError,
+                    AsyncReaderInsufficientElementsError
+                > {
+                    try inner.unwrap()
                 }
             }
         }

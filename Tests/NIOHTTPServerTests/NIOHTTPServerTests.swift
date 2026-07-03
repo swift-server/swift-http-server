@@ -78,11 +78,11 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
                 #expect(request == Self.makeRequest(method: .post, scheme: "http", for: .http1_1))
 
-                let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) { body in
-                    var buffer = ByteBuffer()
-                    buffer.writeBytes(body.span.bytes)
-                    return buffer
-                }
+                var collected = UniqueArray<UInt8>()
+                collected.reserveCapacity(Self.bodyData.readableBytes + 1)
+                let finalElement = try await reader.collect(into: &collected)
+                var buffer = ByteBuffer()
+                buffer.writeBytes(collected.span.bytes)
                 #expect(buffer == Self.bodyData)
                 #expect(finalElement == Self.trailer)
 
@@ -146,12 +146,11 @@ struct NIOHTTPServerTests {
                     let peerChain = try #require(try await NIOHTTPServer.connectionContext.peerCertificateChain)
                     #expect(Array(peerChain) == [clientChain.leaf])
 
-                    let (buffer, finalElement) = try await reader.collect(upTo: Self.bodyData.readableBytes + 1) {
-                        body in
-                        var buffer = ByteBuffer()
-                        buffer.writeBytes(body.span.bytes)
-                        return buffer
-                    }
+                    var collected = UniqueArray<UInt8>()
+                    collected.reserveCapacity(Self.bodyData.readableBytes + 1)
+                    let finalElement = try await reader.collect(into: &collected)
+                    var buffer = ByteBuffer()
+                    buffer.writeBytes(collected.span.bytes)
                     #expect(buffer == Self.bodyData)
                     #expect(finalElement == Self.trailer)
 
@@ -982,9 +981,11 @@ extension NIOHTTPServerTests {
         sender: consuming NIOHTTPServer.ResponseSender
     ) async throws {
         var buffer = UniqueArray<UInt8>()
-        let (_, trailer) = try await reader.collect(upTo: limit) { inputSpan in
-            buffer.append(copying: inputSpan)
-        }
+        // Reserve one extra byte beyond the limit: `collect(into:)` stops as soon as the buffer's
+        // free capacity is exhausted, so an exact fit would drop the trailing fields delivered in
+        // the terminal chunk.
+        buffer.reserveCapacity(limit + 1)
+        let trailer = try await reader.collect(into: &buffer)
         try await sender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: trailer)
     }
 }

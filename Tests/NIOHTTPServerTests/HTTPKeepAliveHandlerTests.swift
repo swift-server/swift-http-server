@@ -200,7 +200,9 @@ struct HTTPKeepAliveHandlerTests {
                 }
 
                 // Read the full request body (until .end).
-                let _ = try await reader.collect(upTo: 1024) { _ in }
+                var requestBody = UniqueArray<UInt8>()
+                requestBody.reserveCapacity(1024)
+                _ = try await reader.collect(into: &requestBody)
 
                 // Write the final response.
                 var buffer = UniqueArray(copying: "hello".utf8)
@@ -407,9 +409,11 @@ struct HTTPKeepAliveHandlerTests {
                 _ = await canFinishIterator.next()
 
                 // Drain the request body + end and then write the response body + end.
-                _ = try await reader.collect(upTo: 1024) { _ in }
+                var requestBody = UniqueArray<UInt8>()
+                requestBody.reserveCapacity(1024)
+                _ = try await reader.collect(into: &requestBody)
                 var buffer = UniqueArray(copying: "hello".utf8)
-                try await writer.finish(buffer: &buffer)
+                try await writer.finish(buffer: &buffer, finalElement: nil)
             },
             body: { serverAddress in
                 let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)

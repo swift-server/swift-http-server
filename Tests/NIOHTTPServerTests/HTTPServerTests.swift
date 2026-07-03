@@ -34,16 +34,18 @@ struct HTTPServerTests {
         try await withThrowingTaskGroup { group in
             group.addTask {
                 try await server.serve { request, context, reader, responseSender in
-                    _ = try await reader.collect(upTo: 100) { _ in }
+                    var requestBody = UniqueArray<UInt8>()
+                    requestBody.reserveCapacity(100)
+                    _ = try await reader.collect(into: &requestBody)
                     // Uncommenting this would cause a "reader consumed more than once" error.
-                    //            _ = try await reader.collect(upTo: 100) { _ in }
+                    //            _ = try await reader.collect(into: &requestBody)
 
                     let responseWriter = try await responseSender.send(HTTPResponse(status: .ok))
                     // Uncommenting this would cause a "responseSender consumed more than once" error.
                     //            let responseWriter2 = try await responseSender.send(HTTPResponse(status: .ok))
 
                     var buffer = UniqueArray<UInt8>(copying: [1, 2])
-                    try await responseWriter.finish(buffer: &buffer)
+                    try await responseWriter.finish(buffer: &buffer, finalElement: nil)
 
                     // Uncommenting this would cause a "responseWriter consumed more than once" error.
                     //            try await responseWriter.finish(
