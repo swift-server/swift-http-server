@@ -21,3 +21,23 @@ This package offers additional integrations you can enable using
 Available traits:
 - **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
   `ConfigProvider`.
+
+## HTTP/3 support
+
+Packages in the dependency tree depend on a beta release of swift-crypto.
+Set the environment variable
+`SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA` to allow swift-certificates
+(in the dependency tree) to adopt swift-crypto beta releases as well.
+
+```
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift build
+```
+
+To run all unit tests, run
+
+```
+SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 swift test
+```
+
+Use `SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 xed Package.swift` to open
+the project in Xcode with the environment variable set.

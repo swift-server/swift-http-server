@@ -53,9 +53,12 @@ let package = Package(
             .upToNextMinor(from: "0.2.0")
         ),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.4.1"),
-        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.1"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.1.0")),
+        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
+        .package(url: "https://github.com/apple/swift-nio-http3.git", .upToNextMinor(from: "0.1.0")),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.34.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
@@ -110,6 +113,9 @@ let package = Package(
                     condition: .when(traits: ["Configuration"])
                 ),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
+                .product(name: "NIOQUIC", package: "swift-nio-quic"),
+                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
+                .product(name: "NIOHTTP3", package: "swift-nio-http3"),
                 .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings

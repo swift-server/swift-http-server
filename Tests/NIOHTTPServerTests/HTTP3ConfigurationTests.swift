@@ -1,0 +1,104 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the Swift HTTP Server open source project
+//
+// Copyright (c) 2026 Apple Inc. and the Swift HTTP Server project authors
+// Licensed under Apache License v2.0
+//
+// See LICENSE.txt for license information
+// See CONTRIBUTORS.txt for the list of Swift HTTP Server project authors
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
+
+import NIOQUIC
+import Testing
+
+@testable import NIOHTTPServer
+
+@Suite
+struct HTTP3ConfigurationTests {
+    @Test("HTTP/3 default configuration uses the defaults of the three sub-components")
+    @available(anyAppleOS 26.0, *)
+    func http3DefaultConfiguration() {
+        let config = NIOHTTPServerConfiguration.HTTP3.defaults
+        #expect(config.quicConfiguration == .defaults)
+        #expect(config.protocolConfiguration == .defaults)
+        #expect(config.connectionSettings == .defaults)
+    }
+
+    @Test("HTTP/3 configuration with custom values")
+    @available(anyAppleOS 26.0, *)
+    func http3ConfigurationCustomValues() {
+        var protocolConfiguration = NIOHTTPServerConfiguration.HTTP3.ProtocolConfiguration.defaults
+        protocolConfiguration.preferHuffmanEncoding = false
+
+        var connectionSettings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings.defaults
+        connectionSettings.qpackMaximumTableCapacity = 4096
+        connectionSettings.qpackBlockedStreams = 16
+        connectionSettings.maximumFieldSectionSize = 8192
+
+        var quic = NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.defaults
+        quic.keepAliveInterval = .seconds(10)
+        quic.sendRetry = true
+
+        let config = NIOHTTPServerConfiguration.HTTP3(
+            quicConfiguration: quic,
+            protocolConfiguration: protocolConfiguration,
+            connectionSettings: connectionSettings
+        )
+
+        #expect(config.protocolConfiguration.preferHuffmanEncoding == false)
+        #expect(config.connectionSettings.qpackMaximumTableCapacity == 4096)
+        #expect(config.connectionSettings.qpackBlockedStreams == 16)
+        #expect(config.connectionSettings.maximumFieldSectionSize == 8192)
+        #expect(config.quicConfiguration.keepAliveInterval == .seconds(10))
+        #expect(config.quicConfiguration.sendRetry == true)
+    }
+
+    @Suite
+    struct AuthenticationConfigurationTests {
+        @Test("Plaintext transport security is rejected")
+        @available(anyAppleOS 26.0, *)
+        func plaintextRejected() {
+            #expect(throws: NIOHTTPServerConfigurationError.incompatibleTransportSecurity) {
+                _ = try NIOQUIC.AuthenticationConfiguration(.plaintext)
+            }
+        }
+
+        @Test("mTLS transport security is rejected")
+        @available(anyAppleOS 26.0, *)
+        func mTLSRejected() {
+            #expect(throws: NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3) {
+                _ = try NIOQUIC.AuthenticationConfiguration(
+                    .mTLS(
+                        credentials: .pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"),
+                        trustConfiguration: .pemFile(path: "/roots.pem")
+                    )
+                )
+            }
+        }
+
+        @Test("In-memory TLS credentials are rejected")
+        @available(anyAppleOS 26.0, *)
+        func inMemoryCredentialsRejected() throws {
+            let chain = try TestCA.makeSelfSignedChain()
+            #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3) {
+                _ = try NIOQUIC.AuthenticationConfiguration(
+                    .tls(credentials: .inMemory(certificateChain: chain.chain, privateKey: chain.privateKey))
+                )
+            }
+        }
+
+        @Test("PEM-file TLS credentials are accepted")
+        @available(anyAppleOS 26.0, *)
+        func pemFileCredentialsAccepted() {
+            #expect(throws: Never.self) {
+                _ = try NIOQUIC.AuthenticationConfiguration(
+                    .tls(credentials: .pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"))
+                )
+            }
+        }
+    }
+}
