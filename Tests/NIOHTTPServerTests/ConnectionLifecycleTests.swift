@@ -139,7 +139,7 @@ struct ConnectionLifecycleTests {
         NIOHTTPServer.Reader,
         NIOHTTPServer.ResponseSender
     > {
-        HTTPServerClosureRequestHandler { request, requestContext, reader, responseSender in
+        HTTPServerClosureRequestHandler { _, _, reader, responseSender in
             try await NIOHTTPServerTests.echoResponse(readUpTo: 1024, reader: reader, sender: responseSender)
         }
     }
@@ -232,11 +232,7 @@ struct ConnectionLifecycleTests {
                 NIOHTTPServer.RequestContext,
                 NIOHTTPServer.Reader,
                 NIOHTTPServer.ResponseSender
-            > = HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            > = HTTPServerClosureRequestHandler { _, _, _, responseSender in
                 let arrived = arrivedCounter.withLockedValue { value -> Int in
                     value += 1
                     return value
@@ -301,11 +297,7 @@ struct ConnectionLifecycleTests {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
-            handler: HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 requestContext.signalConnectionClose()
                 var buffer = UniqueArray<UInt8>(copying: [])
                 try await responseSender.sendAndFinish(.init(status: .unauthorized), buffer: &buffer)
@@ -351,11 +343,7 @@ struct ConnectionLifecycleTests {
         let arrivedCounter = NIOLockedValueBox(0)
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
-            handler: HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 let arrived = arrivedCounter.withLockedValue { value -> Int in
                     value += 1
                     return value
@@ -370,7 +358,6 @@ struct ConnectionLifecycleTests {
                 try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
             }
         )
-
         try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
             let clientChannel = try await ClientBootstrap(group: elg)
                 .connectToTestSecureUpgradeHTTPServer(
@@ -419,11 +406,7 @@ struct ConnectionLifecycleTests {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
-            handler: HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 requestContext.signalConnectionClose()
                 requestContext.signalConnectionClose()
                 requestContext.signalConnectionClose()
@@ -445,7 +428,7 @@ struct ConnectionLifecycleTests {
                     Issue.record("Expected response head but got \(String(describing: head))")
                     return
                 }
-                #expect(response.headerFields[.connection] == "close")
+
                 // Look for any duplicate `Connection` headers; the field should
                 // appear exactly once with value "close".
                 let connectionValues = response.headerFields[values: .connection]
@@ -454,8 +437,8 @@ struct ConnectionLifecycleTests {
                 while let part = try await iterator.next() {
                     if case .end = part { break }
                 }
-                let _trailing = try await iterator.next()
-                #expect(_trailing == nil)
+
+                #expect(try await iterator.next() == nil)
             }
         }
     }
@@ -471,11 +454,7 @@ struct ConnectionLifecycleTests {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
-            handler: HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 let writer = try await responseSender.send(.init(status: .ok))
                 requestContext.signalConnectionClose()
                 var buffer = UniqueArray<UInt8>(copying: [0x21])
@@ -508,8 +487,77 @@ struct ConnectionLifecycleTests {
                 while let part = try await iterator.next() {
                     if case .end = part { break }
                 }
-                let _trailing = try await iterator.next()
-                #expect(_trailing == nil)
+
+                #expect(try await iterator.next() == nil)
+            }
+        }
+    }
+
+    /// HTTP/1.1: calling `signalConnectionClose()` mid-response — after the
+    /// response head has already been streamed to the wire — still closes the
+    /// channel once response `.end` is written. Server-side timeouts are
+    /// disabled on this server, so the ONLY thing that can close the channel
+    /// is `HTTPKeepAliveHandler`'s own close path on response `.end`. Without
+    /// the mid-response check on `closeSignalled`, this test hangs and hits
+    /// the 1-minute time limit.
+    @available(anyAppleOS 26.0, *)
+    @Test("signalConnectionClose() mid-response after body drained (HTTP/1.1)", .timeLimit(.minutes(1)))
+    func testSignalConnectionCloseMidResponseAfterDrain() async throws {
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
+        let server = NIOHTTPServer(logger: Self.serverLogger, configuration: configuration)
+
+        let (canSignalStream, canSignal) = AsyncStream<Void>.makeStream()
+
+        let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
+            handler: HTTPServerClosureRequestHandler { _, requestContext, reader, responseSender in
+                var reader = reader
+                // Drain the body so `invokeHandler` recovers the iterator and the
+                // request loop stays alive — otherwise the loop exits when the
+                // handler returns, and the dispatcher closes the channel anyway.
+                var body = UniqueArray<UInt8>()
+                body.reserveCapacity(1024)
+                _ = try await reader.collect(into: &body)
+
+                let writer = try await responseSender.send(.init(status: .ok))
+
+                // Wait for the client to confirm it has read the head.
+                var iterator = canSignalStream.makeAsyncIterator()
+                _ = await iterator.next()
+
+                // Signal close AFTER the head is on the wire.
+                requestContext.signalConnectionClose()
+
+                var buffer = UniqueArray<UInt8>(copying: [0x21])
+                try await writer.finish(buffer: &buffer, finalElement: nil)
+            }
+        )
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+                .connectToTestHTTP1Server(at: serverAddress)
+            try await client.executeThenClose { inbound, outbound in
+                try await outbound.write(.head(.init(method: .get, scheme: "http", authority: "", path: "/")))
+                try await outbound.write(.end(nil))
+
+                var iterator = inbound.makeAsyncIterator()
+                let head = try await iterator.next()
+                guard case .head = head else {
+                    Issue.record("Expected response head")
+                    return
+                }
+                canSignal.yield()
+                canSignal.finish()
+
+                while let part = try await iterator.next() {
+                    if case .end = part { break }
+                }
+
+                #expect(try await iterator.next() == nil)
             }
         }
     }
@@ -526,11 +574,7 @@ struct ConnectionLifecycleTests {
         let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
-            handler: HTTPServerClosureRequestHandler {
-                request,
-                requestContext,
-                reader,
-                responseSender in
+            handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 requestContext.signalConnectionClose()
                 var buffer = UniqueArray<UInt8>(copying: [])
                 try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)

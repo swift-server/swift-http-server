@@ -149,13 +149,6 @@ extension NIOHTTPServer {
     }
 
     /// Builds a ``ConnectionContext`` for an HTTP/2 connection channel.
-    ///
-    /// The context's ``ConnectionContext/signalConnectionClose()`` fires
-    /// `ChannelShouldQuiesceEvent` on the connection-channel pipeline. NIO's
-    /// `NIOHTTP2ServerConnectionManagementHandler` (added to that pipeline by
-    /// `configureAsyncHTTP2Pipeline`) reacts by initiating graceful shutdown —
-    /// sending `GOAWAY`, letting in-flight streams complete normally, and
-    /// finally closing the connection.
     static func makeHTTP2ConnectionContext(
         connectionChannel: any Channel,
         peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
@@ -385,13 +378,6 @@ extension NIOHTTPServer {
     }
 
     /// Handles an HTTP/2 stream channel, which carries exactly one request per stream.
-    ///
-    /// If the request handler invokes
-    /// ``ConnectionContext/signalConnectionClose()`` while running, the
-    /// connection-context's `closeAction` fires `ChannelShouldQuiesceEvent` on
-    /// the connection-channel pipeline; NIO's HTTP/2 connection management
-    /// handler reacts by sending `GOAWAY`, letting other in-flight streams
-    /// complete normally, and finally closing the connection.
     func handleHTTP2StreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: Handler,

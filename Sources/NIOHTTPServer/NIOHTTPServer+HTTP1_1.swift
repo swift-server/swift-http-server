@@ -181,8 +181,8 @@ extension NIOHTTPServer {
         asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         isSecure: Bool
     ) -> EventLoopFuture<HTTP1ChildConnection> {
-        let closeFlag = NIOLockedValueBox<Bool>(false)
-        return channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+        channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+            let closeFlag = NIOLockedValueBox<Bool>(false)
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: isSecure))
             try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler(closeFlag: closeFlag))
             try channel
@@ -199,14 +199,6 @@ extension NIOHTTPServer {
     }
 
     /// Builds a ``ConnectionContext`` for an HTTP/1.1 request channel.
-    ///
-    /// The context's ``ConnectionContext/signalConnectionClose()`` synchronously
-    /// flips the shared close flag the channel's ``HTTPKeepAliveHandler``
-    /// observes when writing the next response head. The synchronous set
-    /// side-steps any race between firing a NIO event off-loop and writing the
-    /// response head off-loop. The handler reacts by amending the next response
-    /// head with `Connection: close` and closing the channel once the response
-    /// `.end` is written.
     static func makeHTTP1ConnectionContext(
         requestChannel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         closeFlag: NIOLockedValueBox<Bool>,
