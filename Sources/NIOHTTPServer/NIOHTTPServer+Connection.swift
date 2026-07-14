@@ -66,8 +66,7 @@ extension NIOHTTPServer {
         /// or an error occurs.
         public consuming func handleRequests<Handler: HTTPServerRequestHandler>(
             handler: Handler
-        ) async throws
-        where
+        ) async where
             Handler.RequestContext == NIOHTTPServer.RequestContext,
             Handler.Reader == NIOHTTPServer.Reader,
             Handler.ResponseSender == NIOHTTPServer.ResponseSender
@@ -111,8 +110,8 @@ extension NIOHTTPServer {
                     _ reader: consuming sending NIOHTTPServer.Reader,
                     _ responseSender: consuming sending NIOHTTPServer.ResponseSender
                 ) async throws -> Void
-        ) async throws {
-            try await self.handleRequests(
+        ) async {
+            await self.handleRequests(
                 handler: HTTPServerClosureRequestHandler<
                     NIOHTTPServer.RequestContext,
                     NIOHTTPServer.Reader,

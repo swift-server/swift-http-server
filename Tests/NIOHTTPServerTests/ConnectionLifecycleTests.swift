@@ -59,7 +59,7 @@ where
             globalCounter: self.state.requestInvocations,
             localCounter: connectionLocalCounter
         )
-        try await connection.handleRequests(handler: countingHandler)
+        await connection.handleRequests(handler: countingHandler)
 
         self.state.observedFinalCounter.withLockedValue { $0 = connectionLocalCounter.withLockedValue { $0 } }
     }
@@ -147,7 +147,7 @@ struct ConnectionLifecycleTests {
     /// HTTP/1.1: connecting twice results in two `handleConnection` invocations,
     /// each with non-nil `remoteAddress` and `localAddress`.
     @available(anyAppleOS 26.0, *)
-    @Test("serve(connectionHandler:) — per-connection invocation count (HTTP/1.1)")
+    @Test("serve(connectionHandler:) — per-connection invocation count (HTTP/1.1)", .timeLimit(.minutes(1)))
     func testPerConnectionInvocationHTTP1_1() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let state = ConnectionLifecycleTestState()
@@ -180,7 +180,7 @@ struct ConnectionLifecycleTests {
     /// HTTP/1.1 keep-alive: two requests on the same connection result in a
     /// single `handleConnection` invocation that runs the request handler twice.
     @available(anyAppleOS 26.0, *)
-    @Test("HTTP/1.1 keep-alive — single connection-handler invocation, multiple requests")
+    @Test("HTTP/1.1 keep-alive — single connection-handler invocation, multiple requests", .timeLimit(.minutes(1)))
     func testKeepAliveSingleInvocationMultipleRequests() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let state = ConnectionLifecycleTestState()
@@ -215,7 +215,7 @@ struct ConnectionLifecycleTests {
     /// held by the connection handler observes three after `handleRequests`
     /// returns.
     @available(anyAppleOS 26.0, *)
-    @Test("HTTP/2 — single connection-handler invocation, concurrent streams")
+    @Test("HTTP/2 — single connection-handler invocation, concurrent streams", .timeLimit(.minutes(1)))
     func testHTTP2SingleInvocationConcurrentStreams() async throws {
         let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
         let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
@@ -297,7 +297,7 @@ struct ConnectionLifecycleTests {
     /// doesn't bring it down: a subsequent connection on the same server is
     /// served normally.
     @available(anyAppleOS 26.0, *)
-    @Test("Throwing connection handler doesn't bring down the server")
+    @Test("Throwing connection handler doesn't bring down the server", .timeLimit(.minutes(1)))
     func testThrowingConnectionHandlerDoesNotKillServer() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let connectionInvocations = NIOLockedValueBox(0)
@@ -344,7 +344,7 @@ struct ConnectionLifecycleTests {
     /// effectively drops the connection: the channel closes immediately and
     /// the client sees EOF without any response.
     @available(anyAppleOS 26.0, *)
-    @Test("Connection handler returning without handleRequests drops the connection")
+    @Test("Connection handler returning without handleRequests drops the connection", .timeLimit(.minutes(1)))
     func testConnectionHandlerEarlyReturn() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let connectionInvocations = NIOLockedValueBox(0)
@@ -377,11 +377,64 @@ struct ConnectionLifecycleTests {
         #expect(connectionInvocations.withLockedValue { $0 } == 1)
     }
 
+    /// HTTP/2 counterpart: a connection handler that returns without calling
+    /// `handleRequests` still causes the underlying connection channel to be
+    /// closed by the dispatcher. Without the dispatcher's explicit close, the
+    /// multiplexer's underlying `NIOAsyncChannel` would deinit with an
+    /// unfinalized writer and trip the `NIOAsyncWriter` precondition — since
+    /// nothing else on our side references the channel in the early-return
+    /// path.
+    @available(anyAppleOS 26.0, *)
+    @Test("Connection handler returning without handleRequests drops the HTTP/2 connection", .timeLimit(.minutes(1)))
+    func testConnectionHandlerEarlyReturnHTTP2() async throws {
+        let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        let connectionInvocations = NIOLockedValueBox(0)
+
+        let connectionHandler = NoOpConnectionHandler(connectionInvocations: connectionInvocations)
+
+        try await Self.withServer(server: server, connectionHandler: connectionHandler) { serverAddress in
+            let clientChannel = try await ClientBootstrap(group: elg)
+                .connectToTestSecureUpgradeHTTPServer(
+                    at: serverAddress,
+                    trustRoots: serverChain.chain,
+                    applicationProtocol: HTTPVersion.http2.alpnIdentifier
+                )
+            guard case .http2(let streamManager) = clientChannel else {
+                Issue.record("Expected HTTP/2 channel, got \(clientChannel).")
+                return
+            }
+
+            // The server side drops the connection right after `handleConnection`
+            // returns. Any stream we try to open should either fail outright, or
+            // succeed transiently and then error/EOF once the server's close
+            // reaches the client. Both outcomes are valid evidence that the
+            // connection was closed.
+            var sawResponseHead = false
+            do {
+                let stream = try await streamManager.openStream()
+                try await stream.executeThenClose { inbound, outbound in
+                    try? await outbound.write(.head(.init(method: .get, scheme: "https", authority: "", path: "/")))
+                    try? await outbound.write(.end(nil))
+                    var iterator = inbound.makeAsyncIterator()
+                    while let part = try? await iterator.next() {
+                        if case .head = part { sawResponseHead = true }
+                    }
+                }
+            } catch {
+                // Stream open / write / read may throw — all valid outcomes.
+            }
+            #expect(!sawResponseHead, "Expected no response head from a dropped connection.")
+        }
+
+        #expect(connectionInvocations.withLockedValue { $0 } == 1)
+    }
+
     /// `ConnectionContext.httpVersion` reflects the protocol negotiated for the
     /// connection. Verified for plaintext HTTP/1.1, secure-upgrade-negotiated
     /// HTTP/1.1, and secure-upgrade-negotiated HTTP/2.
     @available(anyAppleOS 26.0, *)
-    @Test("ConnectionContext.httpVersion for plaintext HTTP/1.1")
+    @Test("ConnectionContext.httpVersion for plaintext HTTP/1.1", .timeLimit(.minutes(1)))
     func testHTTPVersionPlaintextHTTP1_1() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let observed = NIOLockedValueBox<NIOHTTPServer.HTTPVersion?>(nil)
@@ -409,7 +462,7 @@ struct ConnectionLifecycleTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    @Test("ConnectionContext.httpVersion for secure-upgrade HTTP/1.1")
+    @Test("ConnectionContext.httpVersion for secure-upgrade HTTP/1.1", .timeLimit(.minutes(1)))
     func testHTTPVersionSecureUpgradeHTTP1_1() async throws {
         let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
         let observed = NIOLockedValueBox<NIOHTTPServer.HTTPVersion?>(nil)
@@ -445,7 +498,7 @@ struct ConnectionLifecycleTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    @Test("ConnectionContext.httpVersion for secure-upgrade HTTP/2")
+    @Test("ConnectionContext.httpVersion for secure-upgrade HTTP/2", .timeLimit(.minutes(1)))
     func testHTTPVersionSecureUpgradeHTTP2() async throws {
         let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
         let observed = NIOLockedValueBox<NIOHTTPServer.HTTPVersion?>(nil)
@@ -486,7 +539,7 @@ struct ConnectionLifecycleTests {
     /// shared between them — each connection's per-request counter only
     /// reflects its own requests.
     @available(anyAppleOS 26.0, *)
-    @Test("State isolation across keep-alive HTTP/1.1 connections")
+    @Test("State isolation across keep-alive HTTP/1.1 connections", .timeLimit(.minutes(1)))
     func testKeepAliveStateIsolationAcrossConnections() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
         let perConnectionCounters = NIOLockedValueBox<[Int]>([])
@@ -533,7 +586,7 @@ struct ConnectionLifecycleTests {
     /// single request is served end-to-end without constructing an explicit
     /// ``HTTPServerClosureRequestHandler``.
     @available(anyAppleOS 26.0, *)
-    @Test("connection.handleRequests closure overload")
+    @Test("connection.handleRequests closure overload", .timeLimit(.minutes(1)))
     func testHandleRequestsClosureOverload() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
@@ -583,7 +636,7 @@ struct ThrowingFirstConnectionHandler: NIOHTTPServerConnectionHandler {
         if invocation == 1 {
             throw TestError.intentional
         }
-        try await connection.handleRequests { request, _, reader, sender in
+        await connection.handleRequests { request, _, reader, sender in
             try await NIOHTTPServerTests.echoResponse(readUpTo: 1024, reader: reader, sender: sender)
         }
     }
@@ -625,7 +678,7 @@ where
         self.observed.withLockedValue { value in
             if value == nil { value = context.httpVersion }
         }
-        try await connection.handleRequests(handler: self.wrappedHandler)
+        await connection.handleRequests(handler: self.wrappedHandler)
     }
 }
 
@@ -651,7 +704,7 @@ where
             globalCounter: NIOLockedValueBox(0),
             localCounter: counter
         )
-        try await connection.handleRequests(handler: countingHandler)
+        await connection.handleRequests(handler: countingHandler)
         let finalCount = counter.withLockedValue { $0 }
         self.perConnectionCounters.withLockedValue { $0.append(finalCount) }
     }
@@ -665,7 +718,7 @@ struct ClosureRequestHandlerConnectionHandler: NIOHTTPServerConnectionHandler {
         connection: consuming sending NIOHTTPServer.Connection,
         context: NIOHTTPServer.ConnectionContext
     ) async throws {
-        try await connection.handleRequests { request, _, reader, sender in
+        await connection.handleRequests { request, _, reader, sender in
             try await NIOHTTPServerTests.echoResponse(readUpTo: 1024, reader: reader, sender: sender)
         }
     }

@@ -75,7 +75,7 @@ struct ConnectionHandlerExample {
                     connectionLogger.info("connection accepted")
                     defer { connectionLogger.info("connection closed") }
 
-                    try await connection.take()!.handleRequests { request, _, _, responseSender in
+                    await connection.take()!.handleRequests { request, _, _, responseSender in
                         var responseSender = Optional(responseSender)
                         try await withLogger(mergingMetadata: [
                             "path": .string(request.path ?? "")

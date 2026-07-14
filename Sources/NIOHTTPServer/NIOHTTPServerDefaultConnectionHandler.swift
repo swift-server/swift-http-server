@@ -41,6 +41,6 @@ where
         connection: consuming sending NIOHTTPServer.Connection,
         context: NIOHTTPServer.ConnectionContext
     ) async throws {
-        try await connection.handleRequests(handler: self.handler)
+        await connection.handleRequests(handler: self.handler)
     }
 }

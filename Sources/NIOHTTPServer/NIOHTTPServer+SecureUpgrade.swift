@@ -118,7 +118,7 @@ extension NIOHTTPServer {
                 }
             } catch {
                 self.logger.debug(
-                    "Error tearing down HTTP/1.1 channel",
+                    "Error handling HTTP/1.1 connection",
                     metadata: ["error": "\(error)"]
                 )
             }
@@ -134,6 +134,8 @@ extension NIOHTTPServer {
                 context: context,
                 httpProtocol: .http2(connectionChannel: connectionChannel, multiplexer: multiplexer)
             )
+
+            defer { try? await connectionChannel.close() }
             do {
                 try await connectionHandler.handleConnection(connection: connection, context: context)
             } catch {
