@@ -80,11 +80,18 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     /// completed by then, sent with `Connection: close`.
     private var requestBodyInFlight: Bool = false
 
-    /// `true` if we've committed to closing the connection after this response's
-    /// `.end` is written. Set when the buffer is flushed while request `.end` has
-    /// not yet arrived (so we add `Connection: close`), or when the close flag
-    /// was set by ``NIOHTTPServer/ConnectionContext/signalConnectionClose()``
-    /// while a response is in flight. Cleared when a new request begins.
+    /// `true` if the response head that has been (or will be) written for the
+    /// current request carries `Connection: close` — either because the close
+    /// flag was set before the head reached the wire, or because the head was
+    /// flushed while a request body was still in flight. When true, response
+    /// `.end` triggers a channel close.
+    ///
+    /// If `closeSignalled` becomes true only *after* the head has been streamed
+    /// (so the header could no longer be amended), this flag stays `false` —
+    /// the close is still honoured, but via a direct `closeSignalled` check on
+    /// response `.end` rather than through this flag.
+    ///
+    /// Cleared when a new request begins.
     private var closeAfterResponseEnd: Bool = false
 
     private var finalResponseState: FinalResponseState = .notStarted
@@ -171,10 +178,13 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
             self.finalResponseState = .buffering(head: head, additional: additional)
         case .streaming:
             context.write(data, promise: promise)
-            if case .end = part, self.closeAfterResponseEnd {
-                // The head we flushed earlier carried `Connection: close`, or a
-                // close signal arrived after the head was flushed; close the
-                // connection now that the response is complete.
+            if case .end = part, self.closeAfterResponseEnd || self.closeSignalled {
+                // Either the head we flushed earlier carried `Connection: close`
+                // (`closeAfterResponseEnd`), or a close signal arrived after the
+                // head was on the wire (`closeSignalled`). In the latter case
+                // the header can't be added retroactively, but we still honour
+                // the caller's contract and close the connection now that the
+                // response is complete.
                 context.flush()
                 context.close(mode: .output, promise: nil)
             }
@@ -228,10 +238,12 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         }
         context.flush()
 
-        if sawEnd && self.closeAfterResponseEnd {
+        if sawEnd && (self.closeAfterResponseEnd || self.closeSignalled) {
             // The response was fully buffered (head + ... + end) and we have to
-            // close. Close now (the flush above ensured the writes reached the
-            // wire).
+            // close — either we amended the head with `Connection: close` at the
+            // top of this method (`closeAfterResponseEnd`), or a close signal
+            // arrived between the head decision and here (`closeSignalled`).
+            // Close now (the flush above ensured the writes reached the wire).
             context.close(mode: .output, promise: nil)
         }
     }
