@@ -70,10 +70,15 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         case streaming
     }
 
-    /// `true` when the request `.end` has been received on the inbound side, or no
-    /// request is currently in flight. `false` between receiving a request `.head`
-    /// and its `.end`.
-    private var requestEndReceived: Bool = true
+    /// `true` between receiving a request `.head` and its `.end` — i.e. while the
+    /// client may still be streaming request body bytes. `false` otherwise: on a
+    /// fresh handler with no request yet, between requests, and after a request's
+    /// `.end` has arrived. The final-response decision hinges on this: writing a
+    /// final response head while a body is in flight risks HTTP/1.1 framing
+    /// desync on keep-alive, so those writes must be buffered until the flush
+    /// deadline (`channelReadComplete` / `flush`) and, if the body still hasn't
+    /// completed by then, sent with `Connection: close`.
+    private var requestBodyInFlight: Bool = false
 
     /// `true` if we've committed to closing the connection after this response's
     /// `.end` is written. Set when the buffer is flushed while request `.end` has
@@ -104,13 +109,13 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         case .head:
             // Begin a new request. (Any previous request's response must have
             // completed already since HTTPServerPipelineHandler enforces ordering.)
-            self.requestEndReceived = false
+            self.requestBodyInFlight = true
             self.closeAfterResponseEnd = false
             self.finalResponseState = .notStarted
         case .body:
             break
         case .end:
-            self.requestEndReceived = true
+            self.requestBodyInFlight = false
         }
         context.fireChannelRead(data)
     }
@@ -138,10 +143,11 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
                 context.write(data, promise: promise)
                 return
             }
-            if self.requestEndReceived {
-                // Request fully read; stream the response directly. If a close
-                // signal has been observed, amend the head with `Connection: close`
-                // and arrange to close once response `.end` is written.
+            if !self.requestBodyInFlight {
+                // No request body in flight; stream the response directly. If a
+                // close signal has been observed, amend the head with
+                // `Connection: close` and arrange to close once response `.end`
+                // is written.
                 let outboundPart: HTTPResponsePart
                 if self.closeSignalled, case .head(var response) = part {
                     response.headerFields[.connection] = "close"
@@ -192,7 +198,7 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     private func flushBuffer(context: ChannelHandlerContext) {
         guard case .buffering(var head, let additional) = self.finalResponseState else { return }
 
-        if !self.requestEndReceived || self.closeSignalled {
+        if self.requestBodyInFlight || self.closeSignalled {
             // Amend the head with `Connection: close` before flushing.
             if case .head(var response) = head.part {
                 response.headerFields[.connection] = "close"
