@@ -443,19 +443,25 @@ struct ConnectionLifecycleTests {
         }
     }
 
-    /// HTTP/1.1: calling `signalConnectionClose()` AFTER the response head has
-    /// already been written. The channel still closes after the response `.end`,
-    /// but the head can't be amended — it's already on the wire. The client
-    /// observes the response without a `Connection: close` header followed by
-    /// EOF.
+    /// HTTP/1.1: calling `signalConnectionClose()` AFTER the response head is
+    /// on the wire. The channel still closes after the response `.end`, and the
+    /// head does NOT carry `Connection: close` — it can't be amended once it's
+    /// already been streamed.
     @available(anyAppleOS 26.0, *)
-    @Test("signalConnectionClose() after response head is written (HTTP/1.1)")
+    @Test("signalConnectionClose() after response head is on the wire (HTTP/1.1)")
     func testSignalConnectionCloseAfterHead() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
+
+        let (canSignalStream, canSignal) = AsyncStream<Void>.makeStream()
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
             handler: HTTPServerClosureRequestHandler { _, requestContext, _, responseSender in
                 let writer = try await responseSender.send(.init(status: .ok))
+                // Wait for the client to confirm it has read the head so
+                // signalConnectionClose() is deterministically after the head
+                // has reached the wire.
+                var iterator = canSignalStream.makeAsyncIterator()
+                _ = await iterator.next()
                 requestContext.signalConnectionClose()
                 var buffer = UniqueArray<UInt8>(copying: [0x21])
                 try await writer.finish(buffer: &buffer, finalElement: nil)
@@ -476,13 +482,16 @@ struct ConnectionLifecycleTests {
                     return
                 }
                 #expect(response.status == .ok)
-                // We deliberately don't assert anything about the `Connection`
-                // header here: `responseSender.send(_:)` returns once the head
-                // is yielded to the async-stream queue, which may be before the
-                // keep-alive handler has actually processed it on the event
-                // loop. So the flag set immediately after `send` is sometimes
-                // still observed in time to amend the head. The reliable
-                // observable is that the channel closes after the response.
+                // The head reached the wire before signalConnectionClose ran,
+                // so it can't have been amended.
+                #expect(
+                    response.headerFields[.connection] == nil,
+                    "Head was already on the wire when close was signalled — can't be amended; got \(response.headerFields)"
+                )
+
+                // Unblock the server to signal close and finish the response.
+                canSignal.yield()
+                canSignal.finish()
 
                 while let part = try await iterator.next() {
                     if case .end = part { break }
