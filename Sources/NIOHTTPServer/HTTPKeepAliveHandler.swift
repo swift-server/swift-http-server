@@ -126,8 +126,8 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         // `Connection: close`. If request `.end` arrived during the cycle the head
         // is flushed unchanged; otherwise we amend the head and close after
         // response `.end`.
-        if case .buffering = self.finalResponseState {
-            self.flushBuffer(context: context)
+        if case let .buffering(head, additional) = self.finalResponseState {
+            self.flushBuffer(context: context, head: head, additional: additional)
         }
         context.fireChannelReadComplete()
     }
@@ -183,20 +183,29 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
 
     func flush(context: ChannelHandlerContext) {
         // An upstream writer forced a flush. Same deadline as `channelReadComplete`:
-        // release any buffered parts, with `Connection: close` if request `.end`
-        // hasn't arrived or close was signalled.
-        if case .buffering = self.finalResponseState {
-            self.flushBuffer(context: context)
+        // release any buffered parts, with `Connection: close` if the request body
+        // is still in flight or close was signalled. `flushBuffer` flushes itself,
+        // so we only propagate the incoming flush when there's no buffer to
+        // release — otherwise we'd double-flush.
+        if case let .buffering(head, additional) = self.finalResponseState {
+            self.flushBuffer(context: context, head: head, additional: additional)
+        } else {
+            context.flush()
         }
-        context.flush()
     }
 
-    /// Releases buffered response parts to the pipeline. If request `.end` has not
-    /// yet arrived, or if the shared close flag is set, amend the head with
-    /// `Connection: close` and arrange to close the connection once response `.end`
-    /// is written.
-    private func flushBuffer(context: ChannelHandlerContext) {
-        guard case .buffering(var head, let additional) = self.finalResponseState else { return }
+    /// Releases the given buffered response parts to the pipeline. If a request
+    /// body is still in flight, or if the shared close flag is set, amends the
+    /// head with `Connection: close` and arranges to close the connection once
+    /// response `.end` is written. Called only by the two flush deadlines
+    /// (`channelReadComplete` and `flush`), each of which supplies the buffer
+    /// contents extracted from the `.buffering` state.
+    private func flushBuffer(
+        context: ChannelHandlerContext,
+        head: BufferedWrite,
+        additional: [BufferedWrite]
+    ) {
+        var head = head
 
         if self.requestBodyInFlight || self.closeSignalled {
             // Amend the head with `Connection: close` before flushing.
