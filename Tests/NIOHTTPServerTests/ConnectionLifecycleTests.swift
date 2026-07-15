@@ -292,7 +292,7 @@ struct ConnectionLifecycleTests {
     /// HTTP/1.1: a request handler that signals close has its response carry
     /// `Connection: close`, and a follow-up read on the same socket returns nil.
     @available(anyAppleOS 26.0, *)
-    @Test("signalConnectionClose() on HTTP/1.1")
+    @Test("signalConnectionClose() on HTTP/1.1", .timeLimit(.minutes(1)))
     func testSignalConnectionCloseHTTP1_1() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
@@ -334,7 +334,7 @@ struct ConnectionLifecycleTests {
     /// stop accepting new streams. In-flight streams complete normally before
     /// the connection is torn down.
     @available(anyAppleOS 26.0, *)
-    @Test("signalConnectionClose() on HTTP/2")
+    @Test("signalConnectionClose() on HTTP/2", .timeLimit(.minutes(1)))
     func testSignalConnectionCloseHTTP2() async throws {
         let (server, serverChain) = try NIOHTTPServerTests.makeSecureUpgradeServer(logger: Self.serverLogger)
         let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
@@ -401,7 +401,7 @@ struct ConnectionLifecycleTests {
     /// handler is harmless — the response still carries a single
     /// `Connection: close` header and the channel is closed exactly once.
     @available(anyAppleOS 26.0, *)
-    @Test("signalConnectionClose() is idempotent (HTTP/1.1)")
+    @Test("signalConnectionClose() is idempotent (HTTP/1.1)", .timeLimit(.minutes(1)))
     func testSignalConnectionCloseIdempotent() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
@@ -448,7 +448,7 @@ struct ConnectionLifecycleTests {
     /// head does NOT carry `Connection: close` — it can't be amended once it's
     /// already been streamed.
     @available(anyAppleOS 26.0, *)
-    @Test("signalConnectionClose() after response head is on the wire (HTTP/1.1)")
+    @Test("signalConnectionClose() after response head is on the wire (HTTP/1.1)", .timeLimit(.minutes(1)))
     func testSignalConnectionCloseAfterHead() async throws {
         let server = try NIOHTTPServerTests.makePlaintextHTTP1Server(logger: Self.serverLogger)
 
