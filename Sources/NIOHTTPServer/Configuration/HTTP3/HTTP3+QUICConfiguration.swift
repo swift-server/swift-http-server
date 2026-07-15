@@ -88,8 +88,6 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         public var serverName: String
 
         /// The named group to use for the TLS 1.3 key exchange.
-        ///
-        /// - Note: The default value is ``KeyExchangeGroup/x25519``.
         public var keyExchangeGroup: KeyExchangeGroup
 
         /// The idle timeout advertised to the client. A connection may time out sooner than this value if the client
@@ -98,50 +96,36 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// - Important: The effective idle timeout enforced on a connection is the minimum of both endpoints'
         ///   advertised values.
         ///
-        /// - Note: The default value is 30 seconds.
-        ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.4.1 and
         ///   https://datatracker.ietf.org/doc/html/rfc9000#name-idle-timeout
         public var maxIdleTimeout: Duration
 
         /// The initial value for the maximum amount of data (in bytes) that can be sent on the connection.
         ///
-        /// - Note: The default value is 1 MiB.
-        ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.14.1
         public var initialMaxData: Int
 
         /// The initial flow control limit for locally initiated bidirectional streams.
-        ///
-        /// - Note: The default value is 1 MiB.
         ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.16.1
         public var initialMaxStreamDataBidirectionalLocal: Int
 
         /// The initial flow control limit for client-initiated bidirectional streams.
         ///
-        /// - Note: The default value is 1 MiB.
-        ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.18.1
         public var initialMaxStreamDataBidirectionalRemote: Int
 
         /// The initial flow control limit for unidirectional streams.
-        ///
-        /// - Note: The default value is 1 MiB.
         ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.20.1
         public var initialMaxStreamDataUnidirectional: Int
 
         /// The initial maximum number of bidirectional streams the server is permitted to initiate.
         ///
-        /// - Note: The default value is 100 streams.
-        ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.22.1
         public var initialMaxStreamsBidirectional: Int
 
         /// The initial maximum number of unidirectional streams the server is permitted to initiate.
-        ///
-        /// - Note: The default value is 100 streams.
         ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.24.1
         public var initialMaxStreamsUnidirectional: Int
@@ -155,14 +139,10 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// - Important: For keep-alive pings to be effective, the interval must be shorter than the negotiated idle
         ///   timeout.
         ///
-        /// - Note: Defaults to `nil` (no keep-alive PINGs are sent).
-        ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-10.1.2
         public var keepAliveInterval: Duration?
 
         /// Whether the server sends a Retry packet before accepting a new connection.
-        ///
-        /// - Note: Defaults to `false`.
         ///
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-8.1.2
         public var sendRetry: Bool
@@ -179,6 +159,20 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         public var qLogConfiguration: QLogConfiguration?
 
         /// The default QUIC transport configuration.
+        ///
+        /// Uses the following default values:
+        /// - `keyExchangeGroup`: ``KeyExchangeGroup/x25519``
+        /// - `maxIdleTimeout`: 30 seconds
+        /// - `initialMaxData`: 1 MiB
+        /// - `initialMaxStreamDataBidirectionalLocal`: 1 MiB
+        /// - `initialMaxStreamDataBidirectionalRemote`: 1 MiB
+        /// - `initialMaxStreamDataUnidirectional`: 1 MiB
+        /// - `initialMaxStreamsBidirectional`: 100 streams
+        /// - `initialMaxStreamsUnidirectional`: 100 streams
+        /// - `keepAliveInterval`: `nil` (no keep-alive PINGs are sent)
+        /// - `sendRetry`: `false`
+        /// - `keyLogPath`: `nil` (TLS session keys are not logged)
+        /// - `qLogConfiguration`: `nil` (qlog is not enabled)
         public static var defaults: Self {
             Self(
                 // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. This default configuration
