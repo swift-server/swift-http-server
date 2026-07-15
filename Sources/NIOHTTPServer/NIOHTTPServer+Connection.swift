@@ -23,7 +23,8 @@ extension NIOHTTPServer {
     /// A `Connection` is owned by exactly one ``NIOHTTPServerConnectionHandler/handleConnection(connection:context:)``
     /// invocation. The handler typically passes it to ``handleRequests(handler:)``,
     /// which runs the request loop until the peer closes the connection, the
-    /// server shuts down, or an error occurs.
+    /// server shuts down, the handler signals close via
+    /// ``ConnectionContext/signalConnectionClose()``, or an error occurs.
     ///
     /// A handler that decides to terminate before any request can simply
     /// return without calling ``handleRequests(handler:)``: the `Connection`
@@ -63,6 +64,7 @@ extension NIOHTTPServer {
         ///
         /// Each request received on this connection is dispatched to `handler`. The
         /// loop returns when the peer closes the connection, the server shuts down,
+        /// the handler signals close via ``ConnectionContext/signalConnectionClose()``,
         /// or an error occurs.
         public consuming func handleRequests<Handler: HTTPServerRequestHandler>(
             handler: Handler

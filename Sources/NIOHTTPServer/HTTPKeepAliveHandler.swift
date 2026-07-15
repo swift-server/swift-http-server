@@ -12,11 +12,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOHTTPTypes
 
-/// A NIO channel handler that ensures HTTP/1.1 keep-alive semantics are honored when
-/// the server starts writing a response before the request body has been fully read.
+/// A NIO channel handler that ensures HTTP/1.1 keep-alive semantics are honored
+/// when the server starts writing a response before the request body has been
+/// fully read, and that reacts to the connection-scoped close flag by amending
+/// the next response head with `Connection: close` and closing the channel after
+/// the response is written.
 ///
 /// The handler buffers final response parts (head + any body fragments + end) when
 /// they are written before the request `.end` has been received. The buffer is
@@ -26,13 +30,15 @@ import NIOHTTPTypes
 /// - **`flush`**: an upstream writer (e.g. `NIOAsyncChannelOutboundWriter`) forced a
 ///   flush.
 ///
-/// At each deadline, if request `.end` has arrived, the buffer is flushed as-is and
-/// the connection is reusable. If request `.end` has *not* arrived, the head is
-/// amended with `Connection: close`, the buffer is flushed, and the connection is
-/// closed once response `.end` is written. This protects against clients that keep
-/// uploading request body bytes after the response has completed (which would
-/// otherwise force the server to drain unbounded data) and gives the client an
-/// explicit signal not to pipeline another request on the connection.
+/// At each deadline, if request `.end` has arrived and no close has been
+/// signalled, the buffer is flushed as-is and the connection is reusable. If
+/// request `.end` has *not* arrived, or the shared close flag has been set, the
+/// head is amended with `Connection: close`, the buffer is flushed, and the
+/// connection is closed once response `.end` is written. This protects against
+/// clients that keep uploading request body bytes after the response has
+/// completed (which would otherwise force the server to drain unbounded data)
+/// and gives the client an explicit signal not to pipeline another request on
+/// the connection.
 ///
 /// Informational (1xx) responses pass through unchanged and do not affect buffering
 /// state.
@@ -64,18 +70,45 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         case streaming
     }
 
-    /// `true` when the request `.end` has been received on the inbound side, or no
-    /// request is currently in flight. `false` between receiving a request `.head`
-    /// and its `.end`.
-    private var requestEndReceived: Bool = true
+    /// `true` between receiving a request `.head` and its `.end` — i.e. while the
+    /// client may still be streaming request body bytes. `false` otherwise: on a
+    /// fresh handler with no request yet, between requests, and after a request's
+    /// `.end` has arrived. The final-response decision hinges on this: writing a
+    /// final response head while a body is in flight risks HTTP/1.1 framing
+    /// desync on keep-alive, so those writes must be buffered until the flush
+    /// deadline (`channelReadComplete` / `flush`) and, if the body still hasn't
+    /// completed by then, sent with `Connection: close`.
+    private var requestBodyInFlight: Bool = false
 
-    /// `true` if we've committed to closing the connection after this response's
-    /// `.end` is written. Set when the buffer is flushed while request `.end` has
-    /// not yet arrived (so we add `Connection: close`). Cleared when a new request
-    /// begins.
+    /// `true` if the response head that has been (or will be) written for the
+    /// current request carries `Connection: close` — either because the close
+    /// flag was set before the head reached the wire, or because the head was
+    /// flushed while a request body was still in flight. When true, response
+    /// `.end` triggers a channel close.
+    ///
+    /// If `closeSignalled` becomes true only *after* the head has been streamed
+    /// (so the header could no longer be amended), this flag stays `false` —
+    /// the close is still honoured, but via a direct `closeSignalled` check on
+    /// response `.end` rather than through this flag.
+    ///
+    /// Cleared when a new request begins.
     private var closeAfterResponseEnd: Bool = false
 
     private var finalResponseState: FinalResponseState = .notStarted
+
+    /// Shared close flag. ``NIOHTTPServer/ConnectionContext/signalConnectionClose()``
+    /// sets this synchronously; the handler observes it when writing the next
+    /// response head and amends with `Connection: close`, then closes the channel
+    /// after the response `.end`.
+    let closeFlag: NIOLockedValueBox<Bool>
+
+    init(closeFlag: NIOLockedValueBox<Bool>) {
+        self.closeFlag = closeFlag
+    }
+
+    private var closeSignalled: Bool {
+        self.closeFlag.withLockedValue { $0 }
+    }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let part = self.unwrapInboundIn(data)
@@ -83,13 +116,13 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         case .head:
             // Begin a new request. (Any previous request's response must have
             // completed already since HTTPServerPipelineHandler enforces ordering.)
-            self.requestEndReceived = false
+            self.requestBodyInFlight = true
             self.closeAfterResponseEnd = false
             self.finalResponseState = .notStarted
         case .body:
             break
         case .end:
-            self.requestEndReceived = true
+            self.requestBodyInFlight = false
         }
         context.fireChannelRead(data)
     }
@@ -100,8 +133,8 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         // `Connection: close`. If request `.end` arrived during the cycle the head
         // is flushed unchanged; otherwise we amend the head and close after
         // response `.end`.
-        if case .buffering = self.finalResponseState {
-            self.flushBuffer(context: context)
+        if case let .buffering(head, additional) = self.finalResponseState {
+            self.flushBuffer(context: context, head: head, additional: additional)
         }
         context.fireChannelReadComplete()
     }
@@ -117,10 +150,21 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
                 context.write(data, promise: promise)
                 return
             }
-            if self.requestEndReceived {
-                // Request fully read; stream the response directly.
+            if !self.requestBodyInFlight {
+                // No request body in flight; stream the response directly. If a
+                // close signal has been observed, amend the head with
+                // `Connection: close` and arrange to close once response `.end`
+                // is written.
+                let outboundPart: HTTPResponsePart
+                if self.closeSignalled, case .head(var response) = part {
+                    response.headerFields[.connection] = "close"
+                    outboundPart = .head(response)
+                    self.closeAfterResponseEnd = true
+                } else {
+                    outboundPart = part
+                }
                 self.finalResponseState = .streaming
-                context.write(data, promise: promise)
+                context.write(self.wrapOutboundOut(outboundPart), promise: promise)
             } else {
                 // Start buffering with the head. Additional parts (body, end) the
                 // handler may write before the next deadline are appended below.
@@ -134,9 +178,13 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
             self.finalResponseState = .buffering(head: head, additional: additional)
         case .streaming:
             context.write(data, promise: promise)
-            if case .end = part, self.closeAfterResponseEnd {
-                // The head we flushed earlier carried `Connection: close`; close
-                // the connection now that the response is complete.
+            if case .end = part, self.closeAfterResponseEnd || self.closeSignalled {
+                // Either the head we flushed earlier carried `Connection: close`
+                // (`closeAfterResponseEnd`), or a close signal arrived after the
+                // head was on the wire (`closeSignalled`). In the latter case
+                // the header can't be added retroactively, but we still honour
+                // the caller's contract and close the connection now that the
+                // response is complete.
                 context.flush()
                 context.close(mode: .output, promise: nil)
             }
@@ -145,21 +193,31 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
 
     func flush(context: ChannelHandlerContext) {
         // An upstream writer forced a flush. Same deadline as `channelReadComplete`:
-        // release any buffered parts, with `Connection: close` if request `.end`
-        // hasn't arrived.
-        if case .buffering = self.finalResponseState {
-            self.flushBuffer(context: context)
+        // release any buffered parts, with `Connection: close` if the request body
+        // is still in flight or close was signalled. `flushBuffer` flushes itself,
+        // so we only propagate the incoming flush when there's no buffer to
+        // release — otherwise we'd double-flush.
+        if case let .buffering(head, additional) = self.finalResponseState {
+            self.flushBuffer(context: context, head: head, additional: additional)
+        } else {
+            context.flush()
         }
-        context.flush()
     }
 
-    /// Releases buffered response parts to the pipeline. If request `.end` has not
-    /// yet arrived, amend the head with `Connection: close` and arrange to close
-    /// the connection once response `.end` is written.
-    private func flushBuffer(context: ChannelHandlerContext) {
-        guard case .buffering(var head, let additional) = self.finalResponseState else { return }
+    /// Releases the given buffered response parts to the pipeline. If a request
+    /// body is still in flight, or if the shared close flag is set, amends the
+    /// head with `Connection: close` and arranges to close the connection once
+    /// response `.end` is written. Called only by the two flush deadlines
+    /// (`channelReadComplete` and `flush`), each of which supplies the buffer
+    /// contents extracted from the `.buffering` state.
+    private func flushBuffer(
+        context: ChannelHandlerContext,
+        head: BufferedWrite,
+        additional: [BufferedWrite]
+    ) {
+        var head = head
 
-        if !self.requestEndReceived {
+        if self.requestBodyInFlight || self.closeSignalled {
             // Amend the head with `Connection: close` before flushing.
             if case .head(var response) = head.part {
                 response.headerFields[.connection] = "close"
@@ -180,10 +238,12 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         }
         context.flush()
 
-        if sawEnd && self.closeAfterResponseEnd {
+        if sawEnd && (self.closeAfterResponseEnd || self.closeSignalled) {
             // The response was fully buffered (head + ... + end) and we have to
-            // close. Close now (the flush above ensured the writes reached the
-            // wire).
+            // close — either we amended the head with `Connection: close` at the
+            // top of this method (`closeAfterResponseEnd`), or a close signal
+            // arrived between the head decision and here (`closeSignalled`).
+            // Close now (the flush above ensured the writes reached the wire).
             context.close(mode: .output, promise: nil)
         }
     }

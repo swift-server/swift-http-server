@@ -30,7 +30,7 @@ import X509
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     typealias NegotiatedChannel = NIONegotiatedHTTPVersion<
-        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        HTTP1ChildConnection,
         (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
     >
 
@@ -91,15 +91,16 @@ extension NIOHTTPServer {
         }
 
         switch negotiatedChannel {
-        case .http1_1(let requestChannel):
+        case .http1_1(let child):
             // The dispatcher owns the channel's `executeThenClose` so the
             // `NIOAsyncWriter` is finished cleanly whether or not the
             // connection handler called `handleRequests`.
             do {
-                try await requestChannel.executeThenClose { inbound, outbound in
-                    let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
+                try await child.asyncChannel.executeThenClose { inbound, outbound in
+                    let chainFuture = child.asyncChannel.channel.nioSSL_peerValidatedCertificateChain()
                     let context = NIOHTTPServer.makeHTTP1ConnectionContext(
-                        requestChannel: requestChannel,
+                        requestChannel: child.asyncChannel,
+                        closeFlag: child.closeFlag,
                         peerCertificateChainFuture: chainFuture
                     )
                     let connection = Connection(
@@ -156,7 +157,8 @@ extension NIOHTTPServer {
             httpVersion: .http2,
             remoteAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.remoteAddress),
             localAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.localAddress),
-            peerCertificateChainFuture: peerCertificateChainFuture
+            peerCertificateChainFuture: peerCertificateChainFuture,
+            closeBacking: .http2(connectionChannel: connectionChannel)
         )
     }
 
