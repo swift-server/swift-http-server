@@ -95,10 +95,10 @@ extension NIOHTTPServer {
 
         /// Signal that the connection should close after the current response.
         ///
-        /// Non-blocking and idempotent. Effective after the current response:
-        ///
-        /// - On HTTP/1.1, the response carries `Connection: close` and the
-        ///   channel is closed once the response has been written.
+        /// - On HTTP/1.1, the response carries `Connection: close` and the channel is closed once the response has
+        /// been written. Note that amending the response with the `close` header will only happen if this function is called
+        /// before the response `head` has been flushed to the wire. Either way the connection will be closed after the current
+        /// response, but it may not carry the `Connection: close` header.
         /// - On HTTP/2, the connection sends `GOAWAY`; in-flight streams
         ///   complete normally before the connection closes.
         public func signalConnectionClose() {
