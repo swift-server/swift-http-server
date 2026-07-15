@@ -25,6 +25,8 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         public var preferHuffmanEncoding: Bool
 
         /// The default HTTP/3 protocol configuration.
+        ///
+        /// Sets `preferHuffmanEncoding` to `true`.
         public static var defaults: Self {
             Self(preferHuffmanEncoding: true)
         }

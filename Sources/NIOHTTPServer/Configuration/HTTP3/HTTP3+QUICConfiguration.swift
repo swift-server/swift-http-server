@@ -161,18 +161,18 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// The default QUIC transport configuration.
         ///
         /// Uses the following default values:
-        /// - `keyExchangeGroup`: ``KeyExchangeGroup/x25519``
-        /// - `maxIdleTimeout`: 30 seconds
-        /// - `initialMaxData`: 1 MiB
-        /// - `initialMaxStreamDataBidirectionalLocal`: 1 MiB
-        /// - `initialMaxStreamDataBidirectionalRemote`: 1 MiB
-        /// - `initialMaxStreamDataUnidirectional`: 1 MiB
-        /// - `initialMaxStreamsBidirectional`: 100 streams
-        /// - `initialMaxStreamsUnidirectional`: 100 streams
-        /// - `keepAliveInterval`: `nil` (no keep-alive PINGs are sent)
-        /// - `sendRetry`: `false`
-        /// - `keyLogPath`: `nil` (TLS session keys are not logged)
-        /// - `qLogConfiguration`: `nil` (qlog is not enabled)
+        /// - `keyExchangeGroup`: ``KeyExchangeGroup/x25519``.
+        /// - `maxIdleTimeout`: 30 seconds.
+        /// - `initialMaxData`: 1 MiB.
+        /// - `initialMaxStreamDataBidirectionalLocal`: 1 MiB.
+        /// - `initialMaxStreamDataBidirectionalRemote`: 1 MiB.
+        /// - `initialMaxStreamDataUnidirectional`: 1 MiB.
+        /// - `initialMaxStreamsBidirectional`: 100 streams.
+        /// - `initialMaxStreamsUnidirectional`: 100 streams.
+        /// - `keepAliveInterval`: `nil` (no keep-alive PINGs are sent).
+        /// - `sendRetry`: `false`.
+        /// - `keyLogPath`: `nil` (TLS session keys are not logged).
+        /// - `qLogConfiguration`: `nil` (qlog is not enabled).
         public static var defaults: Self {
             Self(
                 // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. This default configuration

@@ -44,7 +44,12 @@ extension NIOHTTPServerConfiguration {
             self.quicConfiguration = quicConfiguration
         }
 
-        /// The default configuration.
+        /// The default HTTP/3 configuration.
+        ///
+        /// Uses the default configurations of the sub-components:
+        /// - `quicConfiguration`: ``QUICConfiguration/defaults``.
+        /// - `protocolConfiguration`: ``ProtocolConfiguration/defaults``.
+        /// - `connectionSettings`: ``ConnectionSettings/defaults``.
         public static var defaults: Self {
             Self(
                 quicConfiguration: .defaults,
