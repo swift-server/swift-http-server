@@ -524,7 +524,6 @@ struct ConnectionLifecycleTests {
 
         let connectionHandler = NIOHTTPServerDefaultConnectionHandler(
             handler: HTTPServerClosureRequestHandler { _, requestContext, reader, responseSender in
-                var reader = reader
                 // Drain the body so `invokeHandler` recovers the iterator and the
                 // request loop stays alive — otherwise the loop exits when the
                 // handler returns, and the dispatcher closes the channel anyway.
