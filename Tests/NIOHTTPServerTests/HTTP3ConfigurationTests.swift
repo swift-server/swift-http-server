@@ -19,21 +19,17 @@ import Testing
 
 @Suite
 struct HTTP3ConfigurationTests {
-    @Test("HTTP/3 default configuration uses the defaults of the three sub-components")
+    @Test("HTTP/3 default configuration uses the defaults of the sub-components")
     @available(anyAppleOS 26.0, *)
     func http3DefaultConfiguration() {
         let config = NIOHTTPServerConfiguration.HTTP3.defaults
         #expect(config.quicConfiguration == .defaults)
-        #expect(config.protocolConfiguration == .defaults)
         #expect(config.connectionSettings == .defaults)
     }
 
     @Test("HTTP/3 configuration with custom values")
     @available(anyAppleOS 26.0, *)
     func http3ConfigurationCustomValues() {
-        var protocolConfiguration = NIOHTTPServerConfiguration.HTTP3.ProtocolConfiguration.defaults
-        protocolConfiguration.preferHuffmanEncoding = false
-
         var connectionSettings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings.defaults
         connectionSettings.qpackMaximumTableCapacity = 4096
         connectionSettings.qpackBlockedStreams = 16
@@ -44,12 +40,12 @@ struct HTTP3ConfigurationTests {
         quic.sendRetry = true
 
         let config = NIOHTTPServerConfiguration.HTTP3(
+            preferHuffmanEncoding: false,
             quicConfiguration: quic,
-            protocolConfiguration: protocolConfiguration,
             connectionSettings: connectionSettings
         )
 
-        #expect(config.protocolConfiguration.preferHuffmanEncoding == false)
+        #expect(config.preferHuffmanEncoding == false)
         #expect(config.connectionSettings.qpackMaximumTableCapacity == 4096)
         #expect(config.connectionSettings.qpackBlockedStreams == 16)
         #expect(config.connectionSettings.maximumFieldSectionSize == 8192)

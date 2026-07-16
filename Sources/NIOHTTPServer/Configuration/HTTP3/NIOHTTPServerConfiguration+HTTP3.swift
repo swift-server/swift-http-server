@@ -13,47 +13,50 @@
 //===----------------------------------------------------------------------===//
 
 import NIOCore
+import NIOHTTP3
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
     /// Configuration for HTTP/3.
     public struct HTTP3: Sendable, Hashable {
+        /// If true, Huffman encoding will be used where applicable, e.g. for header field sections.
+        ///
+        /// - Note: Huffman encoding will not be used if it would result in a larger payload than not using it, even if
+        ///   this property is true.
+        public var preferHuffmanEncoding = true
+
         /// QUIC transport configuration.
         public var quicConfiguration: QUICConfiguration = .defaults
-
-        /// HTTP/3 protocol-level configuration.
-        public var protocolConfiguration: ProtocolConfiguration = .defaults
 
         /// HTTP/3 connection settings exchanged with the client during connection establishment.
         public var connectionSettings: ConnectionSettings = .defaults
 
-        /// Creates an HTTP/3 configuration with the given HTTP/3 protocol configuration, connection settings, and QUIC
-        /// transport configuration.
+        /// Creates an HTTP/3 configuration.
         ///
         /// - Parameters:
+        ///   - preferHuffmanEncoding: Whether Huffman encoding is used where applicable.
         ///   - quicConfiguration: QUIC transport parameters.
-        ///   - protocolConfiguration: Settings that control HTTP/3 protocol behaviour.
         ///   - connectionSettings: HTTP/3 connection-level settings exchanged with the client.
         public init(
+            preferHuffmanEncoding: Bool,
             quicConfiguration: QUICConfiguration,
-            protocolConfiguration: ProtocolConfiguration,
             connectionSettings: ConnectionSettings,
         ) {
-            self.protocolConfiguration = protocolConfiguration
-            self.connectionSettings = connectionSettings
+            self.preferHuffmanEncoding = preferHuffmanEncoding
             self.quicConfiguration = quicConfiguration
+            self.connectionSettings = connectionSettings
         }
 
         /// The default HTTP/3 configuration.
         ///
         /// Uses the default configurations of the sub-components:
+        /// - `preferHuffmanEncoding`: `true`.
         /// - `quicConfiguration`: ``QUICConfiguration/defaults``.
-        /// - `protocolConfiguration`: ``ProtocolConfiguration/defaults``.
         /// - `connectionSettings`: ``ConnectionSettings/defaults``.
         public static var defaults: Self {
             Self(
+                preferHuffmanEncoding: true,
                 quicConfiguration: .defaults,
-                protocolConfiguration: .defaults,
                 connectionSettings: .defaults,
             )
         }
@@ -62,5 +65,13 @@ extension NIOHTTPServerConfiguration {
         static var fallbackConnectionRTT: TimeAmount {
             .milliseconds(100)
         }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOHTTP3.HTTP3ServerConfiguration {
+    init(_ configuration: NIOHTTPServerConfiguration.HTTP3) {
+        self = .defaults
+        self.preferHuffmanEncoding = configuration.preferHuffmanEncoding
     }
 }
