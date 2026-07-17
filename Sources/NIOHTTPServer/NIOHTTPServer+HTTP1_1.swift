@@ -215,6 +215,7 @@ extension NIOHTTPServer {
                         request: httpRequest,
                         iterator: iterator,
                         outbound: outbound,
+                        streamReset: .unavailable,
                         handler: handler,
                         context: context
                     )

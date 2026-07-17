@@ -185,7 +185,11 @@ extension NIOHTTPServer {
             do {
                 for try await streamChannel in multiplexer.inbound {
                     streamGroup.addTask {
-                        await self.handleStreamChannel(channel: streamChannel, handler: handler, context: context)
+                        await self.handleStreamChannel(
+                            channel: streamChannel,
+                            handler: handler,
+                            context: context
+                        )
                     }
                 }
             } catch {
@@ -371,6 +375,9 @@ extension NIOHTTPServer {
     }
 
     /// Handles a stream channel, which carries exactly one request per stream.
+    ///
+    /// Used only for HTTP/2 and HTTP/3, which have per-request streams; HTTP/1.1 is served by
+    /// ``handleHTTP1RequestLoop(inbound:outbound:handler:context:)``.
     func handleStreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: Handler,
@@ -390,19 +397,38 @@ extension NIOHTTPServer {
                     return
                 }
 
+                let streamReset: NIOHTTPServer.StreamReset
+                switch context.httpVersion {
+                case .http2:
+                    streamReset = .http2(.init(channel: channel.channel))
+
+                #if HTTP3
+                case .http3:
+                    streamReset = .http3(.init(channel: channel.channel))
+                #endif  // HTTP3
+
+                case .http1_1, .plaintextHTTP1_1:
+                    preconditionFailure("handleStreamChannel only serves HTTP/2 and HTTP/3 streams")
+                }
+
                 _ = try await self.invokeHandler(
                     request: httpRequest,
                     iterator: iterator,
                     outbound: outbound,
+                    streamReset: streamReset,
                     handler: handler,
                     context: context
                 )
 
-                // TODO: handle other state scenarios.
-                // For example, if we didn't finish reading but we wrote back a response, we
-                // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
-                // didn't write back a response, then RST_STREAM is also likely appropriate but
-                // unclear about the error.
+                // TODO: When the handler concludes the response without consuming the full request body, the request
+                // half of the stream is left open. Ideally we would send RST_STREAM(NO_ERROR) to tell the client to
+                // stop sending the request body — but only when the client has *not* already closed its half (i.e. we
+                // have not observed END_STREAM on the inbound side). `finishedReading` cannot distinguish these cases:
+                // it is `false` both when the client still has body to send *and* when the client already ended the
+                // stream but the handler simply never read it (e.g. a bodyless GET answered without reading). Sending
+                // RST_STREAM in the latter case would reset an already-closed stream. Doing this correctly requires
+                // threading the observed inbound END_STREAM state out of the reader / `nextRequestHead`; deferred to a
+                // follow-up.
 
                 // Finish the outbound and wait on the close future to make sure all pending
                 // writes are actually written.

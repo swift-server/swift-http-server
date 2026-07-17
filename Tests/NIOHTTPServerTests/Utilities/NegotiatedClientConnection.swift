@@ -60,6 +60,20 @@ enum NegotiatedClientConnection {
                 }
             }
         }
+
+        /// Opens a stream *without* the `HTTP2FramePayloadToHTTPClientCodec`, exposing raw
+        /// `HTTP2Frame.FramePayload`s. Unlike ``openStream()``, this lets a test observe frames the codec would
+        /// otherwise drop — notably `RST_STREAM`.
+        func openRawStream() async throws -> NIOAsyncChannel<HTTP2Frame.FramePayload, HTTP2Frame.FramePayload> {
+            try await self.http2StreamMultiplexer.openStream { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try NIOAsyncChannel<HTTP2Frame.FramePayload, HTTP2Frame.FramePayload>(
+                        wrappingChannelSynchronously: channel,
+                        configuration: .init(isOutboundHalfClosureEnabled: true)
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -96,7 +96,11 @@ extension NIOHTTPServer {
         await withDiscardingTaskGroup { streamGroup in
             for await streamChannel in connection.inboundStreams {
                 streamGroup.addTask {
-                    await self.handleStreamChannel(channel: streamChannel, handler: handler, context: context)
+                    await self.handleStreamChannel(
+                        channel: streamChannel,
+                        handler: handler,
+                        context: context
+                    )
                 }
             }
         }

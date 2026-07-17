@@ -31,7 +31,11 @@ struct NIOHTTPServerWriterTests {
     @available(anyAppleOS 26.0, *)
     func testSingleWriteAndConclude() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        let responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
+        let responseWriter = NIOHTTPServer.ResponseSender.Writer(
+            writer: writer,
+            writerState: .init(),
+            streamReset: .unavailable
+        )
 
         var buffer = UniqueArray<UInt8>(copying: [self.bodySampleOne])
         try await responseWriter.finish(buffer: &buffer, finalElement: self.trailerSampleOne)
@@ -50,7 +54,11 @@ struct NIOHTTPServerWriterTests {
     @available(anyAppleOS 26.0, *)
     func testProduceMultipleElementsAndSingleTrailer() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        var responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
+        var responseWriter = NIOHTTPServer.ResponseSender.Writer(
+            writer: writer,
+            writerState: .init(),
+            streamReset: .unavailable
+        )
 
         var buffer = UniqueArray<UInt8>(copying: [self.bodySampleOne])
         try await responseWriter.write(buffer: &buffer)
@@ -73,7 +81,11 @@ struct NIOHTTPServerWriterTests {
     @available(anyAppleOS 26.0, *)
     func testNoBodyJustTrailers() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        let responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
+        let responseWriter = NIOHTTPServer.ResponseSender.Writer(
+            writer: writer,
+            writerState: .init(),
+            streamReset: .unavailable
+        )
 
         try await responseWriter.finish(trailer: self.trailerSampleTwo)
 

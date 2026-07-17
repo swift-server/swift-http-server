@@ -27,7 +27,11 @@ struct NIOHTTPServerResponseSenderTests {
         // Sending an informational header with a non-1xx status code shouldn't be allowed
         try await #require(processExitsWith: .failure) {
             let (outboundWriter, _) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-            var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
+            var sender = NIOHTTPServer.ResponseSender(
+                writer: outboundWriter,
+                writerState: .init(),
+                streamReset: .unavailable
+            )
 
             try await sender.sendInformational(.init(status: .ok, headerFields: [.contentType: "application/json"]))
         }
@@ -37,7 +41,11 @@ struct NIOHTTPServerResponseSenderTests {
     @available(anyAppleOS 26.0, *)
     func testSendMultipleInformationalResponses() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
+        var sender = NIOHTTPServer.ResponseSender(
+            writer: outboundWriter,
+            writerState: .init(),
+            streamReset: .unavailable
+        )
 
         // Send two informational responses
         let firstInfoHead = HTTPResponse(status: .continue, headerFields: [.contentType: "application/json"])

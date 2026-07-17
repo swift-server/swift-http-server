@@ -332,6 +332,7 @@ public struct NIOHTTPServer: HTTPServer {
         request: HTTPRequest,
         iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        streamReset: consuming sending NIOHTTPServer.StreamReset,
         handler: Handler,
         context: ConnectionContext
     ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
@@ -350,7 +351,11 @@ public struct NIOHTTPServer: HTTPServer {
                 reader: Reader(
                     readerState: readerState
                 ),
-                responseSender: ResponseSender(writer: outbound, writerState: writerState)
+                responseSender: ResponseSender(
+                    writer: outbound,
+                    writerState: writerState,
+                    streamReset: streamReset
+                )
             )
         } catch {
             logger.error("Error thrown while handling request: \(error)")
