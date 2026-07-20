@@ -101,7 +101,7 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// The server treats its set of listening addresses as a single unit. If an unrecoverable error occurs on any of
     /// the listening channels, the server stops listening on **all** remaining addresses and this method returns. After
-    /// that point, ``listeningAddresses`` will throw ``ListeningAddressError/serverClosed``.
+    /// that point, ``listeningAddresses`` will throw `ListeningAddressError/serverClosed`.
     ///
     /// - Parameter handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP
     ///   requests. The handler receives each request along with a body reader and response sender function.

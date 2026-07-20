@@ -14,30 +14,28 @@
 
 /// A protocol for handling the lifecycle of a single ``NIOHTTPServer`` connection.
 ///
-/// Conforming types receive each new connection as it arrives, run any
-/// connection-scoped setup (loggers, metric dimensions, atomic counters), and
-/// drive the request loop via
-/// ``NIOHTTPServer/NIOHTTPServer/Connection/handleRequests(handler:)``. State that must
-/// outlive ``handleConnection(connection:context:)`` should live in reference
-/// types (classes, actors, atomics) the conformer captures or closes over —
-/// the `connection` argument is consumed.
+/// Conforming types receive each new connection in ``handleConnection(connection:context:)``. In this method, the
+/// request loop can be started by calling ``NIOHTTPServer/Connection/handleRequests(handler:)-(Handler)`` on the
+/// connection.
 ///
-/// User code typically uses ``NIOHTTPServer/NIOHTTPServer/serve(connectionHandler:)-(Handler)``
-/// (the protocol-based form) or ``NIOHTTPServer/NIOHTTPServer/serve(connectionHandler:)-((NIOHTTPServer.Connection,NIOHTTPServer.ConnectionContext)->Void)``
-/// (the closure-based form). If only request-level work is needed, prefer
-/// ``NIOHTTPServer/NIOHTTPServer/serve(handler:)``, which uses a built-in default connection handler.
+/// Conforming types can choose to perform connection-scoped setup (loggers, metric dimensions, atomic counters) in this
+/// method. State that must outlive ``handleConnection(connection:context:)`` should live in reference types (classes,
+/// actors, atomics) the conformer captures or closes over. The `connection` argument is consumed.
+///
+/// Handlers that conform to this protocol can be used through
+/// ``NIOHTTPServer/NIOHTTPServer/serve(connectionHandler:)-(Handler)`` (the protocol-based form) or
+/// ``NIOHTTPServer/serve(connectionHandler:)-((Connection,ConnectionContext)->Void)`` (the closure-based form). If only
+/// request-level handling is needed, prefer ``NIOHTTPServer/NIOHTTPServer/serve(handler:)``, which uses a built-in
+/// default connection handler (see ``NIOHTTPServer/NIOHTTPServerDefaultConnectionHandler``)
 @available(anyAppleOS 26.0, *)
 public protocol NIOHTTPServerConnectionHandler: Sendable {
     /// Handle a single connection.
     ///
     /// - Parameters:
-    ///   - connection: The active connection. The handler is expected to drive
-    ///     the request loop by calling ``NIOHTTPServer/NIOHTTPServer/Connection/handleRequests(handler:)``
-    ///     on it. If `handleConnection` returns without calling
-    ///     `handleRequests`, the connection is dropped on scope exit, which
-    ///     closes the underlying channel.
-    ///   - context: Connection-scoped data. Borrowed for the duration of the
-    ///     call.
+    ///   - connection: The active connection. The handler is expected to run the request loop by calling
+    ///     ``NIOHTTPServer/Connection/handleRequests(handler:)-(Handler)`` on it. If `handleConnection` returns without
+    ///     calling `handleRequests`, the connection is closed on scope exit.
+    ///   - context: Connection-scoped data.
     func handleConnection(
         connection: consuming sending NIOHTTPServer.Connection,
         context: NIOHTTPServer.ConnectionContext
