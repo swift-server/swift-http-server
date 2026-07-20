@@ -458,7 +458,7 @@ struct ConnectionLifecycleTests {
             }
         }
 
-        #expect(observed.withLockedValue { $0 } == .http1_1)
+        #expect(observed.withLockedValue { $0 } == .plaintextHTTP1_1)
     }
 
     @available(anyAppleOS 26.0, *)

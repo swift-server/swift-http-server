@@ -98,8 +98,10 @@ extension NIOHTTPServer {
             do {
                 try await requestChannel.executeThenClose { inbound, outbound in
                     let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
-                    let context = NIOHTTPServer.makeHTTP1ConnectionContext(
-                        requestChannel: requestChannel,
+                    let context = ConnectionContext(
+                        httpVersion: .http1_1,
+                        remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
+                        localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
                         peerCertificateChainFuture: chainFuture
                     )
                     let connection = Connection(
@@ -183,11 +185,7 @@ extension NIOHTTPServer {
             do {
                 for try await streamChannel in multiplexer.inbound {
                     streamGroup.addTask {
-                        await self.handleHTTP2StreamChannel(
-                            channel: streamChannel,
-                            handler: handler,
-                            context: context
-                        )
+                        await self.handleStreamChannel(channel: streamChannel, handler: handler, context: context)
                     }
                 }
             } catch {
@@ -261,8 +259,6 @@ extension NIOHTTPServer {
             throw error
         }
 
-        try self.addressesBound(serverChannels.map { (serverChannel, _) in serverChannel.channel.localAddress })
-
         return serverChannels
     }
 
@@ -294,10 +290,9 @@ extension NIOHTTPServer {
                             )
 
                         // Add read header and body timeouts per-stream for HTTP/2
-                        try http2StreamChannel
-                            .pipeline
-                            .syncOperations
-                            .addReadTimeoutHandlers(self.configuration.connectionTimeouts)
+                        try http2StreamChannel.pipeline.syncOperations.addReadTimeoutHandlers(
+                            self.configuration.connectionTimeouts
+                        )
 
                         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                             wrappingChannelSynchronously: http2StreamChannel,
@@ -375,8 +370,8 @@ extension NIOHTTPServer {
         }
     }
 
-    /// Handles an HTTP/2 stream channel, which carries exactly one request per stream.
-    func handleHTTP2StreamChannel<Handler: HTTPServerRequestHandler>(
+    /// Handles a stream channel, which carries exactly one request per stream.
+    func handleStreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: Handler,
         context: ConnectionContext
@@ -387,36 +382,38 @@ extension NIOHTTPServer {
         Handler.ResponseSender == ResponseSender
     {
         do {
-            try await channel
-                .executeThenClose { inbound, outbound in
-                    var iterator = inbound.makeAsyncIterator()
+            try await channel.executeThenClose { inbound, outbound in
+                var iterator = inbound.makeAsyncIterator()
 
-                    guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
-                        outbound.finish()
-                        return
-                    }
-
-                    _ = try await self.invokeHandler(
-                        request: httpRequest,
-                        iterator: iterator,
-                        outbound: outbound,
-                        handler: handler,
-                        context: context
-                    )
-
-                    // TODO: handle other state scenarios.
-                    // For example, if we didn't finish reading but we wrote back a response, we
-                    // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
-                    // didn't write back a response, then RST_STREAM is also likely appropriate but
-                    // unclear about the error.
-
-                    // Finish the outbound and wait on the close future to make sure all pending
-                    // writes are actually written.
+                guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
                     outbound.finish()
-                    try await channel.channel.closeFuture.get()
+                    return
                 }
+
+                _ = try await self.invokeHandler(
+                    request: httpRequest,
+                    iterator: iterator,
+                    outbound: outbound,
+                    handler: handler,
+                    context: context
+                )
+
+                // TODO: handle other state scenarios.
+                // For example, if we didn't finish reading but we wrote back a response, we
+                // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
+                // didn't write back a response, then RST_STREAM is also likely appropriate but
+                // unclear about the error.
+
+                // Finish the outbound and wait on the close future to make sure all pending
+                // writes are actually written.
+                outbound.finish()
+                try await channel.channel.closeFuture.get()
+            }
         } catch {
-            self.logger.debug("Error thrown while handling HTTP/2 stream: \(error)")
+            self.logger.debug(
+                "Error thrown while handling stream",
+                metadata: ["error": "\(error)", "protocol": "\(context.httpVersion)"]
+            )
             try? await channel.channel.close()
         }
     }

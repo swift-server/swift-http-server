@@ -141,8 +141,30 @@ extension NIOHTTPServer.SocketAddress {
         switch address {
         case .v4(let ipv4Address):
             self.init(base: .ipv4(.init(host: ipv4Address.host, port: port)))
+
         case .v6(let ipv6Address):
             self.init(base: .ipv6(.init(host: ipv6Address.host, port: port)))
+
+        case .unixDomainSocket:
+            throw ListeningAddressError.unsupportedAddressType
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOHTTPServerConfiguration.BindTarget {
+    init(_ address: NIOCore.SocketAddress?) throws(ListeningAddressError) {
+        guard let address, let port = address.port else {
+            throw ListeningAddressError.addressOrPortNotAvailable
+        }
+
+        switch address {
+        case .v4(let ipv4Address):
+            self.init(backing: .hostAndPort(host: ipv4Address.host, port: port))
+
+        case .v6(let ipv6Address):
+            self.init(backing: .hostAndPort(host: ipv6Address.host, port: port))
+
         case .unixDomainSocket:
             throw ListeningAddressError.unsupportedAddressType
         }

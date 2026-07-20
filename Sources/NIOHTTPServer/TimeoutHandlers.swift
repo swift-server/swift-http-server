@@ -15,17 +15,11 @@
 import NIOCore
 import NIOHTTPTypes
 
-/// A channel handler that closes an HTTP/1.1 connection after a period in which no request is in
-/// flight.
+/// A channel handler that closes a connection after a period in which no request is in flight.
 ///
-/// The timer runs only between requests: it is scheduled when the channel becomes active and
-/// after each response `.end` is written. It is cancelled when an inbound request `.head` is
-/// observed. While a request is being processed, request-level timeouts (see
-/// ``RequestTimeoutHandler``) are responsible for protecting the server.
-///
-/// This handler is used on the per-connection channel for HTTP/1.1 only. For HTTP/2, idle
-/// behaviour is delegated to `NIOHTTP2ServerConnectionManagementHandler`'s `maxIdleTime`, which
-/// already understands stream lifecycle.
+/// The timer runs only between requests: it is scheduled when the channel becomes active and after each response `.end`
+/// is written. It is cancelled when an inbound request `.head` is observed. While a request is being processed,
+/// request-level timeouts (see ``RequestTimeoutHandler``) are responsible for protecting the server.
 final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler {
     typealias InboundIn = HTTPRequestPart
     typealias InboundOut = HTTPRequestPart
@@ -90,12 +84,10 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 ///
 /// State machine:
 /// - On channel active, a header timeout is scheduled (if configured).
-/// - When `.head` is received, the header timeout is cancelled and a body timeout is scheduled
-///   (if configured).
-/// - When `.end` is received, the body timeout is cancelled and the header timeout is rescheduled
-///   so that the next request on a keep-alive connection is also protected. (For HTTP/2 streams
-///   this is a no-op in practice: each stream sees only one request and is closed shortly after
-///   `.end`.)
+/// - When `.head` is received, the header timeout is cancelled and a body timeout is scheduled (if configured).
+/// - When `.end` is received, the body timeout is cancelled and the header timeout is rescheduled so that the next
+///   request on a keep-alive connection is also protected. (For HTTP/2 and HTTP/3 streams this is a no-op in practice:
+///   each stream sees only one request and is closed shortly after `.end`.)
 ///
 /// If either timeout fires, the connection is closed.
 final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandler {

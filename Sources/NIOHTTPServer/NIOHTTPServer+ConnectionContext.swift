@@ -20,8 +20,12 @@ public import X509
 extension NIOHTTPServer {
     /// The application-level HTTP version negotiated for a connection.
     public enum HTTPVersion: String, Sendable, Hashable {
-        case http1_1 = "http/1.1"
-        case http2 = "http/2"
+        case plaintextHTTP1_1 = "Plaintext HTTP/1.1"
+        case http1_1 = "HTTP/1.1"
+        case http2 = "HTTP/2"
+        #if HTTP3
+        case http3 = "HTTP/3"
+        #endif
     }
 }
 

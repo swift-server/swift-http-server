@@ -279,4 +279,40 @@ extension NIOQUIC.QUICConfiguration {
         )
     }
 }
+
+@available(anyAppleOS 26.0, *)
+extension NIOQUIC.Authenticator {
+    /// Creates an `Authenticator` instance from X.509 TLS credentials.
+    ///
+    /// Returns `nil` for raw public key credentials, because NIOQUIC reads the public/private key paths directly from
+    /// `QUICConfiguration.authenticationConfiguration` (no `Authenticator` instance is required in that case).
+    ///
+    /// - Parameter transportSecurity: The server's transport security configuration.
+    ///
+    /// - Throws:
+    ///   - ``NIOHTTPServerConfigurationError/incompatibleTransportSecurity`` if `transportSecurity` is `.plaintext`.
+    ///   - ``NIOHTTPServerConfigurationError/inMemoryOrReloadingTLSCredentialsNotSupportedOverHTTP3`` if the X.509
+    ///     credentials are provided as in-memory `X509.Certificate`/`X509.Certificate.PrivateKey` objects or as a
+    ///     `CertificateReloader` instance.
+    ///   - An underlying error from `Authenticator`'s initializer if the certificate chain or private key cannot be
+    ///     loaded.
+    convenience init(_ transportSecurity: NIOHTTPServerConfiguration.TransportSecurity) throws {
+        switch transportSecurity.backing {
+        case .plaintext:
+            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
+
+        case .tls(let tlsCredentials), .mTLS(let tlsCredentials, _):
+            switch tlsCredentials.backing {
+            case .reloading:
+                throw NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
+
+            case .pemFile(let certificateChainPath, let privateKeyPath):
+                try self.init(certificateFilePath: certificateChainPath, privateKeyFilePath: privateKeyPath)
+
+            case .inMemory(let certificateChain, let privateKey):
+                try self.init(certificates: certificateChain, privateKey: privateKey)
+            }
+        }
+    }
+}
 #endif  // HTTP3

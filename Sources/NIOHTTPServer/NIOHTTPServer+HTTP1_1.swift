@@ -79,8 +79,10 @@ extension NIOHTTPServer {
     ) async {
         do {
             try await requestChannel.executeThenClose { inbound, outbound in
-                let context = NIOHTTPServer.makeHTTP1ConnectionContext(
-                    requestChannel: requestChannel,
+                let context = ConnectionContext(
+                    httpVersion: .plaintextHTTP1_1,
+                    remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
+                    localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
                     peerCertificateChainFuture: nil
                 )
                 let connection = Connection(
@@ -158,8 +160,6 @@ extension NIOHTTPServer {
             throw error
         }
 
-        try self.addressesBound(serverChannels.map { (serverChannel, _) in serverChannel.channel.localAddress })
-
         return serverChannels
     }
 
@@ -172,29 +172,13 @@ extension NIOHTTPServer {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: isSecure))
             try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
-            try channel
-                .pipeline
-                .syncOperations
-                .addTimeoutHandlers(self.configuration.connectionTimeouts)
+            try channel.pipeline.syncOperations.addTimeoutHandlers(self.configuration.connectionTimeouts)
 
             return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                 wrappingChannelSynchronously: channel,
                 configuration: asyncChannelConfiguration
             )
         }
-    }
-
-    /// Builds a ``ConnectionContext`` for an HTTP/1.1 request channel.
-    static func makeHTTP1ConnectionContext(
-        requestChannel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
-    ) -> ConnectionContext {
-        ConnectionContext(
-            httpVersion: .http1_1,
-            remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
-            localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
-            peerCertificateChainFuture: peerCertificateChainFuture
-        )
     }
 
     /// Drives the request loop on an HTTP/1.1 connection that may carry

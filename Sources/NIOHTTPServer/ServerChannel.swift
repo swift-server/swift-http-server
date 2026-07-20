@@ -16,10 +16,14 @@ import NIOCore
 import NIOExtras
 import NIOHTTPTypes
 
+#if HTTP3
+@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOQUIC
+#endif
+
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
-    /// Abstracts over the two types of server channels ``NIOHTTPServer`` can create: plaintext HTTP/1.1 and Secure
-    /// Upgrade.
+    /// Abstracts over the types of server channels ``NIOHTTPServer`` can serve.
     enum ServerChannel {
         case plaintextHTTP1_1(
             channel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
@@ -30,5 +34,15 @@ extension NIOHTTPServer {
             channel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
             quiescingHelper: ServerQuiescingHelper
         )
+
+        #if HTTP3
+        case http3(
+            quicChannel: any Channel,
+            connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
+                NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+                QUICStreamCreator
+            >
+        )
+        #endif
     }
 }

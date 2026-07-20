@@ -205,25 +205,60 @@ public struct NIOHTTPServer: HTTPServer {
 
     /// Creates and returns server channels based on the configured transport security.
     private func makeServerChannels() async throws -> [ServerChannel] {
-        switch self.configuration.transportSecurity.backing {
-        case .plaintext:
-            return try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
-                .map { channel, quiescingHelper in
-                    .plaintextHTTP1_1(channel: channel, quiescingHelper: quiescingHelper)
-                }
-
-        case .tls, .mTLS:
-            return try await self.setupSecureUpgradeServerChannels(
-                bindTargets: self.configuration.bindTargets,
-                supportedHTTPVersions: self.configuration.supportedHTTPVersions,
-                sslContext: .makeServerContext(
-                    transportSecurity: self.configuration.transportSecurity,
-                    alpnIdentifiers: self.configuration.supportedHTTPVersions.alpnIdentifiers
-                ),
-            ).map { channel, quiescingHelper in
-                .secureUpgrade(channel: channel, quiescingHelper: quiescingHelper)
+        // If transport security is `plaintext`, we can only create an HTTP/1.1 channel.
+        if case .plaintext = self.configuration.transportSecurity.backing {
+            let http1Channels = try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
+            try self.addressesBound(http1Channels.map { (channel, _) in channel.channel.localAddress })
+            return http1Channels.map { (channel, quiescingHelper) in
+                .plaintextHTTP1_1(channel: channel, quiescingHelper: quiescingHelper)
             }
         }
+
+        var serverChannels = [ServerChannel]()
+        var secureUpgradeBindTargets = self.configuration.bindTargets
+
+        #if HTTP3
+        if let http3Config = self.configuration.supportedHTTPVersions.http3ConfigIfSupported {
+            let http3Channels = try await self.setupHTTP3ServerChannels(
+                bindTargets: self.configuration.bindTargets,
+                http3Configuration: http3Config
+            )
+            serverChannels.append(
+                contentsOf: http3Channels.map { (quicChannel, mux) in
+                    .http3(quicChannel: quicChannel, connectionMultiplexer: mux)
+                }
+            )
+
+            guard self.configuration.supportedHTTPVersions.count > 1 else {
+                // `supportedHTTPVersions == [.http3]` here. We therefore just return HTTP/3 channel(s).
+                try self.addressesBound(http3Channels.map { (channel, _) in channel.localAddress })
+                return serverChannels
+            }
+
+            // We also need to set up secure upgrade channel(s) on the same port.
+            secureUpgradeBindTargets = try http3Channels.map { (http3Channel, _) in
+                try NIOHTTPServerConfiguration.BindTarget(http3Channel.localAddress)
+            }
+        }
+        #endif  // HTTP3
+
+        let secureUpgradeChannels = try await self.setupSecureUpgradeServerChannels(
+            bindTargets: secureUpgradeBindTargets,
+            supportedHTTPVersions: self.configuration.supportedHTTPVersions,
+            sslContext: .makeServerContext(
+                transportSecurity: self.configuration.transportSecurity,
+                alpnIdentifiers: self.configuration.supportedHTTPVersions.alpnIdentifiers
+            )
+        )
+        try self.addressesBound(secureUpgradeChannels.map { (channel, _) in channel.channel.localAddress })
+
+        serverChannels.append(
+            contentsOf: secureUpgradeChannels.map { (channel, quiescingHelper) in
+                .secureUpgrade(channel: channel, quiescingHelper: quiescingHelper)
+            }
+        )
+
+        return serverChannels
     }
 
     private func _serve<Handler: NIOHTTPServerConnectionHandler>(
@@ -245,6 +280,14 @@ public struct NIOHTTPServer: HTTPServer {
                             serverChannel: secureUpgradeChannel,
                             connectionHandler: connectionHandler
                         )
+
+                    #if HTTP3
+                    case .http3(_, let connectionMultiplexer):
+                        await self.serveHTTP3(
+                            connectionMultiplexer: connectionMultiplexer,
+                            connectionHandler: connectionHandler
+                        )
+                    #endif
                     }
                 }
             }
@@ -344,15 +387,31 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
-    /// Initiates a graceful shutdown, allowing existing connections to drain before closing.
+    /// Initiates a graceful shutdown, allowing existing connections to drain before closing. How graceful shutdown is
+    /// signalled depends on the protocol:
+    ///
+    /// For HTTP/1.1 and HTTP/2, `ServerQuiescingHelper` is added to the server channel pipeline. For each accepted
+    /// connection, `ServerQuiescingHelper` stores the associated connection child channel. When `initiateShutdown` is
+    /// called, `ServerQuiescingHelper` closes the server's socket to stop accepting any new connections, then fires
+    /// `ChannelShouldQuiesceEvent` on each stored child channel.
+    ///
+    /// For HTTP/3, `ServerQuiescingHelper` cannot be used as QUIC connections are multiplexed internally by
+    /// `QUICHandler`. We instead fire `ChannelShouldQuiesceEvent` directly on the QUIC channel. `QUICHandler` reacts to
+    /// it by propagating the event to each QUIC connection channel. This eventually reaches `HTTP3ConnectionHandler`,
+    /// which performs the two-phase GOAWAY shutdown sequence.
     private func beginGracefulShutdown(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
 
         for serverChannel in serverChannels {
             switch serverChannel {
-            case .plaintextHTTP1_1(_, let quiescingHelper),
-                .secureUpgrade(_, let quiescingHelper):
+            case .plaintextHTTP1_1(_, let quiescingHelper), .secureUpgrade(_, let quiescingHelper):
                 quiescingHelper.initiateShutdown(promise: nil)
+
+            #if HTTP3
+            case .http3(let quicChannel, _):
+                // Fire ChannelShouldQuiesceEvent directly on the QUIC channel.
+                quicChannel.pipeline.fireUserInboundEventTriggered(ChannelShouldQuiesceEvent())
+            #endif
             }
         }
     }
@@ -368,25 +427,29 @@ public struct NIOHTTPServer: HTTPServer {
 
             case .secureUpgrade(let secureUpgradeChannel, _):
                 secureUpgradeChannel.channel.close(promise: nil)
+
+            #if HTTP3
+            case .http3(let quicChannel, _):
+                quicChannel.close(promise: nil)
+            #endif
             }
         }
     }
-
 }
 
 @available(anyAppleOS 26.0, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
-    /// Only handlers for non-nil timeouts are installed. Called for HTTP/1.1 connection channels.
+    /// Only handlers for non-nil timeouts are installed.
     func addTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         try self.addIdleTimeoutHandlers(timeouts)
         try self.addReadTimeoutHandlers(timeouts)
     }
 
-    /// Adds the connection idle timeout handler to the channel. Used by HTTP/1.1 connection
-    /// channels. (HTTP/2 delegates idle handling to `NIOHTTP2ServerConnectionManagementHandler`'s
-    /// `maxIdleTime`, which is stream-aware.)
+    /// Adds the connection idle timeout handler to the channel. Used by HTTP/1.1 connection channels. HTTP/2 delegates
+    /// idle handling to `NIOHTTP2ServerConnectionManagementHandler`'s `maxIdleTime`. Idle timeout is not currently
+    /// supported over HTTP/3.
     func addIdleTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         if let idle = timeouts.idle {
             try self.addHandler(
@@ -395,8 +458,7 @@ extension ChannelPipeline.SynchronousOperations {
         }
     }
 
-    /// Adds only read header and body timeout handlers to the channel. Used for HTTP/1.1
-    /// connection channels and HTTP/2 per-stream channels.
+    /// Adds header and body read timeout handlers to the channel.
     func addReadTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
         let readHeader = timeouts.readHeader.map { TimeAmount($0) }
         let readBody = timeouts.readBody.map { TimeAmount($0) }

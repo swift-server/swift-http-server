@@ -16,6 +16,11 @@ import NIOCore
 import NIOHTTP2
 import NIOHTTPTypes
 
+#if HTTP3
+@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOQUIC
+#endif
+
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     /// An active HTTP server connection.
@@ -32,15 +37,26 @@ extension NIOHTTPServer {
         ///   owns the channel and drives `executeThenClose`, so the writer is finished cleanly even if the connection
         ///   handler returns without calling ``handleRequests(handler:)``).
         /// - `http2` carries the connection channel and stream multiplexer.
+        /// - `http3` carries an ``HTTP3ServerConnection``.
         enum HTTPProtocol: Sendable {
             case http1_1(
                 inbound: NIOAsyncChannelInboundStream<HTTPRequestPart>,
                 outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
             )
+
             case http2(
                 connectionChannel: any Channel,
                 multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
             )
+
+            #if HTTP3
+            case http3(
+                connection: HTTP3ServerConnection<
+                    NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+                    NIOQUIC.QUICStreamCreator
+                >
+            )
+            #endif
         }
 
         let server: NIOHTTPServer
@@ -76,6 +92,7 @@ extension NIOHTTPServer {
                     handler: handler,
                     context: context
                 )
+
             case .http2(let connectionChannel, let multiplexer):
                 await server.handleHTTP2Connection(
                     connectionChannel: connectionChannel,
@@ -83,6 +100,11 @@ extension NIOHTTPServer {
                     handler: handler,
                     context: context
                 )
+
+            #if HTTP3
+            case .http3(let connection):
+                await server.handleHTTP3Connection(connection: connection, handler: handler, context: context)
+            #endif
             }
         }
 
