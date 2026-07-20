@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if HTTP3
 import NIOQUIC
 
 @available(anyAppleOS 26.0, *)
@@ -278,3 +279,4 @@ extension NIOQUIC.QUICConfiguration {
         )
     }
 }
+#endif  // HTTP3

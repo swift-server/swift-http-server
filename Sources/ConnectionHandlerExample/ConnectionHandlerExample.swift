@@ -68,7 +68,7 @@ struct ConnectionHandlerExample {
             // handler and the request handler are inline closures.
             try await server.serve { connection, context in
                 var connection = Optional(connection)
-                try await withLogger(mergingMetadata: [
+                await withLogger(mergingMetadata: [
                     "peer": .string(context.remoteAddress.map { "\($0)" } ?? "unknown"),
                     "http": .string(context.httpVersion.rawValue),
                 ]) { connectionLogger in

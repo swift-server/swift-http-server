@@ -21,6 +21,7 @@ This package offers additional integrations you can enable using
 Available traits:
 - **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
   `ConfigProvider`.
+- **`HTTP3`**: Enables HTTP/3 support.
 
 ## HTTP/3 support
 

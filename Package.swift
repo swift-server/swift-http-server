@@ -15,6 +15,12 @@
 
 import PackageDescription
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+
 let extraSettings: [SwiftSetting] = [
     .strictMemorySafety(),
     .enableExperimentalFeature("SuppressedAssociatedTypesWithDefaults"),
@@ -27,6 +33,44 @@ let extraSettings: [SwiftSetting] = [
     .enableUpcomingFeature("MemberImportVisibility"),
     .enableUpcomingFeature("InternalImportsByDefault"),
 ]
+
+var traits: Set<Trait> = [
+    .trait(
+        name: "Configuration",
+        description: "Enables initializing NIOHTTPServerConfiguration from a swift-configuration ConfigProvider"
+    ),
+    .trait(
+        name: "HTTP3",
+        description: "Enables HTTP/3 support"
+    ),
+]
+
+let defaultTraits: Set<String> = ["Configuration"]
+
+// Workaround to ensure that all traits are included in documentation. Swift Package Index adds SPI_GENERATE_DOCS
+// (https://github.com/SwiftPackageIndex/SwiftPackageIndex-Server/issues/2336) when building documentation, so only
+// tweak the default traits in this condition.
+let spiGenerateDocs = ProcessInfo.processInfo.environment["SPI_GENERATE_DOCS"] != nil
+
+// Conditionally add the swift-docc plugin only when previewing docs locally.
+// Preview with:
+// ```
+// SWIFT_PREVIEW_DOCS=1 swift package --disable-sandbox preview-documentation --target NIOHTTPServer
+// ```
+let previewDocs = ProcessInfo.processInfo.environment["SWIFT_PREVIEW_DOCS"] != nil
+
+// Enable all traits for other CI actions.
+let enableAllTraitsExplicit = ProcessInfo.processInfo.environment["ENABLE_ALL_TRAITS"] != nil
+
+let enableAllTraits = spiGenerateDocs || previewDocs || enableAllTraitsExplicit
+let addDoccPlugin = previewDocs || spiGenerateDocs
+let enableAllCIFlags = enableAllTraitsExplicit
+
+traits.insert(
+    .default(
+        enabledTraits: enableAllTraits ? Set(traits.map(\.name)) : defaultTraits
+    ),
+)
 
 let package = Package(
     name: "swift-http-server",
@@ -43,10 +87,7 @@ let package = Package(
             targets: ["NIOHTTPServer"]
         )
     ],
-    traits: [
-        .trait(name: "Configuration"),
-        .default(enabledTraits: ["Configuration"]),
-    ],
+    traits: traits,
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
@@ -113,9 +154,13 @@ let package = Package(
                     condition: .when(traits: ["Configuration"])
                 ),
                 .product(name: "NIOExtras", package: "swift-nio-extras"),
-                .product(name: "NIOQUIC", package: "swift-nio-quic"),
-                .product(name: "NIOQUICHelpers", package: "swift-nio-quic-helpers"),
-                .product(name: "NIOHTTP3", package: "swift-nio-http3"),
+                .product(name: "NIOQUIC", package: "swift-nio-quic", condition: .when(traits: ["HTTP3"])),
+                .product(
+                    name: "NIOQUICHelpers",
+                    package: "swift-nio-quic-helpers",
+                    condition: .when(traits: ["HTTP3"])
+                ),
+                .product(name: "NIOHTTP3", package: "swift-nio-http3", condition: .when(traits: ["HTTP3"])),
                 .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
             ],
             swiftSettings: extraSettings

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if HTTP3
 import HTTP3
 
 @available(anyAppleOS 26.0, *)
@@ -62,3 +63,4 @@ extension HTTP3.HTTP3Settings {
         )
     }
 }
+#endif  // HTTP3

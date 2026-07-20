@@ -73,7 +73,7 @@ extension NIOHTTPServer.ResponseSender {
                 if span.isEmpty {
                     done = true
                 } else {
-                    unsafe byteBuffer.writeBytes(span.span.bytes)
+                    byteBuffer.writeBytes(span.span.bytes)
                 }
             }
 
@@ -98,7 +98,7 @@ extension NIOHTTPServer.ResponseSender {
                     if span.isEmpty {
                         done = true
                     } else {
-                        unsafe byteBuffer.writeBytes(span.span.bytes)
+                        byteBuffer.writeBytes(span.span.bytes)
                     }
                 }
 

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if HTTP3
 import NIOCore
 import NIOHTTP3
 
@@ -75,3 +76,4 @@ extension NIOHTTP3.HTTP3ServerConfiguration {
         self.preferHuffmanEncoding = configuration.preferHuffmanEncoding
     }
 }
+#endif  // HTTP3

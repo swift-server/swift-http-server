@@ -22,13 +22,13 @@ jobs:
       linux_nightly_next_enabled: true
       linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
       linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
+      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
 
   static-sdk:
     name: Static SDK
     uses: apple/swift-nio/.github/workflows/static_sdk.yml@main
     with:
-      env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
+      env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
 
   release-builds:
     name: Release builds
@@ -40,4 +40,4 @@ jobs:
       linux_6_2_enabled: false
       linux_6_3_enabled: false
       linux_nightly_next_enabled: true
-      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1"}'
+      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'

@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if HTTP3
 import NIOQUIC
 import Testing
 
@@ -98,3 +99,4 @@ struct HTTP3ConfigurationTests {
         }
     }
 }
+#endif  // HTTP3

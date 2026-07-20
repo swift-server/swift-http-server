@@ -463,19 +463,27 @@ extension NIOHTTPServerConfiguration {
         enum Version {
             case http1_1
             case http2(config: HTTP2)
+            #if HTTP3
             case http3(config: HTTP3)
+            #endif
 
             /// The HTTP/2 configuration if this version is HTTP/2, or `nil` if it is HTTP/1.1 or HTTP/3.
             var http2Config: HTTP2? {
                 switch self {
-                case .http1_1, .http3:
+                case .http1_1:
                     return nil
 
                 case .http2(let config):
                     return config
+
+                #if HTTP3
+                case .http3:
+                    return nil
+                #endif
                 }
             }
 
+            #if HTTP3
             /// The HTTP/3 configuration if this version is HTTP/3, or `nil` if it is HTTP/1.1 or HTTP/2.
             var http3Config: HTTP3? {
                 switch self {
@@ -486,6 +494,7 @@ extension NIOHTTPServerConfiguration {
                     return config
                 }
             }
+            #endif
         }
 
         let version: Version
@@ -502,19 +511,26 @@ extension NIOHTTPServerConfiguration {
             Self(version: .http2(config: config))
         }
 
+        #if HTTP3
         /// The HTTP/3 protocol version.
         ///
         /// - Parameter config: The configuration to use for HTTP/3.
         public static func http3(config: HTTP3) -> Self {
             Self(version: .http3(config: config))
         }
+        #endif
 
         /// Two values are equal if they represent the same protocol version, regardless of any differences in HTTP/2
         /// configuration.
         public static func == (lhs: Self, rhs: Self) -> Bool {
             switch (lhs.version, rhs.version) {
-            case (.http1_1, .http1_1), (.http2, .http2), (.http3, .http3):
+            case (.http1_1, .http1_1), (.http2, .http2):
                 return true
+
+            #if HTTP3
+            case (.http3, .http3):
+                return true
+            #endif
 
             default:
                 return false
@@ -530,8 +546,10 @@ extension NIOHTTPServerConfiguration {
             case .http2:
                 hasher.combine(2)
 
+            #if HTTP3
             case .http3:
                 hasher.combine(3)
+            #endif
             }
         }
     }
@@ -572,9 +590,11 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
         self.compactMap({ $0.version.http2Config }).first
     }
 
+    #if HTTP3
     /// The HTTP/3 configuration if HTTP/3 is among the supported versions, or `nil` if only HTTP/1.1 and/or HTTP/2 is
     /// supported.
     var http3ConfigIfSupported: NIOHTTPServerConfiguration.HTTP3? {
         self.compactMap({ $0.version.http3Config }).first
     }
+    #endif
 }
