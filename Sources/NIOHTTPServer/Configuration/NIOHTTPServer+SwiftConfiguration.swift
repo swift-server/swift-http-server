@@ -36,9 +36,11 @@ extension NIOHTTPServerConfiguration {
     ///   `bindTargets.hosts` and `bindTargets.ports`. Exactly one of `"bindTarget"` or `"bindTargets"` must be
     ///   provided.
     ///
-    /// - **`"http"`**: Supported HTTP versions and protocol settings. Supported keys are `"versions"`
-    ///   (a string array of `"http1_1"` and/or `"http2"`) and, when HTTP/2 is enabled, `"http2"` (see
-    ///   ``HTTP2/init(config:)``).
+    /// - **`"http"`**: Supported HTTP versions and per-version settings:
+    ///   - `"versions"` (required string array): the HTTP versions to support (permitted values: `"http1_1"`,
+    ///      `"http2"`, `"http3"`).
+    ///   - `"http2"`: HTTP/2 settings, read when `"http2"` is contained in `"versions"` (see ``HTTP2/init(config:)``).
+    ///   - `"http3"`: HTTP/3 settings, read when `"http3"` is contained in `"versions"` (see ``HTTP3/init(config:)``).
     ///
     /// - **`"transportSecurity"`**: The transport security mode: plaintext, TLS, or mTLS (see
     ///   ``TransportSecurity/init(config:customCertificateVerificationCallback:)``).
@@ -131,23 +133,21 @@ extension NIOHTTPServerConfiguration.BindTarget {
     }
 }
 
-private enum HTTPVersionKind: String {
-    case http1_1
-    case http2
-}
-
 @available(anyAppleOS 26.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     /// Initialize a supported HTTP versions configuration from a config reader.
     ///
     /// ## Configuration keys:
     /// - `versions` (string array, required): A set of HTTP versions the server should support (permitted values:
-    ///    `"http1_1"`, `"http2"`).
-    ///    - If `"http2"` is contained in this array, then HTTP/2 configuration can be specified under the `"http2"`
-    ///      key. See ``NIOHTTPServerConfiguration/HTTP2/init(config:)`` for the supported keys under `"http2"`.
+    ///    `"http1_1"`, `"http2"`, `"http3"`).
+    ///    - If `"http2"` and/or `"http3"` are contained in this array, the corresponding protocol configuration can be
+    ///      specified under the `"http2"` or `"http3"` key respectively. See
+    ///      ``NIOHTTPServerConfiguration/HTTP2/init(config:)`` and ``NIOHTTPServerConfiguration/HTTP3/init(config:)``
+    ///      for the supported keys.
     ///
     /// - Throws `NIOHTTPServerConfigurationError/noSupportedHTTPVersionsSpecified` if no supported HTTP versions are
     ///   specified under the "versions" key.
+    ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) throws {
         self = .init()
@@ -168,6 +168,12 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
             case .http2:
                 let h2Config = NIOHTTPServerConfiguration.HTTP2(config: config.scoped(to: "http2"))
                 self.insert(.http2(config: h2Config))
+
+            #if HTTP3
+            case .http3:
+                let h3Config = try NIOHTTPServerConfiguration.HTTP3(config: config.scoped(to: "http3"))
+                self.insert(.http3(config: h3Config))
+            #endif
             }
         }
     }
@@ -248,8 +254,9 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
 extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     /// Initialize TLS credentials (certificate chain and private key) from a config reader.
     ///
-    /// When `credentialSource` is `"inline"`, the certificate chain and private key are read as PEM strings from the
-    /// configuration. When `"file"`, they are loaded from disk, optionally reloading at a configured interval.
+    /// - When `credentialSource` is `"inline"`, the certificate chain and private key are read as PEM strings.
+    /// - When `credentialSource` is `"file"`, the certificate chain and private key are loaded from disk, and
+    ///   optionally reloaded at a configured interval.
     fileprivate init(config: ConfigSnapshotReader) throws {
         let credentialSource = try config.requiredString(
             forKey: "credentialSource",
@@ -390,56 +397,13 @@ extension NIOHTTPServerConfiguration.BackPressureStrategy {
 }
 
 @available(anyAppleOS 26.0, *)
-extension NIOHTTPServerConfiguration.HTTP2 {
-    /// Initialize a HTTP/2 configuration from a config reader.
-    ///
-    /// ## Configuration keys:
-    /// - `maxFrameSize` (int, optional, default: 2^14): The maximum frame size to be used in an HTTP/2 connection.
-    /// - `targetWindowSize` (int, optional, default: 2^16 - 1): The target window size to be used in an HTTP/2
-    ///    connection.
-    /// - `maxConcurrentStreams` (int, optional, default: 100): The maximum number of concurrent streams in an HTTP/2
-    ///    connection.
-    /// - `gracefulShutdown.maximumDuration` (int, optional, default: nil): The maximum amount of time (in seconds) that
-    ///   the connection has to close gracefully.
-    ///
-    /// - Parameter config: The configuration reader.
-    public init(config: ConfigSnapshotReader) {
-        self.init(
-            maxFrameSize: config.int(
-                forKey: "maxFrameSize",
-                default: NIOHTTPServerConfiguration.HTTP2.defaultMaxFrameSize
-            ),
-            targetWindowSize: config.int(
-                forKey: "targetWindowSize",
-                default: NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize
-            ),
-            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams", default: 100),
-            gracefulShutdown: .init(config: config.scoped(to: "gracefulShutdown"))
-        )
-    }
-}
-
-@available(anyAppleOS 26.0, *)
-extension NIOHTTPServerConfiguration.HTTP2.GracefulShutdownConfiguration {
-    /// Initialize a HTTP/2 graceful shutdown configuration from a config reader.
-    ///
-    /// ## Configuration keys:
-    /// - `maximumDuration` (int, optional, default: nil): The maximum amount of time (in seconds) that the connection
-    ///   has to close gracefully.
-    ///
-    /// - Parameter config: The configuration reader.
-    public init(config: ConfigSnapshotReader) {
-        self.init(
-            maximumGracefulShutdownDuration: config.int(forKey: "maximumDuration").map { .seconds($0) }
-        )
-    }
-}
-
-@available(anyAppleOS 26.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     fileprivate enum HTTPVersionKind: String {
         case http1_1
         case http2
+        #if HTTP3
+        case http3
+        #endif
     }
 }
 
@@ -485,6 +449,7 @@ extension CertificateVerificationMode {
         }
     }
 }
+
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     /// Initialize connection timeouts configuration from a config reader.

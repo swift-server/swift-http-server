@@ -285,6 +285,19 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(supportedVersions.contains(.http1_1))
             #expect(supportedVersions.http2ConfigIfSupported == .defaults)
         }
+
+        #if HTTP3
+        @Test("Default HTTP/3 configuration used when not specified")
+        @available(anyAppleOS 26.0, *)
+        func defaultHTTP3ConfigurationUsed() throws {
+            let versions = ConfigValue(.stringArray(["http1_1", "http3"]), isSecret: false)
+            let snapshot = ConfigReader(provider: InMemoryProvider(values: ["versions": versions])).snapshot()
+
+            let supportedVersions = try Set<NIOHTTPServerConfiguration.HTTPVersion>(config: snapshot)
+            #expect(supportedVersions.contains(.http1_1))
+            #expect(supportedVersions.http3ConfigIfSupported == .defaults)
+        }
+        #endif
     }
 
     @Suite("HTTP2")
@@ -339,6 +352,235 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.gracefulShutdown.maximumGracefulShutdownDuration == nil)
         }
     }
+
+    #if HTTP3
+    @Suite("HTTP3")
+    struct HTTP3Tests {
+        @Test("Default values")
+        @available(anyAppleOS 26.0, *)
+        func defaultValues() throws {
+            let snapshot = ConfigReader(provider: InMemoryProvider(values: [:])).snapshot()
+
+            let http3 = try NIOHTTPServerConfiguration.HTTP3(config: snapshot)
+
+            #expect(http3 == .defaults)
+        }
+
+        @Test("Custom values")
+        @available(anyAppleOS 26.0, *)
+        func customValues() throws {
+            let provider = InMemoryProvider(values: [
+                "preferHuffmanEncoding": false,
+                "connectionSettings.qpackMaximumTableCapacity": 4096,
+                "connectionSettings.qpackBlockedStreams": 16,
+                "connectionSettings.maximumFieldSectionSize": 8192,
+                "quicConfiguration.keyExchangeGroup": "secp384",
+                "quicConfiguration.maxIdleTimeout": 10,
+                "quicConfiguration.keepAliveInterval": 20,
+                "quicConfiguration.initialMaxData": 2048,
+                "quicConfiguration.initialMaxStreamDataBidirectionalLocal": 50,
+                "quicConfiguration.initialMaxStreamDataBidirectionalRemote": 75,
+                "quicConfiguration.initialMaxStreamDataUnidirectional": 125,
+                "quicConfiguration.initialMaxStreamsBidirectional": 150,
+                "quicConfiguration.initialMaxStreamsUnidirectional": 175,
+                "quicConfiguration.sendRetry": true,
+                "quicConfiguration.keyLogPath": "/tmp/keylog",
+                "quicConfiguration.qlog.path": "/tmp/qlog",
+                "quicConfiguration.qlog.topic": "topic",
+                "quicConfiguration.qlog.description": "description",
+            ])
+            let snapshot = ConfigReader(provider: provider).snapshot()
+
+            let http3 = try NIOHTTPServerConfiguration.HTTP3(config: snapshot)
+
+            #expect(http3.preferHuffmanEncoding == false)
+
+            let connectionSettings = http3.connectionSettings
+            #expect(connectionSettings.qpackMaximumTableCapacity == 4096)
+            #expect(connectionSettings.qpackBlockedStreams == 16)
+            #expect(connectionSettings.maximumFieldSectionSize == 8192)
+
+            let quic = http3.quicConfiguration
+            #expect(quic.keyExchangeGroup == .secp384)
+            #expect(quic.maxIdleTimeout == .seconds(10))
+            #expect(quic.keepAliveInterval == .seconds(20))
+            #expect(quic.initialMaxData == 2048)
+            #expect(quic.initialMaxStreamDataBidirectionalLocal == 50)
+            #expect(quic.initialMaxStreamDataBidirectionalRemote == 75)
+            #expect(quic.initialMaxStreamDataUnidirectional == 125)
+            #expect(quic.initialMaxStreamsBidirectional == 150)
+            #expect(quic.initialMaxStreamsUnidirectional == 175)
+            #expect(quic.sendRetry == true)
+            #expect(quic.keyLogPath == "/tmp/keylog")
+            #expect(quic.qLogConfiguration == .init(path: "/tmp/qlog", topic: "topic", description: "description"))
+        }
+
+        @Suite("ConnectionSettings")
+        struct ConnectionSettingsTests {
+            @Test("Default values")
+            @available(anyAppleOS 26.0, *)
+            func defaultValues() {
+                let snapshot = ConfigReader(provider: InMemoryProvider(values: [:])).snapshot()
+
+                let settings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings(config: snapshot)
+
+                #expect(settings == .defaults)
+                #expect(settings.qpackMaximumTableCapacity == 0)
+                #expect(settings.qpackBlockedStreams == 0)
+                #expect(settings.maximumFieldSectionSize == nil)
+            }
+
+            @Test("Custom values")
+            @available(anyAppleOS 26.0, *)
+            func customValues() {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(values: [
+                        "qpackMaximumTableCapacity": 1024,
+                        "qpackBlockedStreams": 8,
+                        "maximumFieldSectionSize": 4096,
+                    ])
+                ).snapshot()
+
+                let settings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings(config: snapshot)
+
+                #expect(settings.qpackMaximumTableCapacity == 1024)
+                #expect(settings.qpackBlockedStreams == 8)
+                #expect(settings.maximumFieldSectionSize == 4096)
+            }
+
+            @Test("Negative values resolve to valid values")
+            @available(anyAppleOS 26.0, *)
+            func negativeClampsResolveToValidValues() {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(values: [
+                        "qpackMaximumTableCapacity": -5,
+                        "qpackBlockedStreams": -7,
+                        "maximumFieldSectionSize": -1,
+                    ])
+                ).snapshot()
+
+                let settings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings(config: snapshot)
+
+                #expect(settings.qpackMaximumTableCapacity == 0)
+                #expect(settings.qpackBlockedStreams == 0)
+                #expect(settings.maximumFieldSectionSize == nil)
+            }
+        }
+
+        @Suite("QUICConfiguration")
+        struct QUICConfigurationTests {
+            @Test("Default values")
+            @available(anyAppleOS 26.0, *)
+            func defaultValues() throws {
+                let snapshot = ConfigReader(provider: InMemoryProvider(values: [:])).snapshot()
+
+                let quic = try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+
+                #expect(quic == .defaults)
+            }
+
+            @Test("Durations are extracted as seconds")
+            @available(anyAppleOS 26.0, *)
+            func durationsExtractedAsSeconds() throws {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(values: ["maxIdleTimeout": 45, "keepAliveInterval": 5])
+                ).snapshot()
+
+                let quic = try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+
+                #expect(quic.maxIdleTimeout == .seconds(45))
+                #expect(quic.keepAliveInterval == .seconds(5))
+            }
+
+            @Test("Invalid key exchange group throws")
+            @available(anyAppleOS 26.0, *)
+            func invalidKeyExchangeGroup() throws {
+                let snapshot = ConfigReader(provider: InMemoryProvider(values: ["keyExchangeGroup": "<not_a_group>"]))
+                    .snapshot()
+
+                let configError = try #require(throws: Error.self) {
+                    try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+                }
+
+                #expect(
+                    "Config value for key 'keyExchangeGroup' failed to cast to type KeyExchangeGroupKind."
+                        == "\(configError)"
+                )
+            }
+        }
+
+        @Suite("QLogConfiguration")
+        struct QLogConfigurationTests {
+            @Test("No qlog configuration specified")
+            @available(anyAppleOS 26.0, *)
+            func valuesNotSpecified() throws {
+                let snapshot = ConfigReader(provider: InMemoryProvider(values: [:])).snapshot()
+
+                let quic = try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+
+                #expect(quic.qLogConfiguration == nil)
+            }
+
+            @Test("Fully specified qlog configuration")
+            @available(anyAppleOS 26.0, *)
+            func allValuesSpecified() throws {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(values: [
+                        "qlog.path": "/var/log/qlog",
+                        "qlog.topic": "server",
+                        "qlog.description": "server qlog",
+                    ])
+                ).snapshot()
+
+                let quic = try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+
+                #expect(
+                    quic.qLogConfiguration == .init(path: "/var/log/qlog", topic: "server", description: "server qlog")
+                )
+            }
+
+            @Test("Partial qlog configuration is invalid")
+            @available(anyAppleOS 26.0, *)
+            func partialConfigurationInvalid() throws {
+                let snapshot = ConfigReader(provider: InMemoryProvider(values: ["qlog.path": "/var/log/qlog"]))
+                    .snapshot()
+
+                let configError = try #require(throws: Error.self) {
+                    try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+                }
+
+                #expect("Missing required config value for key: qlog.topic." == "\(configError)")
+            }
+        }
+
+        @Test("End-to-end HTTP/3 configuration over TLS")
+        @available(anyAppleOS 26.0, *)
+        func testEndToEnd() throws {
+            let provider = InMemoryProvider(values: [
+                "bindTarget.host": "127.0.0.1",
+                "bindTarget.port": 8000,
+                "http.versions": .init(.stringArray(["http3"]), isSecret: false),
+                "http.http3.preferHuffmanEncoding": false,
+                "http.http3.connectionSettings.qpackBlockedStreams": 7,
+                "http.http3.quicConfiguration.maxIdleTimeout": 60,
+                "http.http3.quicConfiguration.sendRetry": true,
+                "transportSecurity.mode": "tls",
+                "transportSecurity.credentialSource": "file",
+                "transportSecurity.certificateChainPEMPath": .init(.string("cert.pem"), isSecret: false),
+                "transportSecurity.privateKeyPEMPath": .init(.string("key.pem"), isSecret: true),
+            ])
+            let config = ConfigReader(provider: provider)
+
+            let serverConfig = try NIOHTTPServerConfiguration(config: config)
+
+            let http3 = try #require(serverConfig.supportedHTTPVersions.http3ConfigIfSupported)
+            #expect(http3.preferHuffmanEncoding == false)
+            #expect(http3.connectionSettings.qpackBlockedStreams == 7)
+            #expect(http3.quicConfiguration.maxIdleTimeout == .seconds(60))
+            #expect(http3.quicConfiguration.sendRetry == true)
+        }
+    }
+    #endif  // HTTP3
 
     @Suite("TransportSecurity")
     struct TransportSecurityTests {
