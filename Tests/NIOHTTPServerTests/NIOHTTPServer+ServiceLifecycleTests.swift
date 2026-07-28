@@ -159,7 +159,7 @@ struct NIOHTTPServiceLifecycleTests {
             let serverAddress = try await server.listeningAddresses.first!
 
             let tlsConfig = try TLSConfiguration.makeTestClientConfiguration(
-                testTrustRoots: serverChain.chain,
+                trustRoots: .certificates(serverChain.chain),
                 applicationProtocol: httpVersion.alpnIdentifier
             )
 
@@ -299,7 +299,7 @@ struct NIOHTTPServiceLifecycleTests {
                     .http2(config: .init(gracefulShutdown: .init(maximumGracefulShutdownDuration: .milliseconds(500)))),
                 ],
                 transportSecurity: .tls(
-                    credentials: .inMemory(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+                    credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
                 )
             )
         )

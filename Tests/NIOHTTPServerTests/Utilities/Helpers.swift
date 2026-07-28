@@ -14,6 +14,10 @@
 
 import NIOCore
 import NIOEmbedded
+import NIOSSL
+import X509
+
+@testable import NIOHTTPServer
 
 extension NIOAsyncTestingChannel {
     /// Forwards all of our outbound writes to `other` and vice-versa.
@@ -64,5 +68,43 @@ extension NIOAsyncTestingChannel {
         try await setToActivePromise.futureResult.get()
 
         return channel
+    }
+}
+
+extension NIOSSLTrustRoots {
+    static func certificates(_ trustRoots: [Certificate]) throws -> NIOSSLTrustRoots {
+        .certificates(try trustRoots.map { try NIOSSLCertificate($0) })
+    }
+}
+
+extension TLSConfiguration {
+    /// Creates a client `TLSConfiguration` that trusts `testTrustRoots` and advertises the `applicationProtocol` ALPN
+    /// identifier.
+    static func makeTestClientConfiguration(
+        trustRoots: NIOSSLTrustRoots,
+        applicationProtocol: String
+    ) throws -> TLSConfiguration {
+        var clientTLSConfig = TLSConfiguration.makeClientConfiguration()
+        clientTLSConfig.trustRoots = trustRoots
+        clientTLSConfig.certificateVerification = .noHostnameVerification
+        clientTLSConfig.applicationProtocols = [applicationProtocol]
+
+        return clientTLSConfig
+    }
+
+    /// Like ``makeTestClientConfiguration``, but with mTLS.
+    static func makeTestClientMTLSConfiguration(
+        trustRoots: NIOSSLTrustRoots,
+        clientCredentials: ChainPrivateKeyPair,
+        applicationProtocol: String
+    ) throws -> TLSConfiguration {
+        var mTLSConfig = try TLSConfiguration.makeTestClientConfiguration(
+            trustRoots: trustRoots,
+            applicationProtocol: applicationProtocol
+        )
+        mTLSConfig.certificateChain = [try NIOSSLCertificateSource(clientCredentials.leaf)]
+        mTLSConfig.privateKey = .privateKey(try .init(clientCredentials.privateKey))
+
+        return mTLSConfig
     }
 }

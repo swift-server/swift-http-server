@@ -70,8 +70,8 @@ struct HTTP3ConfigurationTests {
             #expect(throws: NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3) {
                 _ = try NIOQUIC.AuthenticationConfiguration(
                     .mTLS(
-                        credentials: .pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"),
-                        trustConfiguration: .pemFile(path: "/roots.pem")
+                        credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem")),
+                        trustConfiguration: .init(.pemFile(trustRootsPath: "/roots.pem"))
                     )
                 )
             }
@@ -83,7 +83,7 @@ struct HTTP3ConfigurationTests {
             let chain = try TestCA.makeSelfSignedChain()
             #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3) {
                 _ = try NIOQUIC.AuthenticationConfiguration(
-                    .tls(credentials: .inMemory(certificateChain: chain.chain, privateKey: chain.privateKey))
+                    .tls(credentials: .x509(.certificates(chain: chain.chain, privateKey: chain.privateKey)))
                 )
             }
         }
@@ -93,7 +93,7 @@ struct HTTP3ConfigurationTests {
         func pemFileCredentialsAccepted() {
             #expect(throws: Never.self) {
                 _ = try NIOQUIC.AuthenticationConfiguration(
-                    .tls(credentials: .pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"))
+                    .tls(credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem")))
                 )
             }
         }

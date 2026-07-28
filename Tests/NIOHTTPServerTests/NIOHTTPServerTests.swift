@@ -125,14 +125,18 @@ struct NIOHTTPServerTests {
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1, .http2(config: .init())],
                 transportSecurity: .mTLS(
-                    credentials: .inMemory(
-                        certificateChain: [serverChain.leaf],
-                        privateKey: serverChain.privateKey,
+                    credentials: .x509(
+                        .certificates(
+                            chain: [serverChain.leaf],
+                            privateKey: serverChain.privateKey,
+                        )
                     ),
-                    trustConfiguration: .customCertificateVerificationCallback { certificates in
-                        // Return the peer's certificate chain; this must then be accessible in the request handler
-                        .certificateVerified(.init(.init(uncheckedCertificateChain: certificates)))
-                    }
+                    trustConfiguration: .init(
+                        .customCertificateVerificationCallback { certificates in
+                            // Return the peer's certificate chain; this must then be accessible in the request handler
+                            .certificateVerified(.init(.init(uncheckedCertificateChain: certificates)))
+                        }
+                    )
                 )
             )
         )
@@ -860,7 +864,7 @@ extension NIOHTTPServerTests {
                 bindTargets: bindTargets,
                 supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
                 transportSecurity: .tls(
-                    credentials: .inMemory(certificateChain: serverChain.chain, privateKey: serverChain.privateKey)
+                    credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
                 )
             )
         )

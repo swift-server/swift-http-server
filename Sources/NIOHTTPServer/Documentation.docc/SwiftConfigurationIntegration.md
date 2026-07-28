@@ -71,11 +71,13 @@ its respective key prefix.
 |                                     | `topic`                                   | `string`        | Optional                                                                                                                      | nil            |
 |                                     | `description`                             | `string`        | Optional                                                                                                                      | nil            |
 | `transportSecurity`                 | `mode`                                    | `string`        | Required (permitted values: `"plaintext"`, `"tls"`, `"mTLS"`)                                                                 | -              |
-|                                     | `credentialSource`                        | `string`        | Required for `"tls"` and `"mTLS"` (permitted values: `"inline"`, `"file"`)                                                    | -              |
+|                                     | `credentialSource`                        | `string`        | Required for `"tls"` and `"mTLS"` (permitted values: `"inline"`, `"file"`, `"rawPublicKey"`)                                  | -              |
 |                                     | `certificateChainPEMString`               | `string`        | Required for `credentialSource: "inline"`                                                                                     | -              |
 |                                     | `privateKeyPEMString`                     | `string`        | Required for `credentialSource: "inline"`, secret.                                                                            | -              |
 |                                     | `certificateChainPEMPath`                 | `string`        | Required for `credentialSource: "file"`                                                                                       | -              |
 |                                     | `privateKeyPEMPath`                       | `string`        | Required for `credentialSource: "file"`, secret.                                                                              | -              |
+|                                     | `publicKeyDERPath`                        | `string`        | Required for `credentialSource: "rawPublicKey"`                                                                               | -              |
+|                                     | `privateKeyDERPath`                       | `string`        | Required for `credentialSource: "rawPublicKey"`, secret.                                                                      | -              |
 |                                     | `refreshInterval`                         | `int`           | Optional for `credentialSource: "file"`                                                                                       | -              |
 |                                     | `trustRootsSource`                        | `string`        | Required for `"mTLS"` (permitted values: `"inline"`, `"file"`, `"systemDefaults"`, `"customCertificateVerificationCallback"`) | -              |
 |                                     | `trustRootsPEMString`                     | `string`        | Required for `trustRootsSource: "inline"`                                                                                     | -              |
@@ -96,6 +98,8 @@ The `credentialSource` determines how server credentials are provided:
   `certificateChainPEMPath` and `privateKeyPEMPath`.
     - When `refreshInterval` is provided, credentials are reloaded periodically at the specified interval (in seconds).
       Otherwise, credentials are loaded from disk once at startup.
+- `"rawPublicKey"`: provide file paths to DER-encoded public and private keys, using `publicKeyDERPath` and
+  `privateKeyDERPath`. Raw public key credentials are only supported when serving over HTTP/3.
 
 The `trustRootsSource` determines how mTLS trust roots are provided:
 - `"inline"`: provide the root certificates as a PEM-encoded string, using `trustRootsPEMString`.

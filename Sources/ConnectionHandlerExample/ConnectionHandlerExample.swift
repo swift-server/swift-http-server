@@ -42,22 +42,24 @@ struct ConnectionHandlerExample {
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 12346),
                     supportedHTTPVersions: [.http1_1, .http2(config: .init())],
                     transportSecurity: .tls(
-                        credentials: .inMemory(
-                            certificateChain: [
-                                try Certificate(
-                                    version: .v3,
-                                    serialNumber: .init(bytes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-                                    publicKey: .init(privateKey.publicKey),
-                                    notValidBefore: Date.now.addingTimeInterval(-60),
-                                    notValidAfter: Date.now.addingTimeInterval(60 * 60),
-                                    issuer: DistinguishedName(),
-                                    subject: DistinguishedName(),
-                                    signatureAlgorithm: .ecdsaWithSHA256,
-                                    extensions: .init(),
-                                    issuerPrivateKey: Certificate.PrivateKey(privateKey)
-                                )
-                            ],
-                            privateKey: Certificate.PrivateKey(privateKey)
+                        credentials: .x509(
+                            .certificates(
+                                chain: [
+                                    try Certificate(
+                                        version: .v3,
+                                        serialNumber: .init(bytes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+                                        publicKey: .init(privateKey.publicKey),
+                                        notValidBefore: Date.now.addingTimeInterval(-60),
+                                        notValidAfter: Date.now.addingTimeInterval(60 * 60),
+                                        issuer: DistinguishedName(),
+                                        subject: DistinguishedName(),
+                                        signatureAlgorithm: .ecdsaWithSHA256,
+                                        extensions: .init(),
+                                        issuerPrivateKey: Certificate.PrivateKey(privateKey)
+                                    )
+                                ],
+                                privateKey: Certificate.PrivateKey(privateKey)
+                            )
                         )
                     )
                 )

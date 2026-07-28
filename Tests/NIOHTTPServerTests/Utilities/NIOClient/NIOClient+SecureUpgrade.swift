@@ -84,7 +84,7 @@ extension ClientBootstrap {
         applicationProtocol: String
     ) async throws -> NegotiatedClientConnection {
         let tlsConfig = try TLSConfiguration.makeTestClientConfiguration(
-            testTrustRoots: trustRoots,
+            trustRoots: .certificates(try trustRoots.map { try NIOSSLCertificate($0) }),
             applicationProtocol: applicationProtocol
         )
 
@@ -99,29 +99,12 @@ extension ClientBootstrap {
         trustRoots: [Certificate],
         applicationProtocol: String
     ) async throws -> NegotiatedClientConnection {
-        var mTLSConfig = try TLSConfiguration.makeTestClientConfiguration(
-            testTrustRoots: trustRoots,
+        let mTLSConfig = try TLSConfiguration.makeTestClientMTLSConfiguration(
+            trustRoots: .certificates(try trustRoots.map { try NIOSSLCertificate($0) }),
+            clientCredentials: clientChain,
             applicationProtocol: applicationProtocol
         )
-        mTLSConfig.certificateChain = [try NIOSSLCertificateSource(clientChain.leaf)]
-        mTLSConfig.privateKey = .privateKey(try .init(clientChain.privateKey))
 
         return try await self.connectToTestSecureUpgradeHTTPServer(at: serverAddress, tlsConfig: mTLSConfig)
-    }
-}
-
-extension TLSConfiguration {
-    /// Valid `applicationProtocol` values are `"http/1.1"` (forces HTTP/1.1), `"h2"` (forces HTTP/2), or a
-    /// comma-separated combination of both in order of preference, e.g. `"http/1.1, h2"`.
-    static func makeTestClientConfiguration(
-        testTrustRoots: [Certificate],
-        applicationProtocol: String
-    ) throws -> TLSConfiguration {
-        var clientTLSConfig = TLSConfiguration.makeClientConfiguration()
-        clientTLSConfig.trustRoots = .certificates(try testTrustRoots.map { try NIOSSLCertificate($0) })
-        clientTLSConfig.certificateVerification = .noHostnameVerification
-        clientTLSConfig.applicationProtocols = [applicationProtocol]
-
-        return clientTLSConfig
     }
 }

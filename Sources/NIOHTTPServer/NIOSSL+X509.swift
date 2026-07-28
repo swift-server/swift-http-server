@@ -50,17 +50,6 @@ extension NIOSSLPrivateKeySource {
     }
 }
 
-@available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)
-extension NIOSSLTrustRoots {
-    init(treatingNilAsSystemTrustRoots certificates: [Certificate]?) throws {
-        if let certificates {
-            self = .certificates(try certificates.map { try NIOSSLCertificate($0) })
-        } else {
-            self = .default
-        }
-    }
-}
-
 // MARK: NIOSSL to X509
 
 @available(macOS 10.15, iOS 13, watchOS 6, tvOS 13, visionOS 1.0, *)

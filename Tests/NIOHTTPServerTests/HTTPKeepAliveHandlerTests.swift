@@ -494,10 +494,7 @@ struct HTTPKeepAliveHandlerTests {
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .tls(
-                    credentials: .inMemory(
-                        certificateChain: serverChain.chain,
-                        privateKey: serverChain.privateKey
-                    )
+                    credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
                 )
             )
         )

@@ -187,7 +187,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     /// - `mode` (string, required): The transport security mode for the server (permitted values: `"plaintext"`,
     ///   `"tls"`, `"mTLS"`).
     /// - `credentialSource` (string, required for `"tls"` and `"mTLS"`): How TLS credentials are provided (permitted
-    ///   values: `"inline"`, `"file"`).
+    ///   values: `"inline"`, `"file"`, `"rawPublicKey"`).
     ///
     /// ### Configuration keys for `credentialSource: "inline"`:
     /// - `certificateChainPEMString` (string, required): PEM-formatted certificate chain content.
@@ -199,7 +199,11 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     /// - `refreshInterval` (int, optional): The interval (in seconds) at which the certificate chain and private key
     ///    will be reloaded. If omitted, credentials are loaded from the file only once at startup.
     ///
-    /// ### Configuration keys for `mode: "mTLS"`:
+    /// ### Configuration keys for `credentialSource: "rawPublicKey"` (only supported over HTTP/3):
+    /// - `publicKeyDERPath` (string, required): Path to the DER-encoded public key file.
+    /// - `privateKeyDERPath` (string, required): Path to the DER-encoded private key file.
+    ///
+    /// ### Configuration keys for `mode: "mTLS"` (not supported over HTTP/3):
     /// - `trustRootsSource` (string, required): How trust roots are provided (permitted values: `"inline"`, `"file"`,
     ///    `"systemDefaults"`, `"customCertificateVerificationCallback"`).
     /// - `trustRootsPEMString` (string, required for `trustRootsSource: "inline"`): The root certificates as a
@@ -257,6 +261,8 @@ extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     /// - When `credentialSource` is `"inline"`, the certificate chain and private key are read as PEM strings.
     /// - When `credentialSource` is `"file"`, the certificate chain and private key are loaded from disk, and
     ///   optionally reloaded at a configured interval.
+    /// - When `credentialSource` is `"rawPublicKey"` (only supported over HTTP/3), DER-encoded public and private key
+    ///   file paths are read.
     fileprivate init(config: ConfigSnapshotReader) throws {
         let credentialSource = try config.requiredString(
             forKey: "credentialSource",
@@ -268,10 +274,12 @@ extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
             let certificateChainPEMString = try config.requiredString(forKey: "certificateChainPEMString")
             let privateKeyPEMString = try config.requiredString(forKey: "privateKeyPEMString", isSecret: true)
 
-            self = .inMemory(
-                certificateChain: try PEMDocument.parseMultiple(pemString: certificateChainPEMString)
-                    .map { try Certificate(pemEncoded: $0.pemString) },
-                privateKey: try .init(pemEncoded: privateKeyPEMString)
+            self = .x509(
+                .certificates(
+                    chain: try PEMDocument.parseMultiple(pemString: certificateChainPEMString)
+                        .map { try Certificate(pemEncoded: $0.pemString) },
+                    privateKey: try .init(pemEncoded: privateKeyPEMString)
+                )
             )
 
         case .file:
@@ -280,19 +288,28 @@ extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
             let refreshInterval = config.int(forKey: "refreshInterval")
 
             if let refreshInterval {
-                self = .reloading(
-                    certificateReloader: TimedCertificateReloader(
-                        refreshInterval: .seconds(refreshInterval),
-                        certificateSource: .init(location: .file(path: certificateChainPEMPath), format: .pem),
-                        privateKeySource: .init(location: .file(path: privateKeyPEMPath), format: .pem)
+                self = .x509(
+                    .reloading(
+                        TimedCertificateReloader(
+                            refreshInterval: .seconds(refreshInterval),
+                            certificateSource: .init(location: .file(path: certificateChainPEMPath), format: .pem),
+                            privateKeySource: .init(location: .file(path: privateKeyPEMPath), format: .pem)
+                        )
                     )
                 )
             } else {
-                self = .pemFile(
-                    certificateChainPath: certificateChainPEMPath,
-                    privateKeyPath: privateKeyPEMPath
-                )
+                self = .x509(.pemFile(certificateChainPath: certificateChainPEMPath, privateKeyPath: privateKeyPEMPath))
             }
+
+        #if HTTP3
+        case .rawPublicKey:
+            self = .rawPublicKey(
+                .derFile(
+                    publicKeyPath: try config.requiredString(forKey: "publicKeyDERPath"),
+                    privateKeyPath: try config.requiredString(forKey: "privateKeyDERPath")
+                )
+            )
+        #endif
         }
     }
 }
@@ -338,21 +355,23 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
         switch trustRootsSource {
         case .inline:
             let trustRootsPEMString = try config.requiredString(forKey: "trustRootsPEMString")
-            self = .inMemory(
-                trustRoots: try PEMDocument.parseMultiple(pemString: trustRootsPEMString)
-                    .map { try Certificate(pemEncoded: $0.pemString) },
+            self.init(
+                .certificates(
+                    trustRoots: try PEMDocument.parseMultiple(pemString: trustRootsPEMString)
+                        .map { try Certificate(pemEncoded: $0.pemString) }
+                ),
                 certificateVerification: .init(certificateVerificationMode)
             )
 
         case .file:
             let trustRootsPEMPath = try config.requiredString(forKey: "trustRootsPEMPath")
-            self = .pemFile(
-                path: trustRootsPEMPath,
+            self.init(
+                .pemFile(trustRootsPath: trustRootsPEMPath),
                 certificateVerification: .init(certificateVerificationMode)
             )
 
         case .systemDefaults:
-            self = .systemDefaults(certificateVerification: .init(certificateVerificationMode))
+            self.init(.systemDefaults, certificateVerification: .init(certificateVerificationMode))
 
         case .customCertificateVerificationCallback:
             guard let customCertificateVerificationCallback else {
@@ -361,8 +380,8 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
                 throw NIOHTTPServerSwiftConfigurationError.trustRootsSourceAndVerificationCallbackMismatch
             }
 
-            self = .customCertificateVerificationCallback(
-                customCertificateVerificationCallback,
+            self.init(
+                .customCertificateVerificationCallback(customCertificateVerificationCallback),
                 certificateVerification: .init(certificateVerificationMode)
             )
         }
@@ -418,6 +437,9 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     fileprivate enum CredentialSource: String {
         case inline
         case file
+        #if HTTP3
+        case rawPublicKey
+        #endif
     }
 }
 

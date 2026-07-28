@@ -98,7 +98,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// The custom mTLS certificate verification callback, if one was configured.
         ///
         /// Returns the callback when the transport security is configured for mTLS with a
-        /// ``MTLSTrustConfiguration/customCertificateVerificationCallback(_:certificateVerification:)``,
+        /// ``MTLSTrustConfiguration/TrustSource/customCertificateVerificationCallback(_:)``,
         /// or `nil` otherwise.
         var customVerificationCallback: (@Sendable ([X509.Certificate]) async throws -> CertificateVerificationResult)?
         {
@@ -109,11 +109,11 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 return nil
 
             case .mTLS(_, let trustRoots):
-                switch trustRoots.backing {
+                switch trustRoots.source.backing {
                 case .customCertificateVerificationCallback(let callback):
                     return callback
 
-                case .systemDefaults, .inMemory, .pemFile:
+                case .systemDefaults, .certificates, .serialized:
                     return nil
                 }
             }

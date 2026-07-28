@@ -31,33 +31,26 @@ extension NIOSSLContext {
 
         case .tls(let tlsCredentials), .mTLS(let tlsCredentials, _):
             switch tlsCredentials.backing {
-            case .inMemory(let certificateChain, let privateKey):
-                configuration = .makeServerConfiguration(
-                    certificateChain: try certificateChain.map { try NIOSSLCertificateSource($0) },
-                    privateKey: try NIOSSLPrivateKeySource(privateKey)
-                )
+            case .x509(let x509Credentials):
+                configuration = try .makeServerConfiguration(x509Credentials)
 
-            case .reloading(let certificateReloader):
-                configuration = try .makeServerConfiguration(certificateReloader: certificateReloader)
-
-            case .pemFile(let certificateChainPath, let privateKeyPath):
-                configuration = try .makeServerConfiguration(
-                    certificateChain: NIOSSLCertificate.fromPEMFile(certificateChainPath).map { .certificate($0) },
-                    privateKey: .privateKey(.init(file: privateKeyPath, format: .pem))
-                )
+            #if HTTP3
+            case .rawPublicKey:
+                throw NIOHTTPServerConfigurationError.rawPublicKeyTLSCredentialsNotCurrentlySupportedOverHTTP1OrHTTP2
+            #endif
             }
         }
 
         if case .mTLS(_, let mTLSConfiguration) = transportSecurity.backing {
-            switch mTLSConfiguration.backing {
+            switch mTLSConfiguration.source.backing {
             case .systemDefaults:
                 configuration.trustRoots = .default
 
-            case .inMemory(let trustRoots):
+            case .certificates(let trustRoots):
                 configuration.trustRoots = .certificates(try trustRoots.map { try NIOSSLCertificate($0) })
 
-            case .pemFile(let path):
-                configuration.trustRoots = .file(path)
+            case .serialized(let serialized):
+                configuration.trustRoots = try .init(serialized)
 
             case .customCertificateVerificationCallback:
                 // There are no trust roots when a custom certificate verification callback is specified: the callback
@@ -71,5 +64,97 @@ extension NIOSSLContext {
         configuration.applicationProtocols = alpnIdentifiers
 
         return try Self(configuration: configuration)
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension TLSConfiguration {
+    /// Creates a server `TLSConfiguration` from the provided X.509 credentials.
+    fileprivate static func makeServerConfiguration(
+        _ x509Credentials: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials
+    ) throws -> TLSConfiguration {
+        switch x509Credentials.backing {
+        case .certificates(let chain, let privateKey):
+            return .makeServerConfiguration(
+                certificateChain: try chain.map { try NIOSSLCertificateSource($0) },
+                privateKey: try NIOSSLPrivateKeySource(privateKey)
+            )
+
+        case .reloading(let certificateReloader):
+            return try .makeServerConfiguration(certificateReloader: certificateReloader)
+
+        case .serialized(let serialized):
+            return .makeServerConfiguration(certificateChain: try .init(serialized), privateKey: try .init(serialized))
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension [NIOSSLCertificateSource] {
+    fileprivate init(
+        _ serialized: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.SerializedCredentials
+    ) throws {
+        switch serialized {
+        case .file(let certificateChain, _, .pem):
+            self.init(try NIOSSLCertificate.fromPEMFile(certificateChain).map { .certificate($0) })
+
+        case .file(let certificate, _, .der):
+            self.init([.certificate(try NIOSSLCertificate.fromDERFile(certificate))])
+
+        case .bytes(let certificateChain, _, .pem):
+            self.init(try NIOSSLCertificate.fromPEMBytes(certificateChain).map { .certificate($0) })
+
+        case .bytes(let certificate, _, .der):
+            self.init([.certificate(try NIOSSLCertificate(bytes: certificate, format: .der))])
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOSSLPrivateKeySource {
+    fileprivate init(
+        _ serialized: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.SerializedCredentials
+    ) throws {
+        switch serialized {
+        case .file(_, let privateKey, let format):
+            self = .privateKey(try .init(file: privateKey, format: .init(format)))
+
+        case .bytes(_, let privateKey, let format):
+            self = .privateKey(try .init(bytes: privateKey, format: .init(format)))
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOSSLTrustRoots {
+    fileprivate init(
+        _ serialized: NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration.SerializedTrustRoots
+    ) throws {
+        switch serialized {
+        case .file(let trustRoots, .pem):
+            self = .file(trustRoots)
+
+        case .file(let trustRoot, .der):
+            self = .certificates([try NIOSSLCertificate.fromDERFile(trustRoot)])
+
+        case .bytes(let trustRoots, .pem):
+            self = .certificates(try NIOSSLCertificate.fromPEMBytes(trustRoots))
+
+        case .bytes(let trustRoot, .der):
+            self = .certificates([try NIOSSLCertificate(bytes: trustRoot, format: .der)])
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOSSLSerializationFormats {
+    fileprivate init(_ format: NIOHTTPServerConfiguration.TransportSecurity.Encoding) {
+        switch format {
+        case .pem:
+            self = .pem
+
+        case .der:
+            self = .der
+        }
     }
 }

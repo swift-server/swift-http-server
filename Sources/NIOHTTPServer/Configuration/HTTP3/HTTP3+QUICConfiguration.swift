@@ -236,16 +236,25 @@ extension NIOQUIC.AuthenticationConfiguration {
         case .mTLS:
             throw NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3
 
-        case .tls(let credentials):
-            switch credentials.backing {
-            case .inMemory, .reloading:
-                throw NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
+        case .tls(let tlsCredentials):
+            switch tlsCredentials.backing {
+            case .x509(let x509Credentials):
+                switch x509Credentials.backing {
+                case .serialized(.file(let certificateChain, let privateKey, format: .pem)):
+                    self = .x509Certificates(certificateChainFilePath: certificateChain, privateKeyFilePath: privateKey)
 
-            case .pemFile(let certificateChainPath, let privateKeyPath):
-                self = .x509Certificates(
-                    certificateChainFilePath: certificateChainPath,
-                    privateKeyFilePath: privateKeyPath
-                )
+                case .certificates, .reloading, .serialized(.file(_, _, .der)), .serialized(.bytes):
+                    throw NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
+                }
+
+            case .rawPublicKey(let rawPublicKeyCredentials):
+                switch rawPublicKeyCredentials.backing {
+                case .file(let publicKey, let privateKey, .der):
+                    self = .rawPublicKeys(publicKeyFilePath: publicKey, privateKeyFilePath: privateKey)
+
+                case .file(_, _, .pem):
+                    throw NIOHTTPServerConfigurationError.pemRawPublicKeysNotCurrentlySupported
+                }
             }
         }
     }
@@ -291,26 +300,30 @@ extension NIOQUIC.Authenticator {
     ///
     /// - Throws:
     ///   - ``NIOHTTPServerConfigurationError/incompatibleTransportSecurity`` if `transportSecurity` is `.plaintext`.
-    ///   - ``NIOHTTPServerConfigurationError/inMemoryOrReloadingTLSCredentialsNotSupportedOverHTTP3`` if the X.509
-    ///     credentials are provided as in-memory `X509.Certificate`/`X509.Certificate.PrivateKey` objects or as a
-    ///     `CertificateReloader` instance.
+    ///   - ``NIOHTTPServerConfigurationError/http3RequiresPEMFileCertificates`` if the X.509 credentials are not
+    ///     provided as a PEM-encoded certificate chain and private key on disk.
     ///   - An underlying error from `Authenticator`'s initializer if the certificate chain or private key cannot be
     ///     loaded.
-    convenience init(_ transportSecurity: NIOHTTPServerConfiguration.TransportSecurity) throws {
+    convenience init?(_ transportSecurity: NIOHTTPServerConfiguration.TransportSecurity) throws {
         switch transportSecurity.backing {
         case .plaintext:
             throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
 
         case .tls(let tlsCredentials), .mTLS(let tlsCredentials, _):
             switch tlsCredentials.backing {
-            case .reloading:
-                throw NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
+            case .rawPublicKey:
+                // Public/private key paths are read directly from `QUICConfiguration.authenticationConfiguration`, so
+                // we return `nil` here.
+                return nil
 
-            case .pemFile(let certificateChainPath, let privateKeyPath):
-                try self.init(certificateFilePath: certificateChainPath, privateKeyFilePath: privateKeyPath)
+            case .x509(let x509Credentials):
+                switch x509Credentials.backing {
+                case .reloading, .serialized(.bytes), .serialized(.file(_, _, .der)), .certificates:
+                    throw NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
 
-            case .inMemory(let certificateChain, let privateKey):
-                try self.init(certificates: certificateChain, privateKey: privateKey)
+                case .serialized(.file(let certificateChain, let privateKey, .pem)):
+                    try self.init(certificateFilePath: certificateChain, privateKeyFilePath: privateKey)
+                }
             }
         }
     }
