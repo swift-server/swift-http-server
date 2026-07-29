@@ -154,18 +154,6 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
 
         let backing: Backing
 
-        /// Raw public key credentials provided as paths to PEM-encoded files on disk.
-        ///
-        /// - Important: PEM-file backed raw public key credentials are not currently supported over HTTP/3; only
-        ///   DER-file credentials are. See ``derFile(publicKey:privateKey:)``.
-        ///
-        /// - Parameters:
-        ///   - publicKeyPath: The path to the PEM-encoded public key.
-        ///   - privateKeyPath: The path to the PEM-encoded private key for `publicKey`.
-        public static func pemFile(publicKeyPath: String, privateKeyPath: String) -> Self {
-            Self(backing: .file(publicKeyPath: publicKeyPath, privateKeyPath: privateKeyPath, format: .pem))
-        }
-
         /// Raw public key credentials provided as paths to DER-encoded files on disk.
         ///
         /// - Parameters:
