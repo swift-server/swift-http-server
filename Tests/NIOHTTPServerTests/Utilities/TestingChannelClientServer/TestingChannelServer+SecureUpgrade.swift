@@ -61,6 +61,8 @@ struct TestingChannelSecureUpgradeServer {
                 try await server.serveSecureUpgradeWithTestChannel(testChannel: serverTestChannel, handler: handler)
             }
 
+            _ = try await server.listeningAddresses
+
             // Execute the provided closure.
             try await body(Self(server: server, serverTestChannel: serverTestChannel))
 
@@ -72,7 +74,7 @@ struct TestingChannelSecureUpgradeServer {
     /// with the negotiated ALPN result as an argument.
     func withConnectedClient(
         clientTLSConfig: TLSConfiguration,
-        body: (_ negotiatedConnectionChannel: NegotiatedClientConnection) async throws -> Void
+        body: (_ negotiatedConnectionChannel: TestClientConnection) async throws -> Void
     ) async throws {
         // Create a connection channel: we will write this to the server channel to simulate an incoming connection.
         let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
@@ -105,7 +107,12 @@ struct TestingChannelSecureUpgradeServer {
             // We must forward all client outbound writes to the server and vice-versa.
             group.addTask { try await clientTestingChannel.glueTo(serverTestConnectionChannel) }
 
-            try await body(.init(negotiationResult: try await clientNegotiatedConnectionFuture.get()))
+            try await body(
+                .init(
+                    alpnNegotiationResult: try await clientNegotiatedConnectionFuture.get(),
+                    connectionChannel: clientTestingChannel
+                )
+            )
 
             try await serverTestConnectionChannel.close()
         }

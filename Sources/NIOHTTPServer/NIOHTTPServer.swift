@@ -204,7 +204,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     /// Creates and returns server channels based on the configured transport security.
-    private func makeServerChannels() async throws -> [ServerChannel] {
+    func makeServerChannels() async throws -> [ServerChannel] {
         // If transport security is `plaintext`, we can only create an HTTP/1.1 channel.
         if case .plaintext = self.configuration.transportSecurity.backing {
             let http1Channels = try await self.setupHTTP1_1ServerChannels(bindTargets: self.configuration.bindTargets)
@@ -417,7 +417,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     /// Forcefully closes the server channels without waiting for existing connections to drain.
-    private func close(serverChannels: [ServerChannel]) {
+    func close(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
 
         for serverChannel in serverChannels {

@@ -36,29 +36,13 @@ struct NIOHTTPServerEndToEndTests {
                     try await outbound.write(.head(.init(method: .get, scheme: "", authority: "", path: "/")))
                     try await outbound.write(.end(nil))
 
-                    var inboundIterator = inbound.makeAsyncIterator()
-
-                    let head = try await inboundIterator.next()
-                    guard case .head(let responseHead) = head else {
-                        Issue.record("Expected response head but received \(head).")
-                        return
-                    }
-                    #expect(responseHead.status == 200)
-                    #expect(responseHead.headerFields == [.transferEncoding: "chunked"])
-
-                    let body = try await inboundIterator.next()
-                    guard case .body(let responseBody) = body else {
-                        Issue.record("Expected response body but received \(body).")
-                        return
-                    }
-                    #expect(responseBody == .init([1, 2]))
-
-                    let end = try await inboundIterator.next()
-                    guard case .end(let responseEnd) = end else {
-                        Issue.record("Expected response end but received \(end).")
-                        return
-                    }
-                    #expect(responseEnd == [.serverTiming: "test"])
+                    try await TestHelpers.validateResponse(
+                        inbound,
+                        expectedHead: [.makeResponse(status: .ok, for: .http1_1)],
+                        expectedBody: [.init([1, 2])],
+                        expectedTrailers: [.serverTiming: "test"],
+                        expectStreamEnd: false
+                    )
                 }
             }
         }
@@ -84,42 +68,21 @@ struct NIOHTTPServerEndToEndTests {
                 try await resSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: [.serverTiming: "test"])
             }
         ) { server in
-            try await server.withConnectedClient(clientTLSConfig: clientTLSConfig) { negotiatedConnectionChannel in
-                switch negotiatedConnectionChannel {
-                case .http1(_):
-                    Issue.record("Failed to negotiate HTTP/2 despite the client requiring HTTP/2.")
-
-                case .http2(let http2StreamManager):
-                    let http2AsyncChannel = try await http2StreamManager.openStream()
-
-                    try await http2AsyncChannel.executeThenClose { inbound, outbound in
+            try await server.withConnectedClient(clientTLSConfig: clientTLSConfig) { negotiatedConnection in
+                try await negotiatedConnection
+                    .makeRequestChannel(expectedHTTPVersion: .http2)
+                    .executeThenClose { inbound, outbound in
                         try await outbound.write(.head(.init(method: .get, scheme: "", authority: "", path: "/")))
                         try await outbound.write(.end(nil))
 
-                        var inboundIterator = inbound.makeAsyncIterator()
-
-                        let head = try await inboundIterator.next()
-                        guard case .head(let responseHead) = head else {
-                            Issue.record("Expected response head but received \(head).")
-                            return
-                        }
-                        #expect(responseHead.status == 200)
-
-                        let body = try await inboundIterator.next()
-                        guard case .body(let responseBody) = body else {
-                            Issue.record("Expected response body but received \(body).")
-                            return
-                        }
-                        #expect(responseBody == .init([1, 2]))
-
-                        let end = try await inboundIterator.next()
-                        guard case .end(let responseEnd) = end else {
-                            Issue.record("Expected response end but received \(end).")
-                            return
-                        }
-                        #expect(responseEnd == [.serverTiming: "test"])
+                        try await TestHelpers.validateResponse(
+                            inbound,
+                            expectedHead: [.makeResponse(status: .ok, for: .http2)],
+                            expectedBody: [.init([1, 2])],
+                            expectedTrailers: [.serverTiming: "test"],
+                            expectStreamEnd: true
+                        )
                     }
-                }
             }
         }
     }

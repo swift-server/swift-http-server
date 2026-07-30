@@ -24,94 +24,89 @@ import Testing
 
 @Suite
 struct HTTPKeepAliveHandlerTests {
-    let serverLogger = Logger(label: "HTTPKeepAliveHandlerTests")
+    let clientLogger = Logger(label: "HTTPKeepAliveHandlerTests.client")
+    let serverLogger = Logger(label: "HTTPKeepAliveHandlerTests.server")
 
     /// Verifies the happy case: when a client pipelines multiple HTTP/1.1 requests
     /// on a single connection, all responses are returned in order and the connection
     /// stays alive (no `Connection: close`).
     @available(anyAppleOS 26.0, *)
-    @Test("Pipelined requests on a single connection all succeed")
-    func testPipelinedRequests() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+    @Test(
+        "Pipelined requests on a single connection all succeed",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testPipelinedRequests(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: http1Variant,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
         )
 
         let requestCount = 5
 
-        try await NIOHTTPServerTests.withServer(
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { request, _, reader, sender in
-                try await NIOHTTPServerTests.echoResponse(readUpTo: 1024, reader: reader, sender: sender)
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
+                try await TestHelpers.echoResponse(readUpTo: 1024, reader: reader, sender: sender)
+            }
+        ) { _, inbound, outbound in
+            // Pipeline all requests up-front, then read all responses.
+            for i in 1...requestCount {
+                try await outbound.write(.testHead(method: .post, path: "/\(i)", for: http1Variant))
+                try await outbound.write(.body(ByteBuffer(string: "request-\(i)")))
+                try await outbound.write(.end(nil))
+            }
 
-                try await client.executeThenClose { inbound, outbound in
-                    // Pipeline all requests up-front, then read all responses.
-                    for i in 1...requestCount {
-                        try await outbound.write(
-                            .head(.init(method: .post, scheme: "http", authority: "", path: "/\(i)"))
-                        )
-                        try await outbound.write(.body(ByteBuffer(string: "request-\(i)")))
-                        try await outbound.write(.end(nil))
-                    }
+            var responseIterator = inbound.makeAsyncIterator()
+            for i in 1...requestCount {
+                let headPart = try await responseIterator.next()
+                guard case .head(let response) = headPart else {
+                    Issue.record("Expected .head for request \(i), got \(String(describing: headPart))")
+                    return
+                }
+                #expect(response.status == .ok)
+                // Connection should remain keep-alive — no Connection: close header.
+                #expect(
+                    response.headerFields[.connection] != "close",
+                    "Response \(i) unexpectedly had Connection: close: \(response.headerFields)"
+                )
 
-                    var responseIterator = inbound.makeAsyncIterator()
-                    for i in 1...requestCount {
-                        let headPart = try await responseIterator.next()
-                        guard case .head(let response) = headPart else {
-                            Issue.record("Expected .head for request \(i), got \(String(describing: headPart))")
-                            return
-                        }
-                        #expect(response.status == .ok)
-                        // Connection should remain keep-alive — no Connection: close header.
-                        #expect(
-                            response.headerFields[.connection] != "close",
-                            "Response \(i) unexpectedly had Connection: close: \(response.headerFields)"
-                        )
-
-                        // Drain body parts until .end.
-                        var collectedBody = ByteBuffer()
-                        while true {
-                            let part = try await responseIterator.next()
-                            if case .body(let buf) = part {
-                                collectedBody.writeImmutableBuffer(buf)
-                            } else if case .end = part {
-                                break
-                            } else {
-                                Issue.record("Unexpected part for request \(i): \(String(describing: part))")
-                                return
-                            }
-                        }
-                        #expect(collectedBody == ByteBuffer(string: "request-\(i)"))
+                // Drain body parts until .end.
+                var collectedBody = ByteBuffer()
+                while true {
+                    let part = try await responseIterator.next()
+                    if case .body(let buf) = part {
+                        collectedBody.writeImmutableBuffer(buf)
+                    } else if case .end = part {
+                        break
+                    } else {
+                        Issue.record("Unexpected part for request \(i): \(String(describing: part))")
+                        return
                     }
                 }
+                #expect(collectedBody == ByteBuffer(string: "request-\(i)"))
             }
-        )
+        }
     }
 
     /// Verifies that when the handler writes a short response (head + end, no body)
     /// before the request `.end` has arrived, the response head includes a
     /// `Connection: close` header and the server closes the connection.
     @available(anyAppleOS 26.0, *)
-    @Test("Server sends head+end (no body) before request .end — Connection: close in header")
-    func testShortResponseBeforeRequestEnd() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+    @Test(
+        "Server sends head+end (no body) before request .end — Connection: close in header",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testShortResponseBeforeRequestEnd(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: http1Variant,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
         )
 
-        try await NIOHTTPServerTests.withServer(
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
                 var reader = reader
@@ -124,52 +119,44 @@ struct HTTPKeepAliveHandlerTests {
                     .init(status: .ok, headerFields: [.contentLength: "0"])
                 )
             },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
+        ) { _, inbound, outbound in
+            try await outbound.write(.testHead(method: .post, for: http1Variant))
+            try await outbound.write(.body(ByteBuffer(string: "x")))
 
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(
-                        .head(.init(method: .post, scheme: "http", authority: "", path: "/"))
-                    )
-                    try await outbound.write(.body(ByteBuffer(string: "x")))
+            // Read the response: should have Connection: close in the head.
+            var responseIterator = inbound.makeAsyncIterator()
+            let headPart = try await responseIterator.next()
+            guard case .head(let response) = headPart else {
+                Issue.record("Expected .head, got \(String(describing: headPart))")
+                return
+            }
+            #expect(response.status == .ok)
+            #expect(
+                response.headerFields[.connection] == "close",
+                "Expected Connection: close, got headers: \(response.headerFields)"
+            )
 
-                    // Read the response: should have Connection: close in the head.
-                    var responseIterator = inbound.makeAsyncIterator()
-                    let headPart = try await responseIterator.next()
-                    guard case .head(let response) = headPart else {
-                        Issue.record("Expected .head, got \(String(describing: headPart))")
-                        return
-                    }
-                    #expect(response.status == .ok)
-                    #expect(
-                        response.headerFields[.connection] == "close",
-                        "Expected Connection: close, got headers: \(response.headerFields)"
-                    )
-
-                    // Drain until .end, then verify channel closed.
-                    var sawEnd = false
-                    while !sawEnd {
-                        let part = try await responseIterator.next()
-                        switch part {
-                        case .body:
-                            continue
-                        case .end:
-                            sawEnd = true
-                        case .none:
-                            Issue.record("Stream ended before response .end")
-                            return
-                        case .head:
-                            Issue.record("Unexpected second .head: \(String(describing: part))")
-                            return
-                        }
-                    }
-
-                    let next = try await responseIterator.next()
-                    #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
+            // Drain until .end, then verify channel closed.
+            var sawEnd = false
+            while !sawEnd {
+                let part = try await responseIterator.next()
+                switch part {
+                case .body:
+                    continue
+                case .end:
+                    sawEnd = true
+                case .none:
+                    Issue.record("Stream ended before response .end")
+                    return
+                case .head:
+                    Issue.record("Unexpected second .head: \(String(describing: part))")
+                    return
                 }
             }
-        )
+
+            let next = try await responseIterator.next()
+            #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
+        }
     }
 
     /// Verifies that informational (1xx) responses pass through the keep-alive handler
@@ -178,18 +165,19 @@ struct HTTPKeepAliveHandlerTests {
     /// response immediately (without waiting for request `.end`), and the connection
     /// must remain alive after the final response.
     @available(anyAppleOS 26.0, *)
-    @Test("Informational (1xx) responses pass through without buffering or closing")
-    func testInformationalResponsePassesThrough() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+    @Test(
+        "Informational (1xx) responses pass through without buffering or closing",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testInformationalResponsePassesThrough(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: http1Variant,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
         )
 
-        try await NIOHTTPServerTests.withServer(
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { request, _, reader, sender in
                 var sender = sender
@@ -210,77 +198,69 @@ struct HTTPKeepAliveHandlerTests {
                     .init(status: .ok, headerFields: [.contentLength: "5"]),
                     buffer: &buffer
                 )
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
+            }
+        ) { _, inbound, outbound in
+            try await outbound.write(.testHead(method: .post, for: http1Variant))
 
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(
-                        .head(.init(method: .post, scheme: "http", authority: "", path: "/"))
-                    )
+            // Read the 100 Continue before sending the request body — this
+            // only works if the informational response was forwarded without
+            // being buffered by the keep-alive handler.
+            var responseIterator = inbound.makeAsyncIterator()
+            let informationalPart = try await responseIterator.next()
+            guard case .head(let informational) = informationalPart else {
+                Issue.record("Expected informational .head, got \(String(describing: informationalPart))")
+                return
+            }
+            #expect(informational.status == .continue)
 
-                    // Read the 100 Continue before sending the request body — this
-                    // only works if the informational response was forwarded without
-                    // being buffered by the keep-alive handler.
-                    var responseIterator = inbound.makeAsyncIterator()
-                    let informationalPart = try await responseIterator.next()
-                    guard case .head(let informational) = informationalPart else {
-                        Issue.record("Expected informational .head, got \(String(describing: informationalPart))")
-                        return
-                    }
-                    #expect(informational.status == .continue)
+            // Now send the body and end so the server can write the final
+            // response.
+            try await outbound.write(.body(ByteBuffer(string: "hello")))
+            try await outbound.write(.end(nil))
 
-                    // Now send the body and end so the server can write the final
-                    // response.
-                    try await outbound.write(.body(ByteBuffer(string: "hello")))
-                    try await outbound.write(.end(nil))
+            // Read the final 200 OK response.
+            let finalHeadPart = try await responseIterator.next()
+            guard case .head(let response) = finalHeadPart else {
+                Issue.record("Expected final .head, got \(String(describing: finalHeadPart))")
+                return
+            }
+            #expect(response.status == .ok)
+            #expect(
+                response.headerFields[.connection] != "close",
+                "Expected keep-alive after informational flow; got headers: \(response.headerFields)"
+            )
 
-                    // Read the final 200 OK response.
-                    let finalHeadPart = try await responseIterator.next()
-                    guard case .head(let response) = finalHeadPart else {
-                        Issue.record("Expected final .head, got \(String(describing: finalHeadPart))")
-                        return
-                    }
-                    #expect(response.status == .ok)
-                    #expect(
-                        response.headerFields[.connection] != "close",
-                        "Expected keep-alive after informational flow; got headers: \(response.headerFields)"
-                    )
-
-                    // Drain body and end.
-                    var sawEnd = false
-                    while !sawEnd {
-                        let part = try await responseIterator.next()
-                        switch part {
-                        case .body:
-                            continue
-                        case .end:
-                            sawEnd = true
-                        case .none:
-                            Issue.record("Stream ended before response .end")
-                            return
-                        case .head:
-                            Issue.record("Unexpected .head: \(String(describing: part))")
-                            return
-                        }
-                    }
-
-                    // Pipeline a second request to verify keep-alive actually works.
-                    try await outbound.write(
-                        .head(.init(method: .get, scheme: "http", authority: "", path: "/second"))
-                    )
-                    try await outbound.write(.end(nil))
-
-                    let secondHead = try await responseIterator.next()
-                    guard case .head(let secondResponse) = secondHead else {
-                        Issue.record("Expected second .head, got \(String(describing: secondHead))")
-                        return
-                    }
-                    #expect(secondResponse.status == .ok)
+            // Drain body and end.
+            var sawEnd = false
+            while !sawEnd {
+                let part = try await responseIterator.next()
+                switch part {
+                case .body:
+                    continue
+                case .end:
+                    sawEnd = true
+                case .none:
+                    Issue.record("Stream ended before response .end")
+                    return
+                case .head:
+                    Issue.record("Unexpected .head: \(String(describing: part))")
+                    return
                 }
             }
-        )
+
+            // Pipeline a second request to verify keep-alive actually works.
+            try await outbound.write(
+                .head(.init(method: .get, scheme: "http", authority: "", path: "/second"))
+            )
+            try await outbound.write(.end(nil))
+
+            let secondHead = try await responseIterator.next()
+            guard case .head(let secondResponse) = secondHead else {
+                Issue.record("Expected second .head, got \(String(describing: secondHead))")
+                return
+            }
+            #expect(secondResponse.status == .ok)
+        }
     }
 
     /// Verifies bidirectional streaming over HTTP/1.1: the handler writes the
@@ -292,79 +272,72 @@ struct HTTPKeepAliveHandlerTests {
     /// request `.end` arrives, the response carries `Connection: close` and the
     /// server closes the connection after writing response `.end`.
     @available(anyAppleOS 26.0, *)
-    @Test("Bidirectional streaming works — head is flushed (with Connection: close) when a body part is written")
-    func testBidirectionalStreamingOverHTTP1() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+    @Test(
+        "Bidirectional streaming works — head is flushed (with Connection: close) when a body part is written",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testBidirectionalStreamingOverHTTP1(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: http1Variant,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
         )
 
-        try await NIOHTTPServerTests.withServer(
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
                 // Echo request body parts back as response body parts, concurrently
                 // with reading from the request body.
                 let writer = try await sender.send(.init(status: .ok))
                 try await reader.pipe(into: writer)
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
-
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(
-                        .head(.init(method: .post, scheme: "http", authority: "", path: "/"))
-                    )
-                    // Write the first body byte before reading the response head, so
-                    // the server has something to echo — this unblocks the buffered
-                    // head in the keep-alive handler. This mirrors how real
-                    // bidirectional clients (like the conformance `/echo` test) work.
-                    let chunkCount = 5
-                    let firstByte = ByteBuffer(bytes: [UInt8(ascii: "A")])
-                    try await outbound.write(.body(firstByte))
-
-                    var responseIterator = inbound.makeAsyncIterator()
-                    let headPart = try await responseIterator.next()
-                    guard case .head(let response) = headPart else {
-                        Issue.record("Expected .head, got \(String(describing: headPart))")
-                        return
-                    }
-                    #expect(response.status == .ok)
-                    // The head was flushed because a body part was written before
-                    // request `.end` arrived, so it carries `Connection: close`.
-                    #expect(
-                        response.headerFields[.connection] == "close",
-                        "Expected Connection: close on bidirectional flow; got \(response.headerFields)"
-                    )
-
-                    // Read the echo of the first byte.
-                    let firstEcho = try await responseIterator.next()
-                    #expect(firstEcho == .body(firstByte))
-
-                    // Ping-pong: write a byte, read its echo.
-                    for i in 1..<chunkCount {
-                        let byte = ByteBuffer(bytes: [UInt8(ascii: "A") + UInt8(i)])
-                        try await outbound.write(.body(byte))
-                        let echoed = try await responseIterator.next()
-                        #expect(echoed == .body(byte))
-                    }
-
-                    // End the request; expect response end.
-                    try await outbound.write(.end(nil))
-                    let endPart = try await responseIterator.next()
-                    #expect(endPart == .end(nil))
-
-                    // The server should have closed the connection after writing
-                    // response `.end`.
-                    let next = try await responseIterator.next()
-                    #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
-                }
             }
-        )
+        ) { _, inbound, outbound in
+            try await outbound.write(.testHead(method: .post, for: http1Variant))
+            // Write the first body byte before reading the response head, so
+            // the server has something to echo — this unblocks the buffered
+            // head in the keep-alive handler. This mirrors how real
+            // bidirectional clients (like the conformance `/echo` test) work.
+            let chunkCount = 5
+            let firstByte = ByteBuffer(bytes: [UInt8(ascii: "A")])
+            try await outbound.write(.body(firstByte))
+
+            var responseIterator = inbound.makeAsyncIterator()
+            let headPart = try await responseIterator.next()
+            guard case .head(let response) = headPart else {
+                Issue.record("Expected .head, got \(String(describing: headPart))")
+                return
+            }
+            #expect(response.status == .ok)
+            // The head was flushed because a body part was written before
+            // request `.end` arrived, so it carries `Connection: close`.
+            #expect(
+                response.headerFields[.connection] == "close",
+                "Expected Connection: close on bidirectional flow; got \(response.headerFields)"
+            )
+
+            // Read the echo of the first byte.
+            let firstEcho = try await responseIterator.next()
+            #expect(firstEcho == .body(firstByte))
+
+            // Ping-pong: write a byte, read its echo.
+            for i in 1..<chunkCount {
+                let byte = ByteBuffer(bytes: [UInt8(ascii: "A") + UInt8(i)])
+                try await outbound.write(.body(byte))
+                let echoed = try await responseIterator.next()
+                #expect(echoed == .body(byte))
+            }
+
+            // End the request; expect response end.
+            try await outbound.write(.end(nil))
+            let endPart = try await responseIterator.next()
+            #expect(endPart == .end(nil))
+
+            // The server should have closed the connection after writing
+            // response `.end`.
+            let next = try await responseIterator.next()
+            #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
+        }
     }
 
     /// Verifies that if an inbound read cycle ends without the request `.end` having
@@ -378,21 +351,22 @@ struct HTTPKeepAliveHandlerTests {
     /// buffered and request `.end` still missing — the keep-alive handler must add
     /// `Connection: close`.
     @available(anyAppleOS 26.0, *)
-    @Test("Read cycle ends without request .end while head is buffered — Connection: close added")
-    func testReadCycleEndsWithoutRequestEnd_AddsConnectionClose() async throws {
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+    @Test(
+        "Read cycle ends without request .end while head is buffered — Connection: close added",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testReadCycleEndsWithoutRequestEnd_AddsConnectionClose(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: http1Variant,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
         )
 
         let (responseHeadWrittenStream, responseHeadWritten) = AsyncStream<Void>.makeStream()
         let (handlerCanFinishStream, handlerCanFinish) = AsyncStream<Void>.makeStream()
 
-        try await NIOHTTPServerTests.withServer(
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
                 // Write the response head before reading anything. The keep-alive
@@ -413,149 +387,61 @@ struct HTTPKeepAliveHandlerTests {
                 requestBody.reserveCapacity(1024)
                 _ = try await reader.collect(into: &requestBody)
                 var buffer = UniqueArray(copying: "hello".utf8)
-                try await writer.finish(buffer: &buffer, finalElement: nil)
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestHTTP1Server(at: serverAddress)
-
-                try await client.executeThenClose { inbound, outbound in
-                    // Send only the head.
-                    try await outbound.write(
-                        .head(.init(method: .post, scheme: "http", authority: "", path: "/"))
-                    )
-
-                    // Wait for the handler to write the response head.
-                    var signalIterator = responseHeadWrittenStream.makeAsyncIterator()
-                    _ = await signalIterator.next()
-
-                    // Send a single body byte, WITHOUT request `.end`. The server
-                    // will see this as its own read cycle that ends with the
-                    // request `.end` still missing — triggering the
-                    // `Connection: close` amendment.
-                    try await outbound.write(.body(ByteBuffer(string: "x")))
-
-                    // Read the response head. It must carry `Connection: close`.
-                    var responseIterator = inbound.makeAsyncIterator()
-                    let headPart = try await responseIterator.next()
-                    guard case .head(let response) = headPart else {
-                        Issue.record("Expected .head, got \(String(describing: headPart))")
-                        return
-                    }
-                    #expect(response.status == .ok)
-                    #expect(
-                        response.headerFields[.connection] == "close",
-                        "Expected Connection: close after read cycle ended without request .end; got \(response.headerFields)"
-                    )
-
-                    // Let the handler finish and send the rest of the request.
-                    handlerCanFinish.yield()
-                    handlerCanFinish.finish()
-                    try await outbound.write(.end(nil))
-
-                    // Drain the response body + end.
-                    var sawEnd = false
-                    while !sawEnd {
-                        let part = try await responseIterator.next()
-                        switch part {
-                        case .body:
-                            continue
-                        case .end:
-                            sawEnd = true
-                        case .none:
-                            Issue.record("Stream ended before response .end")
-                            return
-                        case .head:
-                            Issue.record("Unexpected second .head: \(String(describing: part))")
-                            return
-                        }
-                    }
-
-                    // The server should have closed the connection.
-                    let next = try await responseIterator.next()
-                    #expect(next == nil, "Expected channel close after response; got \(String(describing: next))")
-                }
+                try await writer.finish(buffer: &buffer)
             }
-        )
-    }
+        ) { _, inbound, outbound in
+            // Send only the head.
+            try await outbound.write(.testHead(method: .post, for: http1Variant))
 
-    /// Verifies that the keep-alive handler is also present on the secure upgrade
-    /// HTTP/1.1 pipeline. This mirrors `testShortResponseBeforeRequestEnd` but runs
-    /// over TLS: if the keep-alive handler isn't wired into the secure pipeline,
-    /// the response head will be flushed without `Connection: close` and this test
-    /// will fail.
-    @available(anyAppleOS 26.0, *)
-    @Test("Server sends head+end before request .end over TLS — Connection: close in header")
-    func testShortResponseBeforeRequestEndOverTLS() async throws {
-        let serverChain = try TestCA.makeSelfSignedChain()
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .tls(
-                    credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
-                )
+            // Wait for the handler to write the response head.
+            var signalIterator = responseHeadWrittenStream.makeAsyncIterator()
+            _ = await signalIterator.next()
+
+            // Send a single body byte, WITHOUT request `.end`. The server
+            // will see this as its own read cycle that ends with the
+            // request `.end` still missing — triggering the
+            // `Connection: close` amendment.
+            try await outbound.write(.body(ByteBuffer(string: "x")))
+
+            // Read the response head. It must carry `Connection: close`.
+            var responseIterator = inbound.makeAsyncIterator()
+            let headPart = try await responseIterator.next()
+            guard case .head(let response) = headPart else {
+                Issue.record("Expected .head, got \(String(describing: headPart))")
+                return
+            }
+            #expect(response.status == .ok)
+            #expect(
+                response.headerFields[.connection] == "close",
+                "Expected Connection: close after read cycle ended without request .end; got \(response.headerFields)"
             )
-        )
 
-        try await NIOHTTPServerTests.withServer(
-            server: server,
-            serverHandler: HTTPServerClosureRequestHandler { _, _, reader, sender in
-                var reader = reader
-                try await reader.read { _, _ in }
-                try await sender.sendAndFinish(
-                    .init(status: .ok, headerFields: [.contentLength: "0"])
-                )
-            },
-            body: { serverAddress in
-                let client = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                    .connectToTestSecureUpgradeHTTPServer(
-                        at: serverAddress,
-                        trustRoots: serverChain.chain,
-                        applicationProtocol: HTTPVersion.http1_1.alpnIdentifier
-                    )
-                    .unwrapChannel(expectedHTTPVersion: .http1_1)
+            // Let the handler finish and send the rest of the request.
+            handlerCanFinish.yield()
+            handlerCanFinish.finish()
+            try await outbound.write(.end(nil))
 
-                try await client.executeThenClose { inbound, outbound in
-                    try await outbound.write(
-                        .head(.init(method: .post, scheme: "https", authority: "", path: "/"))
-                    )
-                    try await outbound.write(.body(ByteBuffer(string: "x")))
-
-                    var responseIterator = inbound.makeAsyncIterator()
-                    let headPart = try await responseIterator.next()
-                    guard case .head(let response) = headPart else {
-                        Issue.record("Expected .head, got \(String(describing: headPart))")
-                        return
-                    }
-                    #expect(response.status == .ok)
-                    #expect(
-                        response.headerFields[.connection] == "close",
-                        "Expected Connection: close, got headers: \(response.headerFields)"
-                    )
-
-                    var sawEnd = false
-                    while !sawEnd {
-                        let part = try await responseIterator.next()
-                        switch part {
-                        case .body:
-                            continue
-                        case .end:
-                            sawEnd = true
-                        case .none:
-                            Issue.record("Stream ended before response .end")
-                            return
-                        case .head:
-                            Issue.record("Unexpected second .head: \(String(describing: part))")
-                            return
-                        }
-                    }
-
-                    let next = try await responseIterator.next()
-                    #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
+            // Drain the response body + end.
+            var sawEnd = false
+            while !sawEnd {
+                let part = try await responseIterator.next()
+                switch part {
+                case .body:
+                    continue
+                case .end:
+                    sawEnd = true
+                case .none:
+                    Issue.record("Stream ended before response .end")
+                    return
+                case .head:
+                    Issue.record("Unexpected second .head: \(String(describing: part))")
+                    return
                 }
             }
-        )
+
+            // The server should have closed the connection.
+            let next = try await responseIterator.next()
+            #expect(next == nil, "Expected channel close after response; got \(String(describing: next))")
+        }
     }
 }
