@@ -43,6 +43,10 @@ var traits: Set<Trait> = [
         name: "HTTP3",
         description: "Enables HTTP/3 support"
     ),
+    .trait(
+        name: "UnstableHTTPDatagrams",
+        description: "Enables support for reading and writing unreliable HTTP datagrams"
+    ),
 ]
 
 let defaultTraits: Set<String> = ["Configuration"]

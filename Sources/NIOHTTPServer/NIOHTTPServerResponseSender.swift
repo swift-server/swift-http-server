@@ -22,6 +22,31 @@ extension NIOHTTPServer {
         let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
         let writerState: WriterState
 
+        // Initializes a new response sender.
+        init(
+            writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+            writerState: WriterState
+        ) {
+            self.writer = writer
+            self.writerState = writerState
+        }
+
+        #if HTTP3 && UnstableHTTPDatagrams
+        private var datagramWriter: Disconnected<NIOHTTPServer.DatagramWriter>?
+
+        /// Initializes a response sender that can also vend an unreliable datagram writer if the underlying transport
+        /// supports unreliable datagrams.
+        init(
+            writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+            writerState: WriterState,
+            datagramWriter: consuming Disconnected<NIOHTTPServer.DatagramWriter>? = nil
+        ) {
+            self.writer = writer
+            self.writerState = writerState
+            self.datagramWriter = datagramWriter
+        }
+        #endif
+
         public mutating func sendInformational(_ response: HTTPResponse) async throws {
             precondition(response.status.kind == .informational)
             try await self.writer.write(.head(response))
@@ -30,7 +55,12 @@ extension NIOHTTPServer {
         public consuming func send(_ response: HTTPResponse) async throws -> Writer {
             precondition(response.status.kind != .informational)
             try await self.writer.write(.head(response))
+
+            #if HTTP3 && UnstableHTTPDatagrams
+            return Writer(writer: self.writer, writerState: self.writerState, datagramWriter: self.datagramWriter)
+            #else
             return Writer(writer: self.writer, writerState: self.writerState)
+            #endif
         }
     }
 }
@@ -56,6 +86,11 @@ extension NIOHTTPServer.ResponseSender {
         let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
 
         let writerState: WriterState
+
+        #if HTTP3 && UnstableHTTPDatagrams
+        /// The unreliable datagram writer, present when the underlying transport supports unreliable datagrams.
+        var datagramWriter: Disconnected<NIOHTTPServer.DatagramWriter>?
+        #endif
 
         public mutating func write(
             buffer: inout some RangeReplaceableContainer<UInt8> & ~Copyable
@@ -107,6 +142,41 @@ extension NIOHTTPServer.ResponseSender {
             try await self.writer.write(.end(finalElement))
             self.writerState.wrapped.withLock { $0.finishedWriting = true }
         }
+
+        #if HTTP3 && UnstableHTTPDatagrams
+        /// Vends this reliable stream writer and the unreliable datagram writer to the provided `body` closure, and
+        /// finishes the reliable stream afterwards, only if not already finished by the caller in the `body` closure.
+        ///
+        /// - Parameter body: A closure that receives the reliable stream writer and the datagram writer. The datagram
+        ///   writer is `nil` when the underlying transport does not support unreliable datagrams.
+        ///
+        /// - Note: Both writers are passed as `consuming sending`. This means that `body` can use both writers in
+        ///   separate tasks.
+        public consuming func withDatagramWriter(
+            _ body: (consuming sending Self, consuming sending NIOHTTPServer.DatagramWriter?) async throws -> Void
+        ) async throws {
+            let streamFinish = NIOHTTPServer.StreamFinish(writer: self.writer, state: self.writerState)
+
+            let datagramWriter = self.datagramWriter.take()?.take()
+
+            let streamWriter = NIOHTTPServer.ResponseSender.Writer(
+                writer: self.writer,
+                writerState: self.writerState,
+                datagramWriter: nil
+            )
+
+            do {
+                try await body(streamWriter, datagramWriter)
+            } catch {
+                try? await streamFinish.finish()
+                // TODO: Also finish the datagram stream once the datagram writer API is known.
+                throw error
+            }
+
+            try await streamFinish.finish()
+            // TODO: Also finish the datagram stream once the datagram writer API is known.
+        }
+        #endif  // HTTP3 && UnstableHTTPDatagrams
     }
 }
 

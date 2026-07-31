@@ -22,6 +22,8 @@ Available traits:
 - **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
   `ConfigProvider`.
 - **`HTTP3`**: Enables HTTP/3 support.
+- **`UnstableHTTPDatagrams`**: Enables support for reading and writing unreliable HTTP datagrams. Note that the `HTTP3`
+  trait must be enabled alongside.
 
 ## HTTP/3 support
 

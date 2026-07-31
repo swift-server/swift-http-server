@@ -69,13 +69,30 @@ extension NIOHTTPServer {
         /// (while keeping its capacity) at the start of every read.
         private var buffer: UniqueArray<UInt8>
 
-        /// Initializes a new request body reader, taking the iterator from the
-        /// shared `ReaderState`.
+        /// Initializes a new request body reader, taking the iterator from the shared `ReaderState`.
         init(readerState: ReaderState) {
             self.state = readerState
             self.iterator = readerState.takeIterator()
             self.buffer = UniqueArray<UInt8>()
         }
+
+        #if HTTP3 && UnstableHTTPDatagrams
+        /// The unreliable datagram reader, present when the underlying transport is capable of reading/writing
+        /// unreliable datagrams.
+        private var datagramReader: Disconnected<NIOHTTPServer.DatagramReader>?
+
+        /// Initializes a new request body reader that can also vend an unreliable datagram reader if the underlying
+        /// transport supports unreliable datagrams.
+        init(
+            readerState: ReaderState,
+            datagramReader: consuming Disconnected<NIOHTTPServer.DatagramReader>? = nil
+        ) {
+            self.state = readerState
+            self.iterator = readerState.takeIterator()
+            self.buffer = UniqueArray<UInt8>()
+            self.datagramReader = datagramReader
+        }
+        #endif
 
         public mutating func read<Return: ~Copyable, Failure: Error>(
             body: (inout Buffer, consuming HTTPFields??) async throws(Failure) -> Return
@@ -121,3 +138,29 @@ extension NIOHTTPServer {
 
 @available(*, unavailable)
 extension NIOHTTPServer.Reader: Sendable {}
+
+#if HTTP3 && UnstableHTTPDatagrams
+@available(anyAppleOS 26.0, *)
+extension NIOHTTPServer.Reader {
+    /// Vends this request body reader and the unreliable datagram reader to the provided `body` closure.
+    ///
+    /// - Parameter body: A closure that receives the request body reader and the datagram reader. The datagram reader
+    ///   is `nil` when the underlying transport does not support unreliable datagrams.
+    ///
+    /// - Note: Both readers are passed as `consuming sending`. This means that `body` can use both readers in separate
+    ///   tasks.
+    public consuming func withDatagramReader(
+        _ body: (consuming sending Self, consuming sending NIOHTTPServer.DatagramReader?) async throws -> Void
+    ) async throws {
+        // Move the iterator back to `ReaderState` so the new reader we create can use it.
+        nonisolated(unsafe) let iterator = self.iterator.take()
+        self.state.wrapped.withLock { state in
+            _ = unsafe state.iterator.swap(newValue: iterator)
+        }
+        let streamReader = NIOHTTPServer.Reader(readerState: self.state, datagramReader: nil)
+        let datagramReader = self.datagramReader.take()?.take()
+
+        try await body(streamReader, datagramReader)
+    }
+}
+#endif  // HTTP3 && UnstableHTTPDatagrams

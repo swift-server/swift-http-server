@@ -343,14 +343,22 @@ public struct NIOHTTPServer: HTTPServer {
         let readerState = Reader.ReaderState(iterator: iterator)
         let writerState = ResponseSender.WriterState()
 
+        #if HTTP3 && UnstableHTTPDatagrams
+        // TODO: `swift-nio-http3` currently does not provide APIs for reading/writing bytes on the unreliable datagram
+        // stream. This is why we currently pass `nil` to the `datagramReader` and `datagramWriter` arguments.
+        let requestReader = Reader(readerState: readerState, datagramReader: nil)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: nil)
+        #else
+        let requestReader = Reader(readerState: readerState)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState)
+        #endif
+
         do {
             try await handler.handle(
                 request: request,
                 requestContext: RequestContext(connectionContext: context),
-                reader: Reader(
-                    readerState: readerState
-                ),
-                responseSender: ResponseSender(writer: outbound, writerState: writerState)
+                reader: requestReader,
+                responseSender: responseSender
             )
         } catch {
             logger.error("Error thrown while handling request: \(error)")

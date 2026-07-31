@@ -204,4 +204,67 @@ struct NIOHTTPServerReaderTests {
             }
         }
     }
+
+    #if HTTP3 && UnstableHTTPDatagrams
+    @Test("withDatagramReader vends no datagram reader when not available")
+    @available(anyAppleOS 26.0, *)
+    func withDatagramReaderVendsNilWhenNotAvailable() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
+        source.yield(.end(nil))
+        source.finish()
+
+        let reader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
+
+        var collected: [UInt8] = []
+        try await reader.withDatagramReader { requestBodyReader, datagramReader in
+            if case .some = datagramReader {
+                Issue.record("Unexpectedly received a datagram reader.")
+            }
+
+            // The request body reader should still be usable.
+            var requestBodyReader = requestBodyReader
+            try await requestBodyReader.read { buffer, _ in
+                for index in buffer.indices { collected.append(buffer[index]) }
+            }
+        }
+
+        #expect(collected == [1, 2, 3])
+    }
+
+    @Test("withDatagramReader vends a request body and datagram reader")
+    @available(anyAppleOS 26.0, *)
+    func withDatagramReaderVendsRequestAndDatagramReader() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
+        source.yield(.end(nil))
+        source.finish()
+
+        let reader = NIOHTTPServer.Reader(
+            readerState: .init(iterator: stream.makeAsyncIterator()),
+            datagramReader: .init(value: .init())
+        )
+
+        var collected: [UInt8] = []
+        try await reader.withDatagramReader { requestBodyReader, datagramReader in
+            var requestBodyReader = requestBodyReader
+            try await requestBodyReader.read { buffer, _ in
+                for index in buffer.indices { collected.append(buffer[index]) }
+            }
+
+            guard var datagramReader = datagramReader else {
+                Issue.record("Expected a datagram reader but received `nil`.")
+                return
+            }
+
+            // TODO: The underlying unreliable datagrams transport is not yet implemented.
+            let error = try await #require(throws: EitherError<Error, Never>.self) {
+                try await datagramReader.read { _, _ in }
+            }
+            try #require(throws: DatagramsError.notImplemented) { try error.unwrap() }
+        }
+
+        #expect(collected == [1, 2, 3])
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
 }

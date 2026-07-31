@@ -31,6 +31,13 @@ extension NIOHTTPServer {
         init(connectionContext: ConnectionContext) {
             self.connectionContext = connectionContext
         }
+
+        #if HTTP3 && UnstableHTTPDatagrams
+        /// Whether this connection supports unreliable datagrams.
+        public var supportsUnreliableDatagrams: Bool {
+            self.connectionContext.supportsUnreliableDatagrams
+        }
+        #endif
     }
 }
 
