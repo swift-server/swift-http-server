@@ -327,19 +327,19 @@ struct TestHelpers {
 
         for expectedHeadPart in expectedHead {
             let headResponsePart = try await responseIterator.next()
-            #expect(headResponsePart == .head(expectedHeadPart), sourceLocation: sourceLocation)
+            try #require(headResponsePart == .head(expectedHeadPart), sourceLocation: sourceLocation)
         }
 
         for expectedBodyBuffer in expectedBody {
             let bodyResponsePart = try await responseIterator.next()
-            #expect(bodyResponsePart == .body(expectedBodyBuffer), sourceLocation: sourceLocation)
+            try #require(bodyResponsePart == .body(expectedBodyBuffer), sourceLocation: sourceLocation)
         }
 
         let endResponsePart = try await responseIterator.next()
-        #expect(endResponsePart == .end(expectedTrailers), sourceLocation: sourceLocation)
+        try #require(endResponsePart == .end(expectedTrailers), sourceLocation: sourceLocation)
 
         if expectStreamEnd {
-            #expect(
+            try #require(
                 try await responseIterator.next() == nil,
                 "Received another response part when the response stream should have finished.",
                 sourceLocation: sourceLocation

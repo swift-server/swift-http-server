@@ -55,7 +55,7 @@ struct TestClientConnection {
     ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
         switch self.connectionProtocol {
         case .http1(let http1Channel):
-            #expect(
+            try #require(
                 expectedHTTPVersion == .plaintextHTTP1_1 || expectedHTTPVersion == .http1_1,
                 "Unexpectedly established an HTTP/1 connection.",
                 sourceLocation: sourceLocation
@@ -63,7 +63,7 @@ struct TestClientConnection {
             return http1Channel
 
         case .http2(_, let streamMultiplexer):
-            #expect(
+            try #require(
                 expectedHTTPVersion == .http2,
                 "Unexpectedly established an HTTP/2 connection.",
                 sourceLocation: sourceLocation
@@ -72,7 +72,7 @@ struct TestClientConnection {
 
         #if HTTP3
         case .http3(let http3Connection, _):
-            #expect(
+            try #require(
                 expectedHTTPVersion == .http3,
                 "Unexpectedly established an HTTP/3 connection.",
                 sourceLocation: sourceLocation
