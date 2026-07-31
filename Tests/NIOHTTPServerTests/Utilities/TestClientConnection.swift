@@ -190,7 +190,7 @@ extension TestClientConnection {
         #endif
 
         default:
-            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
+            throw TestError.invalidClientConfiguration
         }
 
         do {
