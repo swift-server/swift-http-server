@@ -242,7 +242,7 @@ struct NIOHTTPServerReaderTests {
 
         let reader = NIOHTTPServer.Reader(
             readerState: .init(iterator: stream.makeAsyncIterator()),
-            datagramReader: .init(value: .init())
+            datagramReader: Disconnected(value: NIOHTTPServer.DatagramReader())
         )
 
         var collected: [UInt8] = []

@@ -123,7 +123,7 @@ struct NIOHTTPServerWriterTests {
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
             writerState: .init(),
-            datagramWriter: .init(value: .init())
+            datagramWriter: Disconnected(value: NIOHTTPServer.DatagramWriter())
         )
 
         let writer = try await sender.send(.init(status: .ok))
@@ -161,7 +161,7 @@ struct NIOHTTPServerWriterTests {
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
             writerState: .init(),
-            datagramWriter: .init(value: .init())
+            datagramWriter: Disconnected(value: NIOHTTPServer.DatagramWriter())
         )
 
         let writer = try await sender.send(.init(status: .ok))
