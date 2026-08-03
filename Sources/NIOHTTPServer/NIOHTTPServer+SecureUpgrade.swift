@@ -214,8 +214,7 @@ extension NIOHTTPServer {
 
     func setupSecureUpgradeServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
-        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
-        sslContext: NIOSSLContext
+        context: NIOHTTPServerConfiguration.SecureUpgradeContext
     ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
         let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -242,8 +241,8 @@ extension NIOHTTPServer {
                     }.bind(host: host, port: port) { channel in
                         self.setupSecureUpgradeConnectionChildChannel(
                             channel: channel,
-                            supportedHTTPVersions: supportedHTTPVersions,
-                            sslContext: sslContext
+                            http2Configuration: context.http2Configuration,
+                            sslContext: context.sslContext
                         )
                     }
                     serverChannels.append((serverChannel, serverQuiescingHelper))
@@ -312,31 +311,23 @@ extension NIOHTTPServer {
 
     func setupSecureUpgradeConnectionChildChannel(
         channel: any Channel,
-        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>,
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
         sslContext: NIOSSLContext
     ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
         channel.eventLoop.makeCompletedFuture {
-            try channel.pipeline.syncOperations.addHandler(
-                self.makeSSLServerHandler(
-                    sslContext,
-                    self.configuration.transportSecurity.customVerificationCallback
-                )
+            let sslHandler = self.makeSSLServerHandler(
+                sslContext,
+                self.configuration.transportSecurity.customVerificationCallback
             )
-        }.flatMap {
-            channel.eventLoop.makeCompletedFuture {
-                let alpnHandler = self.makeALPNHandler(
-                    channel: channel,
-                    http2Config: supportedHTTPVersions.http2ConfigIfSupported
-                )
+            let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: http2Configuration)
 
-                do {
-                    try channel.pipeline.syncOperations.addHandler(alpnHandler)
-                } catch {
-                    return channel.eventLoop.makeFailedFuture(error)
-                }
-
-                return alpnHandler.protocolNegotiationResult
+            do {
+                try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
+            } catch {
+                return channel.eventLoop.makeFailedFuture(error)
             }
+
+            return alpnHandler.protocolNegotiationResult
         }
     }
 

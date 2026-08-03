@@ -556,6 +556,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
         @Test("End-to-end HTTP/3 configuration over TLS")
         @available(anyAppleOS 26.0, *)
         func testEndToEnd() throws {
+            let (leafPath, _, keyPath) = try TestCA.makeSelfSignedChain().writeToDisk()
             let provider = InMemoryProvider(values: [
                 "bindTarget.host": "127.0.0.1",
                 "bindTarget.port": 8000,
@@ -566,8 +567,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "http.http3.quicConfiguration.sendRetry": true,
                 "transportSecurity.mode": "tls",
                 "transportSecurity.credentialSource": "file",
-                "transportSecurity.certificateChainPEMPath": .init(.string("cert.pem"), isSecret: false),
-                "transportSecurity.privateKeyPEMPath": .init(.string("key.pem"), isSecret: true),
+                "transportSecurity.certificateChainPEMPath": .init(.string(leafPath), isSecret: false),
+                "transportSecurity.privateKeyPEMPath": .init(.string(keyPath), isSecret: true),
             ])
             let config = ConfigReader(provider: provider)
 

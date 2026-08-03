@@ -285,21 +285,23 @@ public struct NIOHTTPServerConfiguration: Sendable {
     }
 
     /// Network binding configuration specifying all addresses where the server should listen.
-    public var bindTargets: [BindTarget]
+    public let bindTargets: [BindTarget]
 
     /// TLS configuration for the server.
-    public var transportSecurity: TransportSecurity
+    public let transportSecurity: TransportSecurity
 
     /// The HTTP protocol versions the server advertises and accepts connections for.
-    public var supportedHTTPVersions: Set<HTTPVersion>
+    public let supportedHTTPVersions: Set<HTTPVersion>
 
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
 
     /// The maximum number of concurrent connections the server will accept.
     ///
-    /// When this limit is reached, the server stops accepting new connections
-    /// until existing ones close. `nil` means unlimited (the default).
+    /// When this limit is reached, the server stops accepting new connections until existing ones close. `nil` means
+    /// unlimited (the default).
+    ///
+    /// - Note: Connection limits are not currently supported over HTTP/3.
     ///
     /// - Precondition: Must be greater than 0 if non-`nil`.
     public var maxConnections: Int? {
@@ -312,6 +314,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Configuration for connection timeouts.
     public var connectionTimeouts: ConnectionTimeouts
+
+    /// The context required to set up secure upgrade channels. If nil, it means the configuration did not specify
+    /// HTTP/1.1 or HTTP/2 over TLS.
+    let secureUpgradeContext: SecureUpgradeContext?
+
+    #if HTTP3
+    /// The context required to set up HTTP/3 channels. If nil, it means the configuration did not specify HTTP/3.
+    let http3Context: HTTP3Context?
+    #endif
 
     /// Create a new configuration with multiple bind targets.
     ///
@@ -328,21 +339,26 @@ public struct NIOHTTPServerConfiguration: Sendable {
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity
     ) throws {
-        if bindTargets.isEmpty {
+        // Validate the configuration.
+        guard !bindTargets.isEmpty else {
             throw NIOHTTPServerConfigurationError.noBindTargetsSpecified
         }
 
-        // If `transportSecurity`` is set to `.plaintext`, the server can only support HTTP/1.1.
-        // To support HTTP/2, `transportSecurity` must be set to `.tls` or `.mTLS`.
-        if case .plaintext = transportSecurity.backing {
-            guard supportedHTTPVersions == [.http1_1] else {
-                throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
-            }
-        }
-
-        if supportedHTTPVersions.isEmpty {
+        guard !supportedHTTPVersions.isEmpty else {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
+
+        #if HTTP3
+        self.http3Context = try Self.makeValidatedHTTP3Configuration(
+            supportedHTTPVersions: supportedHTTPVersions,
+            transportSecurity: transportSecurity
+        )
+        #endif
+
+        self.secureUpgradeContext = try Self.makeValidatedSecureUpgradeConfiguration(
+            supportedHTTPVersions: supportedHTTPVersions,
+            transportSecurity: transportSecurity
+        )
 
         self.bindTargets = bindTargets
         self.supportedHTTPVersions = supportedHTTPVersions

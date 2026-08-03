@@ -17,7 +17,7 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
     case noSupportedHTTPVersionsSpecified
     case incompatibleTransportSecurity
     case noBindTargetsSpecified
-    case onlyPEMFileCredentialsCurrentlySupportedOverHTTP3
+    case onlyPEMFileX509CredentialsCurrentlySupportedOverHTTP3
     case rawPublicKeyTLSCredentialsNotCurrentlySupportedOverHTTP1OrHTTP2
     case pemRawPublicKeysNotCurrentlySupported
     // swift-nio-quic doesn't currently support mTLS. See https://github.com/apple/swift-nio-quic/issues/5.
@@ -34,7 +34,7 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
         case .noBindTargetsSpecified:
             "Invalid configuration: at least one bind target must be specified."
 
-        case .onlyPEMFileCredentialsCurrentlySupportedOverHTTP3:
+        case .onlyPEMFileX509CredentialsCurrentlySupportedOverHTTP3:
             "Invalid configuration: only PEM-file X.509 credentials are supported over HTTP/3. DER-encoded, in-memory, reloading, and PEM/DER bytes credential sources are not currently supported."
 
         case .rawPublicKeyTLSCredentialsNotCurrentlySupportedOverHTTP1OrHTTP2:

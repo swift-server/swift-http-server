@@ -56,34 +56,13 @@ struct HTTP3ConfigurationTests {
 
     @Suite
     struct AuthenticationConfigurationTests {
-        @Test("Plaintext transport security is rejected")
-        @available(anyAppleOS 26.0, *)
-        func plaintextRejected() {
-            #expect(throws: NIOHTTPServerConfigurationError.incompatibleTransportSecurity) {
-                _ = try NIOQUIC.AuthenticationConfiguration(.plaintext)
-            }
-        }
-
-        @Test("mTLS transport security is rejected")
-        @available(anyAppleOS 26.0, *)
-        func mTLSRejected() {
-            #expect(throws: NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3) {
-                _ = try NIOQUIC.AuthenticationConfiguration(
-                    .mTLS(
-                        credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem")),
-                        trustConfiguration: .init(.pemFile(trustRootsPath: "/roots.pem"))
-                    )
-                )
-            }
-        }
-
         @Test("In-memory TLS credentials are rejected")
         @available(anyAppleOS 26.0, *)
         func inMemoryCredentialsRejected() throws {
             let chain = try TestCA.makeSelfSignedChain()
-            #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileCredentialsCurrentlySupportedOverHTTP3) {
+            #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileX509CredentialsCurrentlySupportedOverHTTP3) {
                 _ = try NIOQUIC.AuthenticationConfiguration(
-                    .tls(credentials: .x509(.certificates(chain: chain.chain, privateKey: chain.privateKey)))
+                    .x509(.certificates(chain: chain.chain, privateKey: chain.privateKey))
                 )
             }
         }
@@ -93,7 +72,7 @@ struct HTTP3ConfigurationTests {
         func pemFileCredentialsAccepted() {
             #expect(throws: Never.self) {
                 _ = try NIOQUIC.AuthenticationConfiguration(
-                    .tls(credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem")))
+                    .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"))
                 )
             }
         }

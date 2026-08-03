@@ -93,6 +93,7 @@ extension TLSConfiguration {
     }
 
     /// Like ``makeTestClientConfiguration``, but with mTLS.
+    @available(anyAppleOS 26.0, *)
     static func makeTestClientMTLSConfiguration(
         trustRoots: NIOSSLTrustRoots,
         clientCredentials: ChainPrivateKeyPair,

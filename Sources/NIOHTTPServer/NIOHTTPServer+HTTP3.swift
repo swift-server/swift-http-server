@@ -106,7 +106,7 @@ extension NIOHTTPServer {
     /// alongside the associated HTTP/3 connection multiplexer.
     func setupHTTP3ServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
-        http3Configuration: NIOHTTPServerConfiguration.HTTP3
+        context: NIOHTTPServerConfiguration.HTTP3Context
     ) async throws -> [(
         quicChannel: any Channel,
         connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
@@ -114,11 +114,6 @@ extension NIOHTTPServer {
             NIOQUIC.QUICStreamCreator
         >
     )] {
-        let quicConfiguration = try NIOQUIC.QUICConfiguration.init(
-            http3Configuration.quicConfiguration,
-            authenticationConfiguration: .init(self.configuration.transportSecurity)
-        )
-
         let bootstrap = DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 
@@ -136,11 +131,7 @@ extension NIOHTTPServer {
                 case .hostAndPort(let host, let port):
                     let (quicChannel, multiplexer) = try await bootstrap.bind(host: host, port: port) { channel in
                         channel.eventLoop.makeCompletedFuture {
-                            try self.setupQUICChannel(
-                                channel: channel,
-                                quicConfiguration: quicConfiguration,
-                                http3Configuration: http3Configuration
-                            )
+                            try self.setupQUICChannel(channel: channel, http3Context: context)
                         }
                     }
 
@@ -162,8 +153,7 @@ extension NIOHTTPServer {
     /// multiplexer.
     func setupQUICChannel(
         channel: any Channel,
-        quicConfiguration: NIOQUIC.QUICConfiguration,
-        http3Configuration: NIOHTTPServerConfiguration.HTTP3
+        http3Context: NIOHTTPServerConfiguration.HTTP3Context
     ) throws -> (
         quicChannel: any Channel,
         connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
@@ -177,15 +167,18 @@ extension NIOHTTPServer {
 
         let quicHandler = QUICHandler(
             channel: channel,
-            quicConfiguration: quicConfiguration,
+            quicConfiguration: .init(
+                http3Context.configuration.quicConfiguration,
+                authenticationConfiguration: http3Context.quicAuthConfiguration
+            ),
             // TODO: mTLS is not yet supported by NIOQUIC so we don't specify a value for `asyncVerifier`.
             asyncVerifier: nil,
-            authenticator: try .init(self.configuration.transportSecurity),
+            authenticator: http3Context.quicAuthenticator,
             logger: self.logger,
             inboundConnectionInitializer: { connectionChannel, streamCreator in
                 connectionChannel.eventLoop.makeCompletedFuture {
                     let connection = try self.setupHTTP3Connection(
-                        http3Configuration: http3Configuration,
+                        http3Configuration: http3Context.configuration,
                         connectionChannel: connectionChannel,
                         streamCreator: streamCreator
                     )
