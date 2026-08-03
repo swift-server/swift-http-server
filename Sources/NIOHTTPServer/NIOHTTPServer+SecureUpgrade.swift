@@ -321,11 +321,7 @@ extension NIOHTTPServer {
             )
             let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: http2Configuration)
 
-            do {
-                try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
-            } catch {
-                return channel.eventLoop.makeFailedFuture(error)
-            }
+            try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
 
             return alpnHandler.protocolNegotiationResult
         }
