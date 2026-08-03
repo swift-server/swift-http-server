@@ -442,9 +442,17 @@ extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
     /// Only handlers for non-nil timeouts are installed.
-    func addTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
+    ///
+    /// - Parameters:
+    ///   - timeouts: The configured connection timeouts. Only handlers for non-nil timeouts are installed.
+    ///   - expectMultipleRequests: Whether the channel can receive more than one request. Pass `true` for an HTTP/1.1
+    ///     connection channel (for keep-alive), and `false` for an HTTP/2 or HTTP/3 stream channel.
+    func addTimeoutHandlers(
+        _ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts,
+        expectMultipleRequests: Bool
+    ) throws {
         try self.addIdleTimeoutHandlers(timeouts)
-        try self.addReadTimeoutHandlers(timeouts)
+        try self.addReadTimeoutHandlers(timeouts, expectMultipleRequests: expectMultipleRequests)
     }
 
     /// Adds the connection idle timeout handler to the channel. Used by HTTP/1.1 connection channels. HTTP/2 delegates
@@ -459,12 +467,24 @@ extension ChannelPipeline.SynchronousOperations {
     }
 
     /// Adds header and body read timeout handlers to the channel.
-    func addReadTimeoutHandlers(_ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts) throws {
+    ///
+    /// - Parameters:
+    ///   - timeouts: The configured connection timeouts. No handler is installed if both read timeouts are `nil`.
+    ///   - expectMultipleRequests: Whether the channel can receive more than one request. Pass `true` for an HTTP/1.1
+    ///     connection channel (for keep-alive), and `false` for an HTTP/2 or HTTP/3 stream channel.
+    func addReadTimeoutHandlers(
+        _ timeouts: NIOHTTPServerConfiguration.ConnectionTimeouts,
+        expectMultipleRequests: Bool
+    ) throws {
         let readHeader = timeouts.readHeader.map { TimeAmount($0) }
         let readBody = timeouts.readBody.map { TimeAmount($0) }
         if readHeader != nil || readBody != nil {
             try self.addHandler(
-                RequestTimeoutHandler(readHeaderTimeout: readHeader, readBodyTimeout: readBody)
+                RequestTimeoutHandler(
+                    readHeaderTimeout: readHeader,
+                    readBodyTimeout: readBody,
+                    expectMultipleRequests: expectMultipleRequests
+                )
             )
         }
     }

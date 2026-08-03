@@ -291,7 +291,8 @@ extension NIOHTTPServer {
 
                         // Add read header and body timeouts per-stream for HTTP/2
                         try http2StreamChannel.pipeline.syncOperations.addReadTimeoutHandlers(
-                            self.configuration.connectionTimeouts
+                            self.configuration.connectionTimeouts,
+                            expectMultipleRequests: false
                         )
 
                         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(

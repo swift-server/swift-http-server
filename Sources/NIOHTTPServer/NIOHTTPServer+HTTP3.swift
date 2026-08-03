@@ -262,7 +262,10 @@ extension NIOHTTPServer {
 
     /// Configures the pipeline for an inbound HTTP/3 stream channel and wraps it in a `NIOAsyncChannel`.
     func setupHTTP3Stream(streamChannel: any Channel) throws -> NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart> {
-        try streamChannel.pipeline.syncOperations.addReadTimeoutHandlers(self.configuration.connectionTimeouts)
+        try streamChannel.pipeline.syncOperations.addReadTimeoutHandlers(
+            self.configuration.connectionTimeouts,
+            expectMultipleRequests: false
+        )
 
         return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
             wrappingChannelSynchronously: streamChannel,
