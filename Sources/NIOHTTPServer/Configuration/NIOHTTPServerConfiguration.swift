@@ -340,11 +340,11 @@ public struct NIOHTTPServerConfiguration: Sendable {
         transportSecurity: TransportSecurity
     ) throws {
         // Validate the configuration.
-        guard !bindTargets.isEmpty else {
+        if bindTargets.isEmpty {
             throw NIOHTTPServerConfigurationError.noBindTargetsSpecified
         }
 
-        guard !supportedHTTPVersions.isEmpty else {
+        if supportedHTTPVersions.isEmpty {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
