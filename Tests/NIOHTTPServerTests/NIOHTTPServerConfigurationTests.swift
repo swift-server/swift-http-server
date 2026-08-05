@@ -94,7 +94,7 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "All X.509 credential sources produce a valid configuration",
-            arguments: [TestX509CredentialSource]([.inMemory, .reloading, .pemFile, .derFile, .pemBytes, .derBytes])
+            arguments: [TestX509CredentialSource.inMemory, .reloading, .pemFile, .derFile, .pemBytes, .derBytes]
         )
         func x509CredentialSourceProducesValidConfiguration(source: TestX509CredentialSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -112,9 +112,9 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "All mTLS trust root sources produce a valid configuration",
-            arguments: [MTLSTrustSource]([
-                .systemDefaults, .inMemory, .pemFile, .pemBytes, .derFile, .derBytes, .customCallback,
-            ])
+            arguments: [
+                MTLSTrustSource.systemDefaults, .inMemory, .pemFile, .pemBytes, .derFile, .derBytes, .customCallback
+            ]
         )
         func mTLSTrustRootSourceProducesValidConfiguration(source: MTLSTrustSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -135,10 +135,13 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "A non-existent X.509 certificate file path is rejected",
-            arguments: [NIOHTTPServerConfiguration.TransportSecurity.X509Credentials]([
-                .pemFile(certificateChainPath: "/does/not/exist.pem", privateKeyPath: "/does/not/exist.key"),
+            arguments: [
+                NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.pemFile(
+                    certificateChainPath: "/does/not/exist.pem",
+                    privateKeyPath: "/does/not/exist.key"
+                ),
                 .derFile(certificatePath: "/does/not/exist.der", privateKeyPath: "/does/not/exist.der"),
-            ])
+            ]
         )
         func nonExistentX509FilePathRejected(
             credentials: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials
@@ -155,13 +158,13 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "Malformed X.509 credential bytes are rejected",
-            arguments: [NIOHTTPServerConfiguration.TransportSecurity.X509Credentials]([
-                .pemBytes(
+            arguments: [
+                NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.pemBytes(
                     certificateChain: Array("not a valid PEM document".utf8),
                     privateKey: Array("not a valid PEM document".utf8)
                 ),
                 .derBytes(certificate: [0x00, 0x01, 0x02], privateKey: [0x03, 0x04, 0x05]),
-            ])
+            ]
         )
         func malformedX509BytesRejected(
             credentials: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials
@@ -196,7 +199,7 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "Non-PEM-file X.509 credentials are rejected over HTTP/3",
-            arguments: [TestX509CredentialSource]([.inMemory, .reloading, .pemBytes, .derFile, .derBytes])
+            arguments: [TestX509CredentialSource.inMemory, .reloading, .pemBytes, .derFile, .derBytes]
         )
         func nonPEMFileX509RejectedOverHTTP3(source: TestX509CredentialSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
