@@ -94,7 +94,7 @@ struct NIOHTTPServerConfigurationTests {
         @available(anyAppleOS 26.0, *)
         @Test(
             "All X.509 credential sources produce a valid configuration",
-            arguments: [TestX509CredentialSource.inMemory, .reloading, .pemFile, .derFile, .pemBytes, .derBytes]
+            arguments: TestX509CredentialSource.allCases
         )
         func x509CredentialSourceProducesValidConfiguration(source: TestX509CredentialSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -110,12 +110,7 @@ struct NIOHTTPServerConfigurationTests {
         }
 
         @available(anyAppleOS 26.0, *)
-        @Test(
-            "All mTLS trust root sources produce a valid configuration",
-            arguments: [
-                MTLSTrustSource.systemDefaults, .inMemory, .pemFile, .pemBytes, .derFile, .derBytes, .customCallback
-            ]
-        )
+        @Test("All mTLS trust root sources produce a valid configuration", arguments: MTLSTrustSource.allCases)
         func mTLSTrustRootSourceProducesValidConfiguration(source: MTLSTrustSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
             let trustConfiguration = try source.makeTrustConfiguration(from: chain)
@@ -266,7 +261,7 @@ struct NIOHTTPServerConfigurationTests {
 }
 
 @available(anyAppleOS 26.0, *)
-enum TestX509CredentialSource: Sendable {
+enum TestX509CredentialSource: Sendable, CaseIterable {
     case inMemory
     case reloading
     case pemFile
@@ -341,7 +336,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.RawPublicKeyCredentials {
 #endif  // HTTP3
 
 @available(anyAppleOS 26.0, *)
-enum MTLSTrustSource: Sendable {
+enum MTLSTrustSource: Sendable, CaseIterable {
     case systemDefaults
     case inMemory
     case pemFile
