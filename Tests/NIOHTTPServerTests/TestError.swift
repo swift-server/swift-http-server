@@ -12,9 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-// An error type for use in tests
+// An error type for use in tests.
 enum TestError: Error {
-    case errorWhileReading
-    case errorWhileWriting
+    /// Thrown deliberately by a test handler to exercise a failure path.
     case intentional
+
+    /// Thrown when the client configuration is invalid for the configured HTTP version.
+    case invalidClientConfiguration
 }

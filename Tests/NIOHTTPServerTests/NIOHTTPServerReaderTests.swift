@@ -155,10 +155,10 @@ struct NIOHTTPServerReaderTests {
         )
 
         // Check that the read error is propagated
-        await #expect(throws: TestError.errorWhileReading) {
+        await #expect(throws: TestError.intentional) {
             do {
                 try await requestReader.read { _, _ throws(TestError) in
-                    throw TestError.errorWhileReading
+                    throw TestError.intentional
                 }
             } catch let eitherError as EitherError<Error, TestError> {
                 try eitherError.unwrap()

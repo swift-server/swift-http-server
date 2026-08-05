@@ -33,7 +33,7 @@ struct ConnectionLimitHandlerTests {
         for _ in 0..<3 {
             let child = EmbeddedChannel()
             children.append(child)
-            try channel.writeInbound(child as Channel)
+            try channel.writeInbound(child)
         }
 
         // All 3 should have been forwarded
@@ -56,8 +56,8 @@ struct ConnectionLimitHandlerTests {
         // Open 2 connections to fill the limit
         let child1 = EmbeddedChannel()
         let child2 = EmbeddedChannel()
-        try channel.writeInbound(child1 as Channel)
-        try channel.writeInbound(child2 as Channel)
+        try channel.writeInbound(child1)
+        try channel.writeInbound(child2)
 
         // Trigger a read while within the acceptable number of connections: it should be forwarded.
         channel.read()
@@ -67,7 +67,7 @@ struct ConnectionLimitHandlerTests {
 
         // Open a third connection - this will be above the limit, so stop forwarding reads.
         let child3 = EmbeddedChannel()
-        try channel.writeInbound(child3 as Channel)
+        try channel.writeInbound(child3)
 
         // Now at capacity — a third read should be blocked
         channel.pipeline.read()
@@ -82,7 +82,7 @@ struct ConnectionLimitHandlerTests {
 
         // Open 1 connection (at limit)
         let child1 = EmbeddedChannel()
-        try channel.writeInbound(child1 as Channel)
+        try channel.writeInbound(child1)
         _ = try channel.readInbound(as: Channel.self)
 
         // Close the child connection
@@ -93,7 +93,7 @@ struct ConnectionLimitHandlerTests {
 
         // Now we should be able to accept a new connection
         let child2 = EmbeddedChannel()
-        try channel.writeInbound(child2 as Channel)
+        try channel.writeInbound(child2)
         let forwarded = try channel.readInbound(as: Channel.self)
         #expect(forwarded != nil)
     }

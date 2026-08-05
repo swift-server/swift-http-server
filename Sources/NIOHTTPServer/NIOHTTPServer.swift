@@ -205,7 +205,7 @@ public struct NIOHTTPServer: HTTPServer {
 
     #if HTTP3
     /// Creates and returns server channels based on the configured transport security.
-    private func makeServerChannels() async throws -> [ServerChannel] {
+    func makeServerChannels() async throws -> [ServerChannel] {
         let bindTargets = self.configuration.bindTargets
         let secureUpgradeContext = self.configuration.secureUpgradeContext
         let http3Context = self.configuration.http3Context
@@ -248,7 +248,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
     #else
     /// Creates and returns server channels based on the configured transport security.
-    private func makeServerChannels() async throws -> [ServerChannel] {
+    func makeServerChannels() async throws -> [ServerChannel] {
         let bindTargets = self.configuration.bindTargets
         let secureUpgradeContext = self.configuration.secureUpgradeContext
 
@@ -424,7 +424,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     /// Forcefully closes the server channels without waiting for existing connections to drain.
-    private func close(serverChannels: [ServerChannel]) {
+    func close(serverChannels: [ServerChannel]) {
         self.finishListeningAddressPromise()
 
         for serverChannel in serverChannels {
