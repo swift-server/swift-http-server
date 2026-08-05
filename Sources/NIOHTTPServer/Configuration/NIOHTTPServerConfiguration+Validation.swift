@@ -21,7 +21,7 @@ import NIOQUIC
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
     /// The context required to serve a secure upgrade channel.
-    struct SecureUpgradeContext {
+    struct ValidatedSecureUpgradeContext {
         let http2Configuration: NIOHTTPServerConfiguration.HTTP2?
         let sslContext: NIOSSLContext
     }
@@ -31,7 +31,7 @@ extension NIOHTTPServerConfiguration {
     static func makeValidatedSecureUpgradeConfiguration(
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity
-    ) throws -> SecureUpgradeContext? {
+    ) throws -> ValidatedSecureUpgradeContext? {
         #if HTTP3
         if supportedHTTPVersions.http3ConfigIfSupported != nil, supportedHTTPVersions.count == 1 {
             // Only HTTP/3 was specified. As such, we do not create a secure upgrade channel.
@@ -49,7 +49,7 @@ extension NIOHTTPServerConfiguration {
             return nil
 
         case .tls, .mTLS:
-            return SecureUpgradeContext(
+            return ValidatedSecureUpgradeContext(
                 http2Configuration: supportedHTTPVersions.http2ConfigIfSupported,
                 sslContext: try .makeServerContext(
                     transportSecurity: transportSecurity,
@@ -61,7 +61,7 @@ extension NIOHTTPServerConfiguration {
 
     #if HTTP3
     /// The context required to serve an HTTP/3 channel.
-    struct HTTP3Context {
+    struct ValidatedHTTP3Context {
         let configuration: NIOHTTPServerConfiguration.HTTP3
         let quicAuthConfiguration: NIOQUIC.AuthenticationConfiguration
         let quicAuthenticator: NIOQUIC.Authenticator?
@@ -72,7 +72,7 @@ extension NIOHTTPServerConfiguration {
     static func makeValidatedHTTP3Configuration(
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity
-    ) throws -> HTTP3Context? {
+    ) throws -> ValidatedHTTP3Context? {
         guard let http3Config = supportedHTTPVersions.http3ConfigIfSupported else { return nil }
 
         switch transportSecurity.backing {
@@ -96,7 +96,7 @@ extension NIOHTTPServerConfiguration {
             let authConfig = try NIOQUIC.AuthenticationConfiguration(tlsCredentials)
             let authenticator = try NIOQUIC.Authenticator(tlsCredentials)
 
-            return HTTP3Context(
+            return ValidatedHTTP3Context(
                 configuration: http3Config,
                 quicAuthConfiguration: authConfig,
                 quicAuthenticator: authenticator

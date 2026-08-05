@@ -106,7 +106,7 @@ extension NIOHTTPServer {
     /// alongside the associated HTTP/3 connection multiplexer.
     func setupHTTP3ServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
-        context: NIOHTTPServerConfiguration.HTTP3Context
+        context: NIOHTTPServerConfiguration.ValidatedHTTP3Context
     ) async throws -> [(
         quicChannel: any Channel,
         connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
@@ -153,7 +153,7 @@ extension NIOHTTPServer {
     /// multiplexer.
     func setupQUICChannel(
         channel: any Channel,
-        http3Context: NIOHTTPServerConfiguration.HTTP3Context
+        http3Context: NIOHTTPServerConfiguration.ValidatedHTTP3Context
     ) throws -> (
         quicChannel: any Channel,
         connectionMultiplexer: HTTP3ServerConnectionMultiplexer<

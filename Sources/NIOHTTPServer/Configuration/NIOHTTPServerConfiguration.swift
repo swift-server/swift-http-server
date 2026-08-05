@@ -317,11 +317,11 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// The context required to set up secure upgrade channels. If nil, it means the configuration did not specify
     /// HTTP/1.1 or HTTP/2 over TLS.
-    let secureUpgradeContext: SecureUpgradeContext?
+    let secureUpgradeContext: ValidatedSecureUpgradeContext?
 
     #if HTTP3
     /// The context required to set up HTTP/3 channels. If nil, it means the configuration did not specify HTTP/3.
-    let http3Context: HTTP3Context?
+    let http3Context: ValidatedHTTP3Context?
     #endif
 
     /// Create a new configuration with multiple bind targets.
