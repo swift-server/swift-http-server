@@ -78,7 +78,7 @@ struct NIOHTTPServerEndToEndTests {
             transportSecurity: .tls(
                 credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
             ),
-            supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
+            supportedHTTPVersions: [.http1_1, .http2()],
             handler: HTTPServerClosureRequestHandler { request, reqContext, reqReader, resSender in
                 var buffer = UniqueArray<UInt8>(copying: [1, 2])
                 try await resSender.sendAndFinish(.init(status: .ok), buffer: &buffer, trailer: [.serverTiming: "test"])

@@ -862,7 +862,7 @@ extension NIOHTTPServerTests {
             logger: logger,
             configuration: try .init(
                 bindTargets: bindTargets,
-                supportedHTTPVersions: [.http1_1, .http2(config: .defaults)],
+                supportedHTTPVersions: [.http1_1, .http2()],
                 transportSecurity: .tls(
                     credentials: .x509(.certificates(chain: serverChain.chain, privateKey: serverChain.privateKey))
                 )

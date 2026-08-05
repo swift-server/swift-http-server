@@ -523,7 +523,7 @@ extension NIOHTTPServerConfiguration {
         /// The HTTP/2 protocol version.
         ///
         /// - Parameter config: The configuration to use for HTTP/2.
-        public static func http2(config: HTTP2) -> Self {
+        public static func http2(config: HTTP2 = .defaults) -> Self {
             Self(version: .http2(config: config))
         }
 
@@ -531,7 +531,7 @@ extension NIOHTTPServerConfiguration {
         /// The HTTP/3 protocol version.
         ///
         /// - Parameter config: The configuration to use for HTTP/3.
-        public static func http3(config: HTTP3) -> Self {
+        public static func http3(config: HTTP3 = .defaults) -> Self {
             Self(version: .http3(config: config))
         }
         #endif
