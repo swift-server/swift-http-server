@@ -85,9 +85,8 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 /// State machine:
 /// - On channel active, a header timeout is scheduled (if configured).
 /// - When `.head` is received, the header timeout is cancelled and a body timeout is scheduled (if configured).
-/// - When `.end` is received, the body timeout is cancelled and the header timeout is rescheduled so that the next
-///   request on a keep-alive connection is also protected. (For HTTP/2 and HTTP/3 streams this is a no-op in practice:
-///   each stream sees only one request and is closed shortly after `.end`.)
+/// - When `.end` is received, the body timeout is cancelled and, for HTTP/1.1, the header timeout is rescheduled so
+///   that the next request on a keep-alive connection is also protected.
 ///
 /// If either timeout fires, the connection is closed.
 final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandler {
@@ -97,9 +96,19 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
     private let readBodyTimeout: TimeAmount?
     private var scheduledTimeout: Scheduled<Void>?
 
-    init(readHeaderTimeout: TimeAmount?, readBodyTimeout: TimeAmount?) {
+    private let expectMultipleRequests: Bool
+
+    /// - Parameters:
+    ///   - readHeaderTimeout: How long to wait for a request head to arrive before closing the channel. Pass `nil` to
+    ///     not enforce a request header timeout.
+    ///   - readBodyTimeout: How long to wait for a request body to complete (once the head has arrived) before closing
+    ///     the channel. Pass `nil` to not enforce a request body timeout.
+    ///   - expectMultipleRequests: Whether the channel can receive more than one request. Pass `true` for an HTTP/1.1
+    ///     connection channel (for keep-alive), or `false` for an HTTP/2 or HTTP/3 stream channel.
+    init(readHeaderTimeout: TimeAmount?, readBodyTimeout: TimeAmount?, expectMultipleRequests: Bool) {
         self.readHeaderTimeout = readHeaderTimeout
         self.readBodyTimeout = readBodyTimeout
+        self.expectMultipleRequests = expectMultipleRequests
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
@@ -131,7 +140,7 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
             self.scheduledTimeout?.cancel()
             self.scheduledTimeout = nil
             // Re-arm the header timer so the next request on this connection is also protected.
-            if let readHeaderTimeout {
+            if self.expectMultipleRequests, let readHeaderTimeout {
                 self.scheduleTimeout(readHeaderTimeout, context: context)
             }
         }
