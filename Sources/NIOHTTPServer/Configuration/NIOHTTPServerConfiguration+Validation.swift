@@ -20,68 +20,57 @@ import NIOQUIC
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
-    /// The context required to serve a secure upgrade channel.
-    struct ValidatedSecureUpgradeContext {
-        let http2Configuration: NIOHTTPServerConfiguration.HTTP2?
-        let sslContext: NIOSSLContext
+    /// Validates the configuration and derives the TLS resources required to set up the server channels.
+    mutating func validateHTTPVersionAndTLSCredentialCompatibility() throws {
+        #if HTTP3
+        (self.quicAuthenticationConfiguration, self.quicAuthenticator) = try self.makeQUICAuthentication()
+        #endif
+
+        self.sslContext = try self.makeSSLContext()
     }
 
-    /// Validates the server configuration and creates the TLS contexts and configurations required to set up the server
-    /// channels.
-    static func makeValidatedSecureUpgradeConfiguration(
-        supportedHTTPVersions: Set<HTTPVersion>,
-        transportSecurity: TransportSecurity
-    ) throws -> ValidatedSecureUpgradeContext? {
+    /// Creates the `NIOSSLContext` used by the secure upgrade channel(s), or `nil` if the configuration doesn't call for
+    /// a secure upgrade channel.
+    private func makeSSLContext() throws -> NIOSSLContext? {
         #if HTTP3
-        if supportedHTTPVersions.http3ConfigIfSupported != nil, supportedHTTPVersions.count == 1 {
-            // Only HTTP/3 was specified. As such, we do not create a secure upgrade channel.
+        if self.supportedHTTPVersions.http3ConfigIfSupported != nil, self.supportedHTTPVersions.count == 1 {
+            // Only HTTP/3 was specified. As such, `NIOSSLContext` is not needed because a secure upgrade channel won't
+            // be set up. We can just return `nil` here.
             return nil
         }
         #endif
 
-        switch transportSecurity.backing {
+        switch self.transportSecurity.backing {
         case .plaintext:
             // Only HTTP/1.1 can be served over plaintext. To serve HTTP/2, `transportSecurity` must be set to `.tls` or
             // `.mTLS`.
-            guard supportedHTTPVersions == [.http1_1] else {
+            guard self.supportedHTTPVersions == [.http1_1] else {
                 throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
             }
             return nil
 
         case .tls, .mTLS:
-            return ValidatedSecureUpgradeContext(
-                http2Configuration: supportedHTTPVersions.http2ConfigIfSupported,
-                sslContext: try .makeServerContext(
-                    transportSecurity: transportSecurity,
-                    alpnIdentifiers: supportedHTTPVersions.alpnIdentifiers
-                )
+            return try .makeServerContext(
+                transportSecurity: self.transportSecurity,
+                alpnIdentifiers: self.supportedHTTPVersions.alpnIdentifiers
             )
         }
     }
 
     #if HTTP3
-    /// The context required to serve an HTTP/3 channel.
-    struct ValidatedHTTP3Context {
-        let configuration: NIOHTTPServerConfiguration.HTTP3
-        let quicAuthConfiguration: NIOQUIC.AuthenticationConfiguration
-        let quicAuthenticator: NIOQUIC.Authenticator?
-    }
+    /// Creates the QUIC authentication resources used by the HTTP/3 channel(s).
+    ///
+    /// Both are `nil` if HTTP/3 is not among ``supportedHTTPVersions``.
+    private func makeQUICAuthentication() throws -> (
+        configuration: NIOQUIC.AuthenticationConfiguration?,
+        authenticator: NIOQUIC.Authenticator?
+    ) {
+        guard self.supportedHTTPVersions.http3ConfigIfSupported != nil else { return (nil, nil) }
 
-    /// Validates the server configuration and creates the TLS contexts and configurations required to set up the server
-    /// channels.
-    static func makeValidatedHTTP3Configuration(
-        supportedHTTPVersions: Set<HTTPVersion>,
-        transportSecurity: TransportSecurity
-    ) throws -> ValidatedHTTP3Context? {
-        guard let http3Config = supportedHTTPVersions.http3ConfigIfSupported else { return nil }
-
-        switch transportSecurity.backing {
+        switch self.transportSecurity.backing {
         case .plaintext:
             // Only HTTP/1.1 can be served over plaintext. To serve HTTP/3, `transportSecurity` must be set to `.tls`.
-            guard supportedHTTPVersions == [.http1_1] else {
-                throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
-            }
-            return nil
+            throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
 
         case .tls(let tlsCredentials):
             // We unfortunately need to pass forward both an `AuthenticationConfiguration` and an `Authenticator`:
@@ -93,14 +82,7 @@ extension NIOHTTPServerConfiguration {
             // when the TLS credentials are X509 certificates. Moreover, `AuthenticationConfiguration` can only be
             // created with *PEM-file backed X509 credentials* (or RPKs), *even though* `Authenticator` supports
             // `swift-certificates` objects as the source.
-            let authConfig = try NIOQUIC.AuthenticationConfiguration(tlsCredentials)
-            let authenticator = try NIOQUIC.Authenticator(tlsCredentials)
-
-            return ValidatedHTTP3Context(
-                configuration: http3Config,
-                quicAuthConfiguration: authConfig,
-                quicAuthenticator: authenticator
-            )
+            return (configuration: try .init(tlsCredentials), authenticator: try .init(tlsCredentials))
 
         case .mTLS:
             throw NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3

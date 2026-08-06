@@ -79,7 +79,7 @@ struct TestingChannelSecureUpgradeServer {
         // Create a connection channel: we will write this to the server channel to simulate an incoming connection.
         let serverTestConnectionChannel = try await NIOAsyncTestingChannel.createActiveChannel()
 
-        guard let secureUpgradeContext = self.server.configuration.secureUpgradeContext else {
+        guard let sslContext = self.server.configuration.sslContext else {
             throw NIOHTTPServerConfigurationError.incompatibleTransportSecurity
         }
 
@@ -87,8 +87,8 @@ struct TestingChannelSecureUpgradeServer {
         let negotiatedServerConnectionFuture = try await serverTestConnectionChannel.eventLoop.flatSubmit {
             self.server.setupSecureUpgradeConnectionChildChannel(
                 channel: serverTestConnectionChannel,
-                http2Configuration: secureUpgradeContext.http2Configuration,
-                sslContext: secureUpgradeContext.sslContext
+                http2Configuration: self.server.configuration.supportedHTTPVersions.http2ConfigIfSupported,
+                sslContext: sslContext
             )
         }.get()
 

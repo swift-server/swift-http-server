@@ -16,6 +16,10 @@ import NIOCore
 import NIOSSL
 public import X509
 
+#if HTTP3
+import NIOQUIC
+#endif
+
 /// Configuration settings for ``NIOHTTPServer``.
 ///
 /// This structure contains all the necessary configuration options for setting up
@@ -285,13 +289,47 @@ public struct NIOHTTPServerConfiguration: Sendable {
     }
 
     /// Network binding configuration specifying all addresses where the server should listen.
-    public let bindTargets: [BindTarget]
+    ///
+    /// - Precondition: Must not be empty.
+    public var bindTargets: [BindTarget] {
+        didSet {
+            if self.bindTargets.isEmpty {
+                preconditionFailure(NIOHTTPServerConfigurationError.noBindTargetsSpecified.description)
+            }
+        }
+    }
 
     /// TLS configuration for the server.
-    public let transportSecurity: TransportSecurity
+    ///
+    /// - Precondition: Must be compatible with ``supportedHTTPVersions``:
+    ///   - `transportSecurity == .mTLS` is not supported when `supportedHTTPVersions` contains `.http3`.
+    ///   - Raw Public Key credentials are only supported when `supportedHTTPVersions == [.http3]`.
+    ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
+    ///     on disk. Other credential sources are not supported.
+    ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
+    public var transportSecurity: TransportSecurity {
+        didSet {
+            try! self.validateHTTPVersionAndTLSCredentialCompatibility()
+        }
+    }
 
     /// The HTTP protocol versions the server advertises and accepts connections for.
-    public let supportedHTTPVersions: Set<HTTPVersion>
+    ///
+    /// - Precondition: Must not be empty, and must be compatible with ``transportSecurity``:
+    ///   - `transportSecurity == .mTLS` is not supported when `supportedHTTPVersions` contains `.http3`.
+    ///   - Raw Public Key credentials are only supported when `supportedHTTPVersions == [.http3]`.
+    ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
+    ///     on disk. Other credential sources are not supported.
+    ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
+    public var supportedHTTPVersions: Set<HTTPVersion> {
+        didSet {
+            if self.supportedHTTPVersions.isEmpty {
+                preconditionFailure(NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified.description)
+            }
+
+            try! self.validateHTTPVersionAndTLSCredentialCompatibility()
+        }
+    }
 
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
@@ -315,13 +353,22 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// Configuration for connection timeouts.
     public var connectionTimeouts: ConnectionTimeouts
 
-    /// The context required to set up secure upgrade channels. If nil, it means the configuration did not specify
-    /// HTTP/1.1 or HTTP/2 over TLS.
-    let secureUpgradeContext: ValidatedSecureUpgradeContext?
+    /// The `NIOSSLContext` used by the secure upgrade channel(s), derived when the configuration is validated.
+    ///
+    /// `nil` when the configuration doesn't call for a secure upgrade channel, i.e. plaintext HTTP/1.1 or HTTP/3 only.
+    var sslContext: NIOSSLContext?
 
     #if HTTP3
-    /// The context required to set up HTTP/3 channels. If nil, it means the configuration did not specify HTTP/3.
-    let http3Context: ValidatedHTTP3Context?
+    /// The QUIC authentication configuration used by the HTTP/3 channel(s).
+    ///
+    /// `nil` when HTTP/3 is not among ``supportedHTTPVersions``.
+    var quicAuthenticationConfiguration: NIOQUIC.AuthenticationConfiguration?
+
+    /// The QUIC authenticator used by the HTTP/3 channel(s), derived when the configuration is validated.
+    ///
+    /// `nil` when HTTP/3 is not among ``supportedHTTPVersions``, and also when the TLS credentials are raw public keys;
+    /// NIOQUIC reads those directly from ``quicAuthenticationConfiguration``.
+    var quicAuthenticator: NIOQUIC.Authenticator?
     #endif
 
     /// Create a new configuration with multiple bind targets.
@@ -339,7 +386,6 @@ public struct NIOHTTPServerConfiguration: Sendable {
         supportedHTTPVersions: Set<HTTPVersion>,
         transportSecurity: TransportSecurity
     ) throws {
-        // Validate the configuration.
         if bindTargets.isEmpty {
             throw NIOHTTPServerConfigurationError.noBindTargetsSpecified
         }
@@ -348,24 +394,15 @@ public struct NIOHTTPServerConfiguration: Sendable {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
 
-        #if HTTP3
-        self.http3Context = try Self.makeValidatedHTTP3Configuration(
-            supportedHTTPVersions: supportedHTTPVersions,
-            transportSecurity: transportSecurity
-        )
-        #endif
-
-        self.secureUpgradeContext = try Self.makeValidatedSecureUpgradeConfiguration(
-            supportedHTTPVersions: supportedHTTPVersions,
-            transportSecurity: transportSecurity
-        )
-
         self.bindTargets = bindTargets
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = .defaults
         self.maxConnections = nil
         self.connectionTimeouts = .defaults
+
+        // Validate the configuration and derive the TLS resources needed to set up the server channels.
+        try self.validateHTTPVersionAndTLSCredentialCompatibility()
     }
 
     /// Create a new configuration with a single bind target.

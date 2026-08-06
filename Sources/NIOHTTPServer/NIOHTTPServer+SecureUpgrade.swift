@@ -214,7 +214,8 @@ extension NIOHTTPServer {
 
     func setupSecureUpgradeServerChannels(
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
-        context: NIOHTTPServerConfiguration.ValidatedSecureUpgradeContext
+        http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
+        sslContext: NIOSSLContext
     ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
         let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -241,8 +242,8 @@ extension NIOHTTPServer {
                     }.bind(host: host, port: port) { channel in
                         self.setupSecureUpgradeConnectionChildChannel(
                             channel: channel,
-                            http2Configuration: context.http2Configuration,
-                            sslContext: context.sslContext
+                            http2Configuration: http2Configuration,
+                            sslContext: sslContext
                         )
                     }
                     serverChannels.append((serverChannel, serverQuiescingHelper))

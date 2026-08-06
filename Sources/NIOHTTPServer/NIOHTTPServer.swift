@@ -203,70 +203,62 @@ public struct NIOHTTPServer: HTTPServer {
         )
     }
 
-    #if HTTP3
     /// Creates and returns server channels based on the configured transport security.
     func makeServerChannels() async throws -> [ServerChannel] {
-        let bindTargets = self.configuration.bindTargets
-        let secureUpgradeContext = self.configuration.secureUpgradeContext
-        let http3Context = self.configuration.http3Context
+        var serverChannels = [ServerChannel]()
+        var secureUpgradeBindTargets = self.configuration.bindTargets
 
-        switch (secureUpgradeContext, http3Context) {
-        case (.none, .none):
-            // Set up plaintext HTTP/1.1 channel(s).
-            let http1Channels = try await self.setupHTTP1_1ServerChannels(bindTargets: bindTargets)
-            try self.addressesBound(http1Channels.map { (channel, _) in channel.channel.localAddress })
-            return http1Channels.map { .plaintextHTTP1_1(channel: $0, quiescingHelper: $1) }
-
-        case (.some(let secureUpgradeContext), .none):
-            // Set up secure upgrade channel(s).
-            let secureUpgradeChannels = try await self.setupSecureUpgradeServerChannels(
-                bindTargets: bindTargets,
-                context: secureUpgradeContext
+        #if HTTP3
+        if let http3Configuration = self.configuration.supportedHTTPVersions.http3ConfigIfSupported,
+            let authenticationConfiguration = self.configuration.quicAuthenticationConfiguration
+        {
+            let http3Channels = try await self.setupHTTP3ServerChannels(
+                bindTargets: self.configuration.bindTargets,
+                http3Configuration: http3Configuration,
+                authenticationConfiguration: authenticationConfiguration,
+                authenticator: self.configuration.quicAuthenticator
             )
-            try self.addressesBound(secureUpgradeChannels.map { (channel, _) in channel.channel.localAddress })
-            return secureUpgradeChannels.map { .secureUpgrade(channel: $0, quiescingHelper: $1) }
-
-        case (.none, .some(let http3Context)):
-            let http3Channels = try await self.setupHTTP3ServerChannels(bindTargets: bindTargets, context: http3Context)
-            try self.addressesBound(http3Channels.map { (channel, _) in channel.localAddress })
-            return http3Channels.map { .http3(quicChannel: $0, connectionMultiplexer: $1) }
-
-        case (.some(let secureUpgradeContext), .some(let http3Context)):
-            // Set up HTTP/3 and secure upgrade channel(s) on the same port.
-            let http3Channels = try await self.setupHTTP3ServerChannels(bindTargets: bindTargets, context: http3Context)
-
-            let secureUpgradeChannels = try await self.setupSecureUpgradeServerChannels(
-                // We must bind the secure-upgrade channel(s) to the same port(s) as the HTTP/3 channel(s).
-                bindTargets: try http3Channels.map { (http3Channel, _) in try .init(http3Channel.localAddress) },
-                context: secureUpgradeContext
+            serverChannels.append(
+                contentsOf: http3Channels.map { (quicChannel, mux) in
+                    .http3(quicChannel: quicChannel, connectionMultiplexer: mux)
+                }
             )
-            try self.addressesBound(secureUpgradeChannels.map { (channel, _) in channel.channel.localAddress })
 
-            return http3Channels.map { .http3(quicChannel: $0, connectionMultiplexer: $1) }
-                + secureUpgradeChannels.map { .secureUpgrade(channel: $0, quiescingHelper: $1) }
+            if self.configuration.sslContext == nil {
+                // `supportedHTTPVersions == [.http3]` here. We therefore just return HTTP/3 channel(s).
+                try self.addressesBound(http3Channels.map { (channel, _) in channel.localAddress })
+                return serverChannels
+            }
+
+            // We also need to set up secure upgrade channel(s) on the same port.
+            secureUpgradeBindTargets = try http3Channels.map { (http3Channel, _) in
+                try NIOHTTPServerConfiguration.BindTarget(http3Channel.localAddress)
+            }
         }
-    }
-    #else
-    /// Creates and returns server channels based on the configured transport security.
-    func makeServerChannels() async throws -> [ServerChannel] {
-        let bindTargets = self.configuration.bindTargets
-        let secureUpgradeContext = self.configuration.secureUpgradeContext
+        #endif  // HTTP3
 
-        if let secureUpgradeContext {
-            let secureUpgradeChannels = try await self.setupSecureUpgradeServerChannels(
-                bindTargets: bindTargets,
-                context: secureUpgradeContext
-            )
-            try self.addressesBound(secureUpgradeChannels.map { (channel, _) in channel.channel.localAddress })
-            return secureUpgradeChannels.map { .secureUpgrade(channel: $0, quiescingHelper: $1) }
-        } else {
+        guard let sslContext = self.configuration.sslContext else {
             // Set up plaintext HTTP/1.1 channel(s).
-            let http1Channels = try await self.setupHTTP1_1ServerChannels(bindTargets: bindTargets)
+            let http1Channels = try await self.setupHTTP1_1ServerChannels(bindTargets: secureUpgradeBindTargets)
             try self.addressesBound(http1Channels.map { (channel, _) in channel.channel.localAddress })
             return http1Channels.map { .plaintextHTTP1_1(channel: $0, quiescingHelper: $1) }
         }
+
+        let secureUpgradeChannels = try await self.setupSecureUpgradeServerChannels(
+            bindTargets: secureUpgradeBindTargets,
+            http2Configuration: self.configuration.supportedHTTPVersions.http2ConfigIfSupported,
+            sslContext: sslContext
+        )
+        try self.addressesBound(secureUpgradeChannels.map { (channel, _) in channel.channel.localAddress })
+
+        serverChannels.append(
+            contentsOf: secureUpgradeChannels.map { (channel, quiescingHelper) in
+                .secureUpgrade(channel: channel, quiescingHelper: quiescingHelper)
+            }
+        )
+
+        return serverChannels
     }
-    #endif  // HTTP3
 
     private func _serve<Handler: NIOHTTPServerConnectionHandler>(
         serverChannels: [ServerChannel],
