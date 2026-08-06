@@ -61,7 +61,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     ///
     /// The credentials can be provided in any of the following ways:
     /// - As in-memory `X509.Certificate` and `X509.Certificate.PrivateKey` objects (``certificates(chain:privateKey:)``);
-    /// - From files (``pemFile(certificateChain:privateKey:)``, ``derFile(certificate:privateKey:)``) or bytes
+    /// - From files (``pemFile(certificateChainPath:privateKeyPath:)``, ``derFile(certificatePath:privateKeyPath:)``) or bytes
     ///   (``pemBytes(certificateChain:privateKey:)``, ``derBytes(certificate:privateKey:)``), or;
     /// - Through a `CertificateReloader` instance that periodically reloads the credentials (``reloading(_:)``).
     public struct X509Credentials: Sendable {
