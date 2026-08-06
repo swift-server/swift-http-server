@@ -68,13 +68,13 @@ struct NIOHTTPServerConfigurationTests {
         @Test(
             "transport: plaintext, versions: HTTP/2 and/or HTTP/3 -> invalid",
             arguments: [
-                [NIOHTTPServerConfiguration.HTTPVersion.http2()],
-                [.http3()],
-                [.http2(), .http3()],
+                [NIOHTTPServerConfiguration.HTTPVersion.http2],
+                [.http3],
+                [.http2, .http3],
                 // Even when HTTP/1.1 is specified, the presence of HTTP/2 and/or HTTP/3 should make the config invalid.
-                [.http1_1, .http2()],
-                [.http1_1, .http3()],
-                [.http1_1, .http2(), .http3()],
+                [.http1_1, .http2],
+                [.http1_1, .http3],
+                [.http1_1, .http2, .http3],
             ]
         )
         func plaintextNotSupportedForHTTP2OrHTTP3(supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion>) {
@@ -103,7 +103,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: Never.self) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http1_1, .http2()],
+                    supportedHTTPVersions: [.http1_1, .http2],
                     transportSecurity: .tls(credentials: .x509(credentials))
                 )
             }
@@ -118,7 +118,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: Never.self) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http1_1, .http2()],
+                    supportedHTTPVersions: [.http1_1, .http2],
                     transportSecurity: .mTLS(
                         credentials: .x509(.certificates(chain: chain.chain, privateKey: chain.privateKey)),
                         trustConfiguration: .init(trustConfiguration)
@@ -144,7 +144,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: Error.self) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http1_1, .http2()],
+                    supportedHTTPVersions: [.http1_1, .http2],
                     transportSecurity: .tls(credentials: .x509(credentials))
                 )
             }
@@ -167,7 +167,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: NIOSSLError.failedToLoadCertificate) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http1_1, .http2()],
+                    supportedHTTPVersions: [.http1_1, .http2],
                     transportSecurity: .tls(credentials: .x509(credentials))
                 )
             }
@@ -183,7 +183,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: Never.self) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http3()],
+                    supportedHTTPVersions: [.http3],
                     transportSecurity: .tls(
                         credentials: .x509(.pemFile(certificateChainPath: leafPath, privateKeyPath: keyPath))
                     )
@@ -203,7 +203,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileX509CredentialsCurrentlySupportedOverHTTP3) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http3()],
+                    supportedHTTPVersions: [.http3],
                     transportSecurity: .tls(credentials: .x509(credentials))
                 )
             }
@@ -217,7 +217,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: Never.self) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http3()],
+                    supportedHTTPVersions: [.http3],
                     transportSecurity: .tls(credentials: .rawPublicKey(.makeTestCredentials(from: chain)))
                 )
             }
@@ -231,7 +231,7 @@ struct NIOHTTPServerConfigurationTests {
             ) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http1_1, .http2()],
+                    supportedHTTPVersions: [.http1_1, .http2],
                     transportSecurity: .tls(
                         credentials: .rawPublicKey(.derFile(publicKeyPath: "public.der", privateKeyPath: "private.der"))
                     )
@@ -248,7 +248,7 @@ struct NIOHTTPServerConfigurationTests {
             #expect(throws: NIOHTTPServerConfigurationError.mTLSNotCurrentlySupportedOverHTTP3) {
                 try NIOHTTPServerConfiguration(
                     bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                    supportedHTTPVersions: [.http3()],
+                    supportedHTTPVersions: [.http3],
                     transportSecurity: .mTLS(
                         credentials: .x509(.pemFile(certificateChainPath: leafPath, privateKeyPath: keyPath)),
                         trustConfiguration: .init(.systemDefaults)

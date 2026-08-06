@@ -527,12 +527,26 @@ extension NIOHTTPServerConfiguration {
             Self(version: .http2(config: config))
         }
 
+        /// The HTTP/2 protocol version with default configuration values.
+        ///
+        /// - Note: Use ``http2(config:)`` to specify custom configuration values.
+        public static var http2: Self {
+            .http2(config: .defaults)
+        }
+
         #if HTTP3
         /// The HTTP/3 protocol version.
         ///
         /// - Parameter config: The configuration to use for HTTP/3.
         public static func http3(config: HTTP3 = .defaults) -> Self {
             Self(version: .http3(config: config))
+        }
+
+        /// The HTTP/3 protocol version with default configuration values.
+        ///
+        /// - Note: Use ``http3(config:)`` to specify custom configuration values.
+        public static var http3: Self {
+            .http3(config: .defaults)
         }
         #endif
 

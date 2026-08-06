@@ -46,11 +46,11 @@ extension NIOHTTPServerConfiguration.HTTPVersion {
             self = .http1_1
 
         case .http2:
-            self = .http2()
+            self = .http2
 
         #if HTTP3
         case .http3:
-            self = .http3()
+            self = .http3
         #endif
         }
     }

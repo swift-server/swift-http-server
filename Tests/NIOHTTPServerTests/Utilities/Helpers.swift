@@ -367,7 +367,7 @@ struct TestHelpers {
 @available(anyAppleOS 26.0, *)
 extension TestHelpers {
     static func makeSecureUpgradeServerConfiguration(
-        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion> = [.http1_1, .http2()],
+        supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion> = [.http1_1, .http2],
         concurrentListeners: Int = 1
     ) throws -> (NIOHTTPServerConfiguration, String) {
         let (leafPath, caPath, privateKeyPath) = try TestCA.makeSelfSignedChainWithSAN().writeToDisk()
