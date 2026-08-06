@@ -309,7 +309,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
     public var transportSecurity: TransportSecurity {
         didSet {
-            try! self.validateHTTPVersionAndTLSCredentialCompatibility()
+            try! self.validateTransportConfiguration()
         }
     }
 
@@ -327,7 +327,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 preconditionFailure(NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified.description)
             }
 
-            try! self.validateHTTPVersionAndTLSCredentialCompatibility()
+            try! self.validateTransportConfiguration()
         }
     }
 
@@ -401,8 +401,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
         self.maxConnections = nil
         self.connectionTimeouts = .defaults
 
-        // Validate the configuration and derive the TLS resources needed to set up the server channels.
-        try self.validateHTTPVersionAndTLSCredentialCompatibility()
+        // Validate the compatibility of `supportedHTTPVersions` and `transportSecurity`.
+        try self.validateTransportConfiguration()
     }
 
     /// Create a new configuration with a single bind target.

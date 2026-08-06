@@ -20,8 +20,9 @@ import NIOQUIC
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServerConfiguration {
-    /// Validates the configuration and derives the TLS resources required to set up the server channels.
-    mutating func validateHTTPVersionAndTLSCredentialCompatibility() throws {
+    /// Validates the compatibility of the `supportedHTTPVersions` and `transportSecurity` configurations, and stores
+    /// the TLS resources required to set up the server channels.
+    mutating func validateTransportConfiguration() throws {
         #if HTTP3
         (self.quicAuthenticationConfiguration, self.quicAuthenticator) = try self.makeQUICAuthentication()
         #endif
@@ -29,8 +30,8 @@ extension NIOHTTPServerConfiguration {
         self.sslContext = try self.makeSSLContext()
     }
 
-    /// Creates the `NIOSSLContext` used by the secure upgrade channel(s), or `nil` if the configuration doesn't call for
-    /// a secure upgrade channel.
+    /// Creates the `NIOSSLContext` used by the secure upgrade channel(s), or `nil` if the configuration does not
+    /// specify a secure upgrade channel.
     private func makeSSLContext() throws -> NIOSSLContext? {
         #if HTTP3
         if self.supportedHTTPVersions.http3ConfigIfSupported != nil, self.supportedHTTPVersions.count == 1 {
