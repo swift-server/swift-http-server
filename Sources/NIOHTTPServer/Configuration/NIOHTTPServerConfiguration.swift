@@ -309,7 +309,11 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
     public var transportSecurity: TransportSecurity {
         didSet {
-            try! self.validateTransportConfiguration()
+            do {
+                try self.validateTransportConfiguration()
+            } catch {
+                preconditionFailure("\(error)")
+            }
         }
     }
 
@@ -327,7 +331,11 @@ public struct NIOHTTPServerConfiguration: Sendable {
                 preconditionFailure(NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified.description)
             }
 
-            try! self.validateTransportConfiguration()
+            do {
+                try self.validateTransportConfiguration()
+            } catch {
+                preconditionFailure("\(error)")
+            }
         }
     }
 
