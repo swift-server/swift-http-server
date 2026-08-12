@@ -45,7 +45,7 @@ struct QUICConnectionCreator: HTTP3ConnectionCreator {
             },
             inboundStreamInitializer: self.inboundStreamInitializer
         ).map { connectionChannel, _ in
-            return connectionChannel
+            connectionChannel
         }
     }
 }
