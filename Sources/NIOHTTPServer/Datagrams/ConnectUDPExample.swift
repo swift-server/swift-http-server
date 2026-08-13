@@ -119,7 +119,7 @@ final class RefBox<Value: ~Copyable> {
     }
 
     public consuming func unbox() -> Value {
-        return unsafe value.take()!
+        unsafe value.take()!
     }
 }
 extension RefBox: Sendable where Value: Sendable & ~Copyable {}
