@@ -31,81 +31,98 @@ func connectUDPExample(
         return try await responseSender.sendAndFinish(.init(status: .forbidden))
     }
 
-    var disconnectedResponseSender = Disconnected(value: Optional(responseSender))
+    var streamReader = reader
+    let maybeDatagramReader = streamReader.takeDatagramReader()
 
-    try await reader.withDatagramReader { streamReader, maybeDatagramReader in
-        let responseSender = disconnectedResponseSender.swap(newValue: nil)!
+    // The unreliable datagram transport will not be available if the underlying transport does not support
+    // unreliable datagrams, like in HTTP/1.1 and HTTP/2 over TCP, or also over HTTP/3 when support for datagrams is
+    // not negotiated, i.e. we (the server) either sent or received the `SETTINGS_H3_DATAGRAM` setting with value 0.
+    //
+    // Since this example wants to showcase the unreliable datagram reader/writer APIs, we just return early if the
+    // unreliable datagram transport is not available. However, note that in these cases, it is still possible to
+    // perform CONNECT-UDP by exchanging data through the Capsule protocol over the request/response reader/writer.
+    guard var datagramReader = maybeDatagramReader else {
+        return try await responseSender.sendAndFinish(.init(status: .notImplemented))
+    }
 
-        // The unreliable datagram transport will not be available if the underlying transport does not support
-        // unreliable datagrams, like in HTTP/1.1 and HTTP/2 over TCP, or also over HTTP/3 when support for datagrams is
-        // not negotiated, i.e. we (the server) either sent or received the `SETTINGS_H3_DATAGRAM` setting with value 0.
-        //
-        // Since this example wants to showcase the unreliable datagram reader/writer APIs, we just return early if the
-        // unreliable datagram transport is not available. However, note that in these cases, it is still possible to
-        // perform CONNECT-UDP by exchanging data through the Capsule protocol over the request/response reader/writer.
-        guard var datagramReader = maybeDatagramReader else {
-            return try await responseSender.sendAndFinish(.init(status: .notImplemented))
+    // Store any bytes we read before sending the response so we can send them to the target.
+    var pendingToTarget: [UInt8] = []
+
+    try await streamReader.read { buffer, _ in
+        for index in buffer.indices { pendingToTarget.append(buffer[index]) }
+    }
+
+    try await datagramReader.read { buffer, _ in
+        for index in buffer.indices { pendingToTarget.append(buffer[index]) }
+    }
+
+    // Hold the readers until the tunnel is established.
+    let streamReaderBox = RefBox(value: Disconnected(value: streamReader))
+    let datagramReaderBox = RefBox(value: Disconnected(value: datagramReader))
+
+    // Now accept the request and access the datagram writer through the response writer.
+    var streamWriter = try await responseSender.send(ConnectUDPHelper.makeSuccessResponse(version: context.httpVersion))
+    let datagramWriter = streamWriter.takeDatagramWriter()
+
+    let streamWriterBox = RefBox(value: Disconnected(value: streamWriter))
+    let datagramWriterBox = RefBox(value: Disconnected(value: datagramWriter))
+
+    await withThrowingTaskGroup { group in
+        var unwrappedStreamWriter = streamWriterBox.unbox().take()
+        var unwrappedStreamReader = streamReaderBox.unbox().take()
+        var unwrappedDatagramReader = datagramReaderBox.unbox().take()
+
+        // Write to the reliable stream.
+        group.addTask {
+            var emptyBuffer = UniqueArray<UInt8>()
+            try await unwrappedStreamWriter.write(buffer: &emptyBuffer)
         }
 
-        // Store any bytes we read before sending the response so we can send them to the target.
-        var pendingToTarget: [UInt8] = []
-
-        var streamReader = streamReader
-        try await streamReader.read { buffer, _ in
-            for index in buffer.indices { pendingToTarget.append(buffer[index]) }
+        var disconnectedDatagramWriter = datagramWriterBox.unbox()
+        if var unwrappedDatagramWriter = disconnectedDatagramWriter.swap(newValue: nil) {
+            // Write to the unreliable stream.
+            group.addTask {
+                var emptyBuffer = UniqueArray<UInt8>()
+                try await unwrappedDatagramWriter.write(buffer: &emptyBuffer)
+            }
         }
 
-        try await datagramReader.read { buffer, _ in
-            for index in buffer.indices { pendingToTarget.append(buffer[index]) }
+        // Read from the reliable stream.
+        group.addTask {
+            try await unwrappedStreamReader.read { _, _ in
+                ()
+            }
         }
 
-        // Hold the readers until the tunnel is established.
-        var disconnectedStreamReader = Disconnected(value: Optional(streamReader))
-        var disconnectedDatagramReader = Disconnected(value: Optional(datagramReader))
-
-        // Now accept the request and access the datagram writer through the response writer.
-        let writer = try await responseSender.send(ConnectUDPHelper.makeSuccessResponse(version: context.httpVersion))
-        try await writer.withDatagramWriter { streamWriter, datagramWriter in
-            var disconnectedStreamWriter = Disconnected(value: Optional(streamWriter))
-            var disconnectedDatagramWriter = Disconnected(value: datagramWriter)
-
-            await withThrowingTaskGroup { group in
-                var unwrappedStreamWriter = disconnectedStreamWriter.swap(newValue: nil)!
-                var unwrappedStreamReader = disconnectedStreamReader.swap(newValue: nil)!
-
-                // Write to the reliable stream.
-                group.addTask {
-                    var emptyBuffer = UniqueArray<UInt8>()
-                    try await unwrappedStreamWriter.write(buffer: &emptyBuffer)
-                }
-
-                if var unwrappedDatagramWriter = disconnectedDatagramWriter.swap(newValue: nil) {
-                    // Write to the unreliable stream.
-                    group.addTask {
-                        var emptyBuffer = UniqueArray<UInt8>()
-                        try await unwrappedDatagramWriter.write(buffer: &emptyBuffer)
-                    }
-                }
-
-                // Read from the reliable stream.
-                group.addTask {
-                    try await unwrappedStreamReader.read { _, _ in
-                        ()
-                    }
-                }
-
-                if var unwrappedDatagramReader = disconnectedDatagramReader.swap(newValue: nil) {
-                    // Read from the unreliable stream.
-                    group.addTask {
-                        try await unwrappedDatagramReader.read { _, _ in
-                            ()
-                        }
-                    }
-                }
+        // Read from the unreliable stream.
+        group.addTask {
+            try await unwrappedDatagramReader.read { _, _ in
+                ()
             }
         }
     }
 }
+
+/// A Copyable, Sendable box for transferring a ~Copyable value across escaping
+/// closure boundaries.
+///
+/// Store a ~Copyable value with ``init(value:)``, then retrieve it exactly once
+/// with ``unbox()``.
+// TODO: Remove RefBox once Swift gains "called once" closures (SE-0528 future direction).
+// Until then, ~Copyable values cannot be captured by @escaping closures (like addTask),
+// so this class provides a Copyable + Sendable wrapper for cross-task transfer.
+final class RefBox<Value: ~Copyable> {
+    private nonisolated(unsafe) var value: Value?
+
+    public init(value: consuming Value) {
+        unsafe self.value = consume value
+    }
+
+    public consuming func unbox() -> Value {
+        return unsafe value.take()!
+    }
+}
+extension RefBox: Sendable where Value: Sendable & ~Copyable {}
 
 @available(anyAppleOS 26.0, *)
 enum ConnectUDPHelper {

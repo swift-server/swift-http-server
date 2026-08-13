@@ -206,7 +206,7 @@ struct NIOHTTPServerReaderTests {
     }
 
     #if HTTP3 && UnstableHTTPDatagrams
-    @Test("withDatagramReader vends no datagram reader when not available")
+    @Test("takeDatagramReader vends no datagram reader when not available")
     @available(anyAppleOS 26.0, *)
     func withDatagramReaderVendsNilWhenNotAvailable() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -214,25 +214,24 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(nil))
         source.finish()
 
-        let reader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
+        var requestBodyReader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
 
+        let datagramReader = requestBodyReader.takeDatagramReader()
         var collected: [UInt8] = []
-        try await reader.withDatagramReader { requestBodyReader, datagramReader in
-            if case .some = datagramReader {
-                Issue.record("Unexpectedly received a datagram reader.")
-            }
 
-            // The request body reader should still be usable.
-            var requestBodyReader = requestBodyReader
-            try await requestBodyReader.read { buffer, _ in
-                for index in buffer.indices { collected.append(buffer[index]) }
-            }
+        if case .some = datagramReader {
+            Issue.record("Unexpectedly received a datagram reader.")
+        }
+
+        // The request body reader should still be usable.
+        try await requestBodyReader.read { buffer, _ in
+            for index in buffer.indices { collected.append(buffer[index]) }
         }
 
         #expect(collected == [1, 2, 3])
     }
 
-    @Test("withDatagramReader vends a request body and datagram reader")
+    @Test("takeDatagramReader vends a request body and datagram reader")
     @available(anyAppleOS 26.0, *)
     func withDatagramReaderVendsRequestAndDatagramReader() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -240,29 +239,28 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(nil))
         source.finish()
 
-        let reader = NIOHTTPServer.Reader(
+        var requestBodyReader = NIOHTTPServer.Reader(
             readerState: .init(iterator: stream.makeAsyncIterator()),
-            datagramReader: Disconnected(value: NIOHTTPServer.DatagramReader())
+            datagramReader: NIOHTTPServer.DatagramReader()
         )
 
+        let datagramReader = requestBodyReader.takeDatagramReader()
         var collected: [UInt8] = []
-        try await reader.withDatagramReader { requestBodyReader, datagramReader in
-            var requestBodyReader = requestBodyReader
-            try await requestBodyReader.read { buffer, _ in
-                for index in buffer.indices { collected.append(buffer[index]) }
-            }
 
-            guard var datagramReader = datagramReader else {
-                Issue.record("Expected a datagram reader but received `nil`.")
-                return
-            }
-
-            // TODO: The underlying unreliable datagrams transport is not yet implemented.
-            let error = try await #require(throws: EitherError<Error, Never>.self) {
-                try await datagramReader.read { _, _ in }
-            }
-            try #require(throws: DatagramsError.notImplemented) { try error.unwrap() }
+        try await requestBodyReader.read { buffer, _ in
+            for index in buffer.indices { collected.append(buffer[index]) }
         }
+
+        guard var datagramReader = datagramReader else {
+            Issue.record("Expected a datagram reader but received `nil`.")
+            return
+        }
+
+        // TODO: The underlying unreliable datagrams transport is not yet implemented.
+        let error = try await #require(throws: EitherError<Error, Never>.self) {
+            try await datagramReader.read { _, _ in }
+        }
+        try #require(throws: DatagramsError.notImplemented) { try error.unwrap() }
 
         #expect(collected == [1, 2, 3])
     }
