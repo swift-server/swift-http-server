@@ -168,8 +168,6 @@ extension NIOHTTPServer.ResponseSender {
         #if HTTP3 && UnstableHTTPDatagrams
         /// Returns the unreliable datagram writer for this stream, if there is one.
         ///
-        /// - Returns: The unreliable datagram writer for this stream if one is available.
-        ///
         /// - Important: A writer will be returned only the first time this function is invoked.
         /// Any successive calls will yield `nil`.
         public mutating func takeDatagramWriter() -> sending NIOHTTPServer.DatagramWriter? {

@@ -66,25 +66,6 @@ extension NIOHTTPServer {
             self.peerCertificateChainFuture = peerCertificateChainFuture
         }
 
-        #if HTTP3 && UnstableHTTPDatagrams
-        /// Whether this connection supports unreliable datagrams.
-        public var supportsUnreliableDatagrams: Bool {
-            switch self.httpVersion {
-            #if HTTP3
-            case .http3:
-                // TODO: Until `swift-nio-http3` exposes a mechanism for retrieving the unreliable datagram reader and
-                // writer, we return `false` here. Additionally, note that even over HTTP/3, it is not always guaranteed
-                // that the unreliable datagram reader/writer is available; the support must be negotiated with the peer
-                // through the `SETTINGS_H3_DATAGRAM` setting.
-                false
-            #endif
-
-            case .plaintextHTTP1_1, .http1_1, .http2:
-                false
-            }
-        }
-        #endif
-
         /// The peer's validated certificate chain. Returns `nil` if a custom
         /// verification callback was not set when configuring mTLS in the
         /// server configuration, or if the custom verification callback did not

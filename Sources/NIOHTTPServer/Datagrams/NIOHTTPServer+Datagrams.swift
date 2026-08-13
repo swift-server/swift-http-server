@@ -73,21 +73,4 @@ extension NIOHTTPServer.DatagramReader: Sendable {}
 @available(*, unavailable)
 extension NIOHTTPServer.DatagramWriter: Sendable {}
 
-@available(anyAppleOS 26.0, *)
-extension NIOHTTPServer {
-    struct StreamFinish: ~Copyable {
-        let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
-        let state: NIOHTTPServer.ResponseSender.WriterState
-
-        consuming func finish() async throws {
-            // Check if `finish` has not already been fired.
-            let shouldClose = self.state.wrapped.withLock { !$0.finishedWriting }
-            guard shouldClose else { return }
-
-            try await self.writer.write(.end(nil))
-            self.state.wrapped.withLock { $0.finishedWriting = true }
-        }
-    }
-}
-
 #endif  // HTTP3 && UnstableHTTPDatagrams

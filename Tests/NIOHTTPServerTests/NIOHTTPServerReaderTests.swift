@@ -208,7 +208,7 @@ struct NIOHTTPServerReaderTests {
     #if HTTP3 && UnstableHTTPDatagrams
     @Test("takeDatagramReader vends no datagram reader when not available")
     @available(anyAppleOS 26.0, *)
-    func withDatagramReaderVendsNilWhenNotAvailable() async throws {
+    func takeDatagramReaderVendsNilWhenNotAvailable() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
         source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
         source.yield(.end(nil))
@@ -233,7 +233,7 @@ struct NIOHTTPServerReaderTests {
 
     @Test("takeDatagramReader vends a request body and datagram reader")
     @available(anyAppleOS 26.0, *)
-    func withDatagramReaderVendsRequestAndDatagramReader() async throws {
+    func takeDatagramReaderVendsRequestAndDatagramReader() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
         source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
         source.yield(.end(nil))

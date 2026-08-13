@@ -144,8 +144,6 @@ extension NIOHTTPServer.Reader: Sendable {}
 extension NIOHTTPServer.Reader {
     /// Returns the unreliable datagram reader for this stream, if there is one.
     ///
-    /// - Returns: The unreliable datagram reader for this stream if one is available.
-    ///
     /// - Important: A reader will be returned only the first time this function is invoked. Any successive calls will yield `nil`.
     public mutating func takeDatagramReader() -> sending NIOHTTPServer.DatagramReader? {
         self.datagramReader?.swap(newValue: nil)

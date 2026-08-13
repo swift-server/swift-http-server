@@ -85,7 +85,7 @@ struct NIOHTTPServerWriterTests {
     #if HTTP3 && UnstableHTTPDatagrams
     @Test("takeDatagramWriter vends no datagram writer when not available")
     @available(anyAppleOS 26.0, *)
-    func withDatagramWriterVendsNilWhenNotAvailable() async throws {
+    func takeDatagramWriterVendsNilWhenNotAvailable() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
@@ -116,7 +116,7 @@ struct NIOHTTPServerWriterTests {
 
     @Test("takeDatagramWriter vends a response body and datagram writer")
     @available(anyAppleOS 26.0, *)
-    func withDatagramWriterVendsResponseAndDatagramWriter() async throws {
+    func takeDatagramWriterVendsResponseAndDatagramWriter() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
