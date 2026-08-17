@@ -71,11 +71,68 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
 
     /// `true` if we've committed to closing the connection after this response's
     /// `.end` is written. Set when the buffer is flushed while request `.end` has
-    /// not yet arrived (so we add `Connection: close`). Cleared when a new request
+    /// not yet arrived, and when a request is aborted (so a still-buffered head
+    /// picks up `Connection: close` on its way out). Cleared when a new request
     /// begins.
     private var closeAfterResponseEnd: Bool = false
 
     private var finalResponseState: FinalResponseState = .notStarted
+
+    /// Asks the handler to abandon the current response and close the connection.
+    ///
+    /// Fired as a user outbound event by the server when a request handler throws. HTTP/1.1 has no per-stream reset, so
+    /// aborting means closing the connection — and how much of the response can still be salvaged depends on how far it
+    /// has progressed, which only this handler knows.
+    struct RequestAborted: Sendable {
+        /// The response to send when the handler had not started a response yet.
+        ///
+        /// It is amended with `Connection: close` before being written. If a response has already been written this is
+        /// ignored.
+        var responseIfNotStarted: HTTPResponse
+    }
+
+    func triggerUserOutboundEvent(context: ChannelHandlerContext, event: Any, promise: EventLoopPromise<Void>?) {
+        guard let abort = event as? RequestAborted else {
+            context.triggerUserOutboundEvent(event, promise: promise)
+            return
+        }
+
+        self.abortResponse(context: context, responseIfNotStarted: abort.responseIfNotStarted)
+        promise?.succeed()
+    }
+
+    /// Abandons the in-flight response and closes the connection.
+    private func abortResponse(context: ChannelHandlerContext, responseIfNotStarted: HTTPResponse) {
+        switch self.finalResponseState {
+        case .notStarted:
+            // Nothing has been written for this request, so a complete response can still be sent.
+            var response = responseIfNotStarted
+            response.headerFields[.connection] = "close"
+            self.closeAfterResponseEnd = true
+            self.finalResponseState = .streaming
+
+            context.write(self.wrapOutboundOut(.head(response)), promise: nil)
+            context.write(self.wrapOutboundOut(.end(nil)), promise: nil)
+
+        case .buffering:
+            // The head has not reached the wire yet, so it can still be amended with `Connection: close`.
+            //
+            // No response `.end` is synthesized: the handler abandoned this response, and for a chunked body `.end`
+            // writes the terminating chunk, which would tell the client the truncated response was complete. Leaving it
+            // out means the client sees an incomplete message, which is the signal we want. For a `Content-Length` body
+            // `.end` writes no bytes at all, so omitting it changes nothing.
+            self.closeAfterResponseEnd = true
+            self.flushBuffer(context: context)
+
+        case .streaming:
+            // The head is already on the wire and cannot be recalled. The response is abandoned, so the client observes
+            // it as truncated — again without a fabricated `.end`.
+            ()
+        }
+
+        context.flush()
+        context.close(mode: .output, promise: nil)
+    }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let part = self.unwrapInboundIn(data)
@@ -154,12 +211,13 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     }
 
     /// Releases buffered response parts to the pipeline. If request `.end` has not
-    /// yet arrived, amend the head with `Connection: close` and arrange to close
-    /// the connection once response `.end` is written.
+    /// yet arrived, or we have already committed to closing, amend the head with
+    /// `Connection: close` and arrange to close the connection once response `.end`
+    /// is written.
     private func flushBuffer(context: ChannelHandlerContext) {
         guard case .buffering(var head, let additional) = self.finalResponseState else { return }
 
-        if !self.requestEndReceived {
+        if self.closeAfterResponseEnd || !self.requestEndReceived {
             // Amend the head with `Connection: close` before flushing.
             if case .head(var response) = head.part {
                 response.headerFields[.connection] = "close"

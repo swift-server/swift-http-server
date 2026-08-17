@@ -107,7 +107,11 @@ extension NIOHTTPServer {
                     let connection = Connection(
                         server: self,
                         context: context,
-                        httpProtocol: .http1_1(inbound: inbound, outbound: outbound)
+                        httpProtocol: .http1_1(
+                            channel: requestChannel.channel,
+                            inbound: inbound,
+                            outbound: outbound
+                        )
                     )
                     do {
                         try await connectionHandler.handleConnection(connection: connection, context: context)
@@ -379,19 +383,22 @@ extension NIOHTTPServer {
                     return
                 }
 
-                _ = try await self.invokeHandler(
+                // Built per request, as on HTTP/1.1. A stream carries exactly one request, so this runs once.
+                let requestContext = RequestContext(connectionContext: context, channel: channel.channel)
+
+                _ = await self.invokeHandler(
                     request: httpRequest,
                     iterator: iterator,
                     outbound: outbound,
-                    handler: handler,
-                    context: context
+                    requestContext: requestContext,
+                    handler: handler
                 )
 
-                // TODO: handle other state scenarios.
-                // For example, if we didn't finish reading but we wrote back a response, we
-                // should send a RST_STREAM with NO_ERROR set. If we finished reading but we
-                // didn't write back a response, then RST_STREAM is also likely appropriate but
-                // unclear about the error.
+                // TODO: handle the remaining state scenarios for a handler that returned without throwing. For
+                // example, if we didn't finish reading but we wrote back a response, we should send a RST_STREAM with
+                // NO_ERROR set. If we finished reading but we didn't write back a response, then RST_STREAM is also
+                // likely appropriate but unclear about the error. (A handler that throws already resets the stream;
+                // see `invokeHandler`.)
 
                 // Finish the outbound and wait on the close future to make sure all pending
                 // writes are actually written.

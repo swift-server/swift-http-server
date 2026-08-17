@@ -82,6 +82,18 @@ struct TestClientConnection {
         }
     }
 
+    /// Asserts the connection is HTTP/2, then opens a stream exposing raw `HTTP2Frame.FramePayload`s so a test can
+    /// observe frames the HTTP client codec would drop (such as `RST_STREAM`).
+    func makeRawHTTP2RequestStream(
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws -> NIOAsyncChannel<HTTP2Frame.FramePayload, HTTP2Frame.FramePayload> {
+        guard case .http2(_, let streamMultiplexer) = self.connectionProtocol else {
+            Issue.record("Expected an HTTP/2 connection.", sourceLocation: sourceLocation)
+            throw TestError.invalidClientConfiguration
+        }
+        return try await streamMultiplexer.makeRawRequestStream()
+    }
+
     /// Closes the underlying connection.
     func close() async throws {
         switch self.connectionProtocol {
@@ -228,6 +240,23 @@ extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {
             channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(HTTP2FramePayloadToHTTPClientCodec())
                 return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                    wrappingChannelSynchronously: channel,
+                    configuration: .init(isOutboundHalfClosureEnabled: true)
+                )
+            }
+        }
+    }
+
+    /// Opens a stream without the `HTTP2FramePayloadToHTTPClientCodec`, exposing raw `HTTP2Frame.FramePayload`s.
+    ///
+    /// Unlike ``makeRequestStream()``, this lets a test observe frames the codec would otherwise drop, such as
+    /// `RST_STREAM`.
+    func makeRawRequestStream() async throws -> NIOAsyncChannel<
+        HTTP2Frame.FramePayload, HTTP2Frame.FramePayload
+    > {
+        try await self.openStream { channel in
+            channel.eventLoop.makeCompletedFuture {
+                try NIOAsyncChannel<HTTP2Frame.FramePayload, HTTP2Frame.FramePayload>(
                     wrappingChannelSynchronously: channel,
                     configuration: .init(isOutboundHalfClosureEnabled: true)
                 )

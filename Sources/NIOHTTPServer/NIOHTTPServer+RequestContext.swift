@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 public import HTTPAPIs
+import NIOCore
 public import X509
 
 @available(anyAppleOS 26.0, *)
@@ -28,8 +29,15 @@ extension NIOHTTPServer {
     public struct RequestContext: HTTPServerCapability.RequestContext, Sendable {
         let connectionContext: ConnectionContext
 
-        init(connectionContext: ConnectionContext) {
+        /// The channel carrying this request.
+        ///
+        /// For HTTP/1.1, which has no per-request stream, this is the connection channel; for HTTP/2 and HTTP/3 it is
+        /// the request's own stream channel. Used to abort the exchange when the request handler throws.
+        let channel: any Channel
+
+        init(connectionContext: ConnectionContext, channel: any Channel) {
             self.connectionContext = connectionContext
+            self.channel = channel
         }
     }
 }

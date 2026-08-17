@@ -60,6 +60,9 @@ import X509
 ///     )
 /// }
 /// ```
+///
+/// A request handler reports failure by throwing, which aborts that request's exchange on the wire rather than
+/// propagating an error to the caller. See ``serve(handler:)`` and ``NIOHTTPServerHTTP2StreamResetError``.
 @available(anyAppleOS 26.0, *)
 public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
@@ -104,6 +107,25 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// - Parameter handler: A ``HTTPServerRequestHandler`` implementation that processes incoming HTTP
     ///   requests. The handler receives each request along with a body reader and response sender function.
+    ///
+    /// ## Failing a request
+    ///
+    /// A handler reports a failure by throwing from its `handle(request:requestContext:reader:responseSender:)` method.
+    /// The thrown error is never surfaced back to the caller of this method: it aborts the exchange that carries the request:
+    ///
+    /// - Over HTTP/1.1 there is no stream to reset, so the connection is closed. If the handler had not yet sent a
+    ///   response head, the server sends `500 Internal Server Error` carrying `Connection: close` first; if a response
+    ///   was already in flight it is abandoned, and the client observes a truncated response.
+    /// - Over HTTP/2, the stream is reset with a `RST_STREAM` frame.
+    /// - Over HTTP/3, the stream is reset with a QUIC `RESET_STREAM` frame, and a `STOP_SENDING` frame asks the client
+    ///   to stop sending the request body.
+    ///
+    /// Conform the thrown error to ``NIOHTTPServerHTTP2StreamResetError`` or ``NIOHTTPServerHTTP3StreamResetError`` to
+    /// choose the protocol error codes that are sent. An error that describes neither resets the stream with the
+    /// internal error code of the protocol in use.
+    ///
+    /// Throwing after the response has been concluded aborts nothing: a complete response is never retracted, so the
+    /// only consequence is that the connection is not reused.
     ///
     /// ## Example
     ///
@@ -330,9 +352,9 @@ public struct NIOHTTPServer: HTTPServer {
         request: HTTPRequest,
         iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        handler: Handler,
-        context: ConnectionContext
-    ) async throws -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+        requestContext: RequestContext,
+        handler: Handler
+    ) async -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
     where
         Handler.RequestContext == RequestContext,
         Handler.Reader == Reader,
@@ -354,19 +376,32 @@ public struct NIOHTTPServer: HTTPServer {
         do {
             try await handler.handle(
                 request: request,
-                requestContext: RequestContext(connectionContext: context),
+                requestContext: requestContext,
                 reader: requestReader,
                 responseSender: responseSender
             )
         } catch {
-            logger.error("Error thrown while handling request: \(error)")
-            if !readerState.wrapped.withLock({ $0.finishedReading }) {
-                logger.error("Did not finish reading but error thrown.")
-            }
+            // A throwing handler signals that the exchange failed. The error is deliberately not propagated to any
+            // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can choose
+            // by conforming to `NIOHTTPServerHTTP2StreamResetError` / `NIOHTTPServerHTTP3StreamResetError`.
+            self.logger.error(
+                "Error thrown while handling request: aborting.",
+                metadata: [
+                    "error": "\(error)",
+                    "protocol": "\(requestContext.connectionContext.httpVersion)",
+                ]
+            )
+
+            // Only abort a response that is still in flight. A response the handler already concluded has nothing left
+            // to abort, and resetting the stream afterwards can make the peer discard a response it has already
+            // received in full: RFC 9000 § 3.1 permits `RESET_STREAM` from the "Data Sent" state, so over HTTP/3 the
+            // reset does reach the client rather than being dropped as it is over HTTP/2.
             if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-                logger.error("Did not write response but error thrown.")
+                Self.abortRequest(requestContext: requestContext, error: error)
             }
-            throw error
+
+            // The handler failed, so this connection cannot carry another request.
+            return nil
         }
 
         // If the handler didn't properly conclude the response, the HTTP codec

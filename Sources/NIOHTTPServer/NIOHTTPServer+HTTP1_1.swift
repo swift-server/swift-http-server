@@ -88,7 +88,11 @@ extension NIOHTTPServer {
                 let connection = Connection(
                     server: self,
                     context: context,
-                    httpProtocol: .http1_1(inbound: inbound, outbound: outbound)
+                    httpProtocol: .http1_1(
+                        channel: requestChannel.channel,
+                        inbound: inbound,
+                        outbound: outbound
+                    )
                 )
                 do {
                     try await connectionHandler.handleConnection(connection: connection, context: context)
@@ -195,6 +199,7 @@ extension NIOHTTPServer {
     /// peer closes the connection, the task is cancelled, or an error
     /// occurs.
     func handleHTTP1RequestLoop<Handler: HTTPServerRequestHandler>(
+        channel: any Channel,
         inbound: NIOAsyncChannelInboundStream<HTTPRequestPart>,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
         handler: Handler,
@@ -213,13 +218,15 @@ extension NIOHTTPServer {
                     break requestLoop
                 }
 
+                let requestContext = RequestContext(connectionContext: context, channel: channel)
+
                 guard
-                    let recoveredIterator = try await self.invokeHandler(
+                    let recoveredIterator = await self.invokeHandler(
                         request: httpRequest,
                         iterator: iterator,
                         outbound: outbound,
-                        handler: handler,
-                        context: context
+                        requestContext: requestContext,
+                        handler: handler
                     )
                 else {
                     // Handler did not fully consume the request; cannot continue on this
