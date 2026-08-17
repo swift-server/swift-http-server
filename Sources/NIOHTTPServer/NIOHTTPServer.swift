@@ -45,7 +45,6 @@ import X509
 ///
 /// ```swift
 /// let server = NIOHTTPServer(
-///     logger: logger,
 ///     configuration: try .init(
 ///         bindTarget: .hostAndPort(host: "localhost", port: 8080),
 ///         supportedHTTPVersions: [.http1_1],
@@ -80,7 +79,7 @@ public struct NIOHTTPServer: HTTPServer {
     ///   - logger: A logger instance for recording server events and debugging information.
     ///   - configuration: The server configuration including bind target and TLS settings.
     public init(
-        logger: Logger,
+        logger: Logger = .current,
         configuration: NIOHTTPServerConfiguration,
     ) {
         self.logger = logger
