@@ -86,7 +86,10 @@ extension NIOHTTPServer {
         do {
             negotiatedChannel = try await upgradeResult.get()
         } catch {
-            self.logger.debug("Negotiating ALPN failed", metadata: ["error": "\(error)"])
+            self.logger.debug(
+                "Negotiating ALPN failed",
+                error: error
+            )
             return
         }
 
@@ -118,14 +121,14 @@ extension NIOHTTPServer {
                     } catch {
                         self.logger.debug(
                             "Error thrown by connection handler",
-                            metadata: ["error": "\(error)"]
+                            error: error
                         )
                     }
                 }
             } catch {
                 self.logger.debug(
                     "Error handling HTTP/1.1 connection",
-                    metadata: ["error": "\(error)"]
+                    error: error
                 )
             }
 
@@ -147,7 +150,7 @@ extension NIOHTTPServer {
             } catch {
                 self.logger.debug(
                     "Error thrown by connection handler",
-                    metadata: ["error": "\(error)"]
+                    error: error
                 )
             }
         }
@@ -193,9 +196,9 @@ extension NIOHTTPServer {
                     }
                 }
             } catch {
-                self.logger.error(
+                self.logger.debug(
                     "Error thrown while iterating over incoming HTTP/2 streams",
-                    metadata: ["error": "\(error)"]
+                    error: error
                 )
             }
 
@@ -208,9 +211,9 @@ extension NIOHTTPServer {
             } catch ChannelError.alreadyClosed {
                 ()
             } catch {
-                self.logger.error(
+                self.logger.debug(
                     "Error thrown while closing the HTTP/2 connection channel",
-                    metadata: ["error": "\(error)"]
+                    error: error
                 )
             }
         }
@@ -408,7 +411,8 @@ extension NIOHTTPServer {
         } catch {
             self.logger.debug(
                 "Error thrown while handling stream",
-                metadata: ["error": "\(error)", "protocol": "\(context.httpVersion)"]
+                error: error,
+                metadata: [LoggingKeys.protocol: "\(context.httpVersion)"]
             )
             try? await channel.channel.close()
         }
@@ -442,11 +446,9 @@ extension NIOHTTPServer {
                             return .certificateVerified(.init(.init(nioSSLCerts)))
 
                         case .failed(let error):
-                            self.logger.error(
+                            self.logger.debug(
                                 "Custom certificate verification failed",
-                                metadata: [
-                                    "failure-reason": .string(error.reason)
-                                ]
+                                metadata: [LoggingKeys.failureReason: .string(error.reason)]
                             )
                             return .failed
                         }

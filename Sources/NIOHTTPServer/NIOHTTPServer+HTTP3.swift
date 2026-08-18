@@ -72,7 +72,10 @@ extension NIOHTTPServer {
         do {
             try await handler.handleConnection(connection: connection, context: context)
         } catch {
-            self.logger.debug("Error thrown by connection handler", metadata: ["error": "\(error)"])
+            self.logger.debug(
+                "Error thrown by connection handler",
+                error: error
+            )
         }
     }
 

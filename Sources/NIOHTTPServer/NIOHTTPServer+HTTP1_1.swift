@@ -99,14 +99,14 @@ extension NIOHTTPServer {
                 } catch {
                     self.logger.debug(
                         "Error thrown by connection handler",
-                        metadata: ["error": "\(error)"]
+                        error: error
                     )
                 }
             }
         } catch {
             self.logger.debug(
                 "Error tearing down HTTP/1.1 channel",
-                metadata: ["error": "\(error)"]
+                error: error
             )
         }
     }
@@ -237,7 +237,10 @@ extension NIOHTTPServer {
                 iterator = recoveredIterator
             }
         } catch {
-            self.logger.debug("Error thrown while handling HTTP/1.1 connection", metadata: ["error": "\(error)"])
+            self.logger.debug(
+                "Error thrown while handling HTTP/1.1 connection",
+                error: error
+            )
         }
     }
 }

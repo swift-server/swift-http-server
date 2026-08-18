@@ -384,11 +384,11 @@ public struct NIOHTTPServer: HTTPServer {
             // A throwing handler signals that the exchange failed. The error is deliberately not propagated to any
             // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can choose
             // by conforming to `NIOHTTPServerHTTP2StreamResetError` / `NIOHTTPServerHTTP3StreamResetError`.
-            self.logger.error(
+            self.logger.debug(
                 "Error thrown while handling request: aborting.",
+                error: error,
                 metadata: [
-                    "error": "\(error)",
-                    "protocol": "\(requestContext.connectionContext.httpVersion)",
+                    LoggingKeys.protocol: "\(requestContext.connectionContext.httpVersion)",
                 ]
             )
 
