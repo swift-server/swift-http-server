@@ -78,8 +78,8 @@ extension NIOHTTPServer {
         ///
         /// A handler reports a failure by throwing. The error is not propagated out of this method: it aborts the
         /// exchange carrying that request on the wire, closing the connection over HTTP/1.1, or resetting the stream
-        /// over HTTP/2 and HTTP/3. Conform the error to ``NIOHTTPServerHTTP2StreamResetError`` and
-        /// ``NIOHTTPServerHTTP3StreamResetError`` as appropriate to choose the protocol error codes; see
+        /// over HTTP/2 and HTTP/3. Conform the error to ``HTTPServerHTTP2StreamResetErrorConvertible`` and
+        /// ``HTTPServerHTTP3StreamResetErrorConvertible`` as appropriate to choose the protocol error codes; see
         /// ``NIOHTTPServer/serve(handler:)`` for the full description.
         public consuming func handleRequests<Handler: HTTPServerRequestHandler>(
             handler: Handler

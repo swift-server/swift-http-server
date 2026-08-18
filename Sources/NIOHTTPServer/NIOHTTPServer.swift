@@ -62,7 +62,7 @@ import X509
 /// ```
 ///
 /// A request handler reports failure by throwing, which aborts that request's exchange on the wire rather than
-/// propagating an error to the caller. See ``serve(handler:)`` and ``NIOHTTPServerHTTP2StreamResetError``.
+/// propagating an error to the caller. See ``serve(handler:)`` and ``HTTPServerHTTP2StreamResetErrorConvertible``.
 @available(anyAppleOS 26.0, *)
 public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
@@ -120,7 +120,7 @@ public struct NIOHTTPServer: HTTPServer {
     /// - Over HTTP/3, the stream is reset with a QUIC `RESET_STREAM` frame, and a `STOP_SENDING` frame asks the client
     ///   to stop sending the request body.
     ///
-    /// Conform the thrown error to ``NIOHTTPServerHTTP2StreamResetError`` or ``NIOHTTPServerHTTP3StreamResetError`` to
+    /// Conform the thrown error to ``HTTPServerHTTP2StreamResetErrorConvertible`` or ``HTTPServerHTTP3StreamResetErrorConvertible`` to
     /// choose the protocol error codes that are sent. An error that describes neither resets the stream with the
     /// internal error code of the protocol in use.
     ///
@@ -382,14 +382,13 @@ public struct NIOHTTPServer: HTTPServer {
             )
         } catch {
             // A throwing handler signals that the exchange failed. The error is deliberately not propagated to any
-            // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can choose
-            // by conforming to `NIOHTTPServerHTTP2StreamResetError` / `NIOHTTPServerHTTP3StreamResetError`.
+            // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can
+            // choose by conforming to `HTTPServerHTTP2StreamResetErrorConvertible` /
+            // `HTTPServerHTTP3StreamResetErrorConvertible`.
             self.logger.debug(
                 "Error thrown while handling request: aborting.",
                 error: error,
-                metadata: [
-                    LoggingKeys.protocol: "\(requestContext.connectionContext.httpVersion)",
-                ]
+                metadata: [LoggingKeys.protocol: "\(requestContext.connectionContext.httpVersion)"]
             )
 
             // Only abort a response that is still in flight. A response the handler already concluded has nothing left

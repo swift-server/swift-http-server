@@ -47,7 +47,8 @@ extension NIOHTTPServer {
         case .http2:
             // An error that does not describe its own code is reset with `INTERNAL_ERROR`.
             let resetCode =
-                (error as? any NIOHTTPServerHTTP2StreamResetError)?.http2StreamResetCode ?? .internalError
+                (error as? any HTTPServerHTTP2StreamResetErrorConvertible)
+                .map { HTTP2ErrorCode(networkCode: Int($0.http2StreamResetCode)) } ?? .internalError
 
             // `HTTP2FramePayloadToHTTPServerCodec` translates this event into a `RST_STREAM` frame.
             channel.triggerUserOutboundEvent(
@@ -57,10 +58,9 @@ extension NIOHTTPServer {
 
         #if HTTP3
         case .http3:
-            // An error that does not describe its own codes is reset with `H3_INTERNAL_ERROR`.
-            let http3Error = error as? any NIOHTTPServerHTTP3StreamResetError
-            let resetCode = Self.quicErrorCode(http3Error?.http3StreamResetCode ?? .internalError)
-            let stopSendingCode = Self.quicErrorCode(http3Error?.http3StopSendingCode ?? .internalError)
+            let http3Error = error as? any HTTPServerHTTP3StreamResetErrorConvertible
+            let resetCode = Self.quicErrorCode(http3Error?.http3StreamResetCode)
+            let stopSendingCode = Self.quicErrorCode(http3Error?.http3StopSendingCode)
 
             // `RESET_STREAM` abandons the response direction and `STOP_SENDING` asks the client to
             // stop sending the request body.
@@ -71,11 +71,14 @@ extension NIOHTTPServer {
     }
 
     #if HTTP3
-    /// Converts an HTTP/3 error code into a QUIC application error code, substituting `H3_INTERNAL_ERROR` when the raw
-    /// value cannot be represented as a QUIC variable-length integer.
-    private static func quicErrorCode(_ errorCode: HTTP3ErrorCode) -> QUICApplicationErrorCode {
+    /// Converts a raw HTTP/3 error code into a QUIC application error code.
+    ///
+    /// Substitutes `H3_INTERNAL_ERROR` when the error described no code, or described one that cannot be represented as
+    /// a QUIC variable-length integer.
+    private static func quicErrorCode(_ rawValue: UInt64?) -> QUICApplicationErrorCode {
         // The force unwrap is safe: `H3_INTERNAL_ERROR` (0x0102) is always representable as a QUIC varint.
-        QUICApplicationErrorCode(errorCode.rawValue) ?? QUICApplicationErrorCode(HTTP3ErrorCode.internalError.rawValue)!
+        rawValue.flatMap(QUICApplicationErrorCode.init)
+            ?? QUICApplicationErrorCode(HTTP3ErrorCode.internalError.rawValue)!
     }
     #endif
 }

@@ -129,6 +129,17 @@ let package = Package(
             swiftSettings: extraSettings
         ),
         .executableTarget(
+            name: "StreamResetExample",
+            dependencies: [
+                "ExampleSupport",
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+                .product(name: "NIOHTTP3", package: "swift-nio-http3", condition: .when(traits: ["HTTP3"])),
+                "NIOHTTPServer",
+            ],
+            swiftSettings: extraSettings
+        ),
+        .executableTarget(
             name: "ConnectionHandlerExample",
             dependencies: [
                 "ExampleSupport",

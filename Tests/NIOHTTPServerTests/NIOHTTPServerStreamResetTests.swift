@@ -32,14 +32,15 @@ enum StreamResetTestError: Error {
     case connectFailed
 }
 
-extension StreamResetTestError: NIOHTTPServerHTTP2StreamResetError {
-    var http2StreamResetCode: HTTP2ErrorCode { .connectError }
+extension StreamResetTestError: HTTPServerHTTP2StreamResetErrorConvertible {
+    // The protocol takes the raw on-the-wire value, so derive it from NIO's code type.
+    var http2StreamResetCode: UInt32 { UInt32(HTTP2ErrorCode.connectError.networkCode) }
 }
 
 #if HTTP3
-extension StreamResetTestError: NIOHTTPServerHTTP3StreamResetError {
-    var http3StreamResetCode: HTTP3ErrorCode { .connectError }
-    var http3StopSendingCode: HTTP3ErrorCode { .connectError }
+extension StreamResetTestError: HTTPServerHTTP3StreamResetErrorConvertible {
+    var http3StreamResetCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
+    var http3StopSendingCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
 }
 #endif
 
