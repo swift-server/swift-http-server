@@ -162,7 +162,8 @@ struct NIOHTTPServerStreamResetTests {
                 expectedHead: [
                     .init(
                         status: .internalServerError,
-                        headerFields: [.contentLength: "0", .connection: "close"])
+                        headerFields: [.contentLength: "0", .connection: "close"]
+                    )
                 ],
                 expectedBody: [],
                 expectStreamEnd: true
