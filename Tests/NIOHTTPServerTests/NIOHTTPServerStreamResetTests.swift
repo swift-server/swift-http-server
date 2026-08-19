@@ -157,38 +157,16 @@ struct NIOHTTPServerStreamResetTests {
             try await outbound.write(.testHead(method: .get, for: http1Variant))
             try await outbound.write(.end(nil))
 
-            var responseIterator = inbound.makeAsyncIterator()
-            let headPart = try await responseIterator.next()
-            guard case .head(let response) = headPart else {
-                Issue.record("Expected a response head, got \(String(describing: headPart))")
-                return
-            }
-
-            #expect(response.status == .internalServerError)
-            #expect(
-                response.headerFields[.connection] == "close",
-                "Expected Connection: close, got headers: \(response.headerFields)"
+            try await TestHelpers.validateResponse(
+                inbound,
+                expectedHead: [
+                    .init(
+                        status: .internalServerError,
+                        headerFields: [.contentLength: "0", .connection: "close"])
+                ],
+                expectedBody: [],
+                expectStreamEnd: true
             )
-
-            // Drain to `.end`, then confirm the connection is closed.
-            var sawEnd = false
-            while !sawEnd {
-                switch try await responseIterator.next() {
-                case .body:
-                    continue
-                case .end:
-                    sawEnd = true
-                case .head(let unexpected):
-                    Issue.record("Unexpected second response head: \(unexpected)")
-                    return
-                case .none:
-                    Issue.record("Stream ended before response .end")
-                    return
-                }
-            }
-
-            let afterEnd = try await responseIterator.next()
-            #expect(afterEnd == nil, "Expected the connection to be closed, got \(String(describing: afterEnd)).")
         }
     }
 
@@ -374,7 +352,7 @@ struct NIOHTTPServerStreamResetTests {
         )
 
         // The stream is reset rather than completed, so draining the response fails instead of ending cleanly.
-        await #expect(throws: (any Error).self) {
+        let httpError = try await #require(throws: HTTP3Error.self) {
             try await TestHelpers.withClientServerRequestChannel(
                 clientConfiguration: clientConfiguration,
                 server: server,
@@ -388,6 +366,9 @@ struct NIOHTTPServerStreamResetTests {
                 for try await _ in inbound {}
             }
         }
+
+        #expect(httpError.code == .remoteStreamError)
+        #expect(httpError.h3ErrorCode == .connectError)
     }
     @Test("HTTP/3: throwing after the response head still resets the stream")
     @available(anyAppleOS 26.0, *)
@@ -399,7 +380,7 @@ struct NIOHTTPServerStreamResetTests {
         )
 
         // The response is abandoned after its head, so draining it fails instead of ending cleanly.
-        await #expect(throws: (any Error).self) {
+        let httpError = try await #require(throws: HTTP3Error.self) {
             try await TestHelpers.withClientServerRequestChannel(
                 clientConfiguration: clientConfiguration,
                 server: server,
@@ -415,6 +396,9 @@ struct NIOHTTPServerStreamResetTests {
                 for try await _ in inbound {}
             }
         }
+
+        #expect(httpError.code == .remoteStreamError)
+        #expect(httpError.h3ErrorCode == .connectError)
     }
 
     #endif
@@ -446,35 +430,12 @@ struct NIOHTTPServerStreamResetTests {
             try await outbound.write(.testHead(method: .get, for: httpVersion))
             try await outbound.write(.end(nil))
 
-            var responseIterator = inbound.makeAsyncIterator()
-            let headPart = try await responseIterator.next()
-            guard case .head(let response) = headPart else {
-                Issue.record("Expected a response head, got \(String(describing: headPart))")
-                return
-            }
-            // The concluded response is delivered intact; the throw does not retract it.
-            #expect(response.status == .ok)
-
-            var sawEnd = false
-            while !sawEnd {
-                switch try await responseIterator.next() {
-                case .body:
-                    continue
-                case .end:
-                    sawEnd = true
-                case .head(let unexpected):
-                    Issue.record("Unexpected second response head: \(unexpected)")
-                    return
-                case .none:
-                    Issue.record("Stream ended before response .end")
-                    return
-                }
-            }
-
-            // Draining ends cleanly rather than failing: a post-conclusion reset would surface as an error here, and on
-            // HTTP/1.1 the connection is additionally not reused.
-            let afterEnd = try await responseIterator.next()
-            #expect(afterEnd == nil, "Expected the stream to end, got \(String(describing: afterEnd)).")
+            try await TestHelpers.validateResponse(
+                inbound,
+                expectedHead: [.init(status: .ok, headerFields: [.contentLength: "0"])],
+                expectedBody: [],
+                expectStreamEnd: true
+            )
         }
     }
 }

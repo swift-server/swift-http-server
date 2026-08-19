@@ -14,5 +14,4 @@
 
 enum LoggingKeys {
     static var `protocol`: String { "protocol" }
-    static var failureReason: String { "failure-reason" }
 }

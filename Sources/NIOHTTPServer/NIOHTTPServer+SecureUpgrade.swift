@@ -448,7 +448,7 @@ extension NIOHTTPServer {
                         case .failed(let error):
                             self.logger.debug(
                                 "Custom certificate verification failed",
-                                metadata: [LoggingKeys.failureReason: .string(error.reason)]
+                                error: error
                             )
                             return .failed
                         }

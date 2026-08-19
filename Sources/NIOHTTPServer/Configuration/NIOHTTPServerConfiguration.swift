@@ -459,13 +459,17 @@ public enum CertificateVerificationResult: Sendable, Hashable {
     }
 
     /// An error representing certificate verification failure.
-    public struct VerificationError: Swift.Error, Hashable {
+    public struct VerificationError: Swift.Error, Hashable, CustomStringConvertible {
         public let reason: String
 
         /// Creates a verification error with the reason why verification failed.
         /// - Parameter reason: The reason of why certificate verification failed.
         public init(reason: String) {
             self.reason = reason
+        }
+
+        public var description: String {
+            "Verification error: \(self.reason)"
         }
     }
 
