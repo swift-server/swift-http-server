@@ -51,12 +51,7 @@ extension NIOHTTPServer {
             )
 
             #if HTTP3
-            case http3(
-                connection: HTTP3ServerConnection<
-                    NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-                    NIOQUIC.QUICStreamCreator
-                >
-            )
+            case http3(connection: HTTP3ServerConnection<NIOHTTPServer.HTTP3Stream, NIOQUIC.QUICStreamCreator>)
             #endif
         }
 

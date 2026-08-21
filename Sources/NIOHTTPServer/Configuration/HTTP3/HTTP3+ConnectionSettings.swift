@@ -37,12 +37,31 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         ///   `SETTINGS_MAX_FIELD_SECTION_SIZE`.
         public var maximumFieldSectionSize: UInt64?
 
+        /// Whether the server should advertise support for receiving HTTP/3 datagrams.
+        ///
+        /// - SeeAlso: https://www.rfc-editor.org/rfc/rfc9297.html#section-2.1.1-1. Corresponds to
+        ///   `SETTINGS_H3_DATAGRAM`.
+        var http3Datagram: Bool
+
+        init(
+            qpackMaximumTableCapacity: UInt64,
+            qpackBlockedStreams: UInt64,
+            maximumFieldSectionSize: UInt64?
+        ) {
+            self.qpackMaximumTableCapacity = qpackMaximumTableCapacity
+            self.qpackBlockedStreams = qpackBlockedStreams
+            self.maximumFieldSectionSize = maximumFieldSectionSize
+            // Set `http3Datagram` to `true`. This will later be updated in the `NIOHTTPServerConfiguration.HTTP3`
+            // callsite to stay consistent with the QUIC configuration.
+            self.http3Datagram = true
+        }
+
         /// The default HTTP/3 connection settings configuration.
         ///
         /// Uses the following default values:
-        /// - `qpackMaximumTableCapacity`: 0.
-        /// - `qpackBlockedStreams`: 0.
-        /// - `maximumFieldSectionSize`: `nil` (no field section size limit).
+        /// - `qpackMaximumTableCapacity`: 0
+        /// - `qpackBlockedStreams`: 0
+        /// - `maximumFieldSectionSize`: `nil` (no field section size limit)
         public static var defaults: Self {
             Self(
                 qpackMaximumTableCapacity: 0,
@@ -59,7 +78,8 @@ extension HTTP3.HTTP3Settings {
         self.init(
             qpackMaximumTableCapacity: configuration.qpackMaximumTableCapacity,
             qpackBlockedStreams: configuration.qpackBlockedStreams,
-            maximumFieldSectionSize: configuration.maximumFieldSectionSize
+            maximumFieldSectionSize: configuration.maximumFieldSectionSize,
+            h3Datagram: configuration.http3Datagram
         )
     }
 }

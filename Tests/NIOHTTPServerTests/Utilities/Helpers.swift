@@ -473,6 +473,25 @@ extension TestHelpers {
 
         return (server, clientConfiguration)
     }
+
+    #if HTTP3 && UnstableHTTPDatagrams
+    /// Reads the next datagram from `reader`, returning its bytes, or `nil` if the datagram stream has ended.
+    static func readDatagram(_ reader: inout NIOHTTPServer.DatagramReader) async throws -> [UInt8]? {
+        var bytes: [UInt8] = []
+        var hasEnded = false
+
+        try await reader.read { buffer, finalElement in
+            if case .some = finalElement {
+                hasEnded = true
+            }
+            for index in buffer.indices {
+                bytes.append(buffer[index])
+            }
+        }
+
+        return hasEnded ? nil : bytes
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
 }
 
 @available(anyAppleOS 26.0, *)

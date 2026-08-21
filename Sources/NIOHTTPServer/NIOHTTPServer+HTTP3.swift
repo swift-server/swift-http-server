@@ -27,11 +27,19 @@ import X509
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
+    /// An inbound HTTP/3 request stream.
+    struct HTTP3Stream: Sendable {
+        /// The stream channel.
+        var channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
+
+        #if UnstableHTTPDatagrams
+        /// The unreliable datagram stream. `nil` if HTTP datagram support was not negotiated.
+        var datagramStream: HTTP3UnreliableDatagramStream?
+        #endif
+    }
+
     func serveHTTP3<Handler: NIOHTTPServerConnectionHandler>(
-        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-            NIOQUIC.QUICStreamCreator
-        >,
+        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>,
         connectionHandler: Handler
     ) async {
         // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child task
@@ -50,10 +58,7 @@ extension NIOHTTPServer {
     /// Builds the per-connection ``Connection`` and ``ConnectionContext`` for a HTTP/3 connection channel and
     /// dispatches the connection to the connection handler. Errors from the connection handler are logged.
     func dispatchHTTP3Connection<Handler: NIOHTTPServerConnectionHandler>(
-        _ http3Connection: HTTP3ServerConnection<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-            NIOQUIC.QUICStreamCreator
-        >,
+        _ http3Connection: HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator>,
         handler: Handler
     ) async {
         let context = ConnectionContext(
@@ -84,10 +89,7 @@ extension NIOHTTPServer {
     ///
     /// - Note: Stream iteration errors are logged but do not propagate to the caller.
     func handleHTTP3Connection<Handler: HTTPServerRequestHandler>(
-        connection: HTTP3ServerConnection<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-            NIOQUIC.QUICStreamCreator
-        >,
+        connection: HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator>,
         handler: Handler,
         context: ConnectionContext
     ) async
@@ -97,9 +99,18 @@ extension NIOHTTPServer {
         Handler.ResponseSender == ResponseSender
     {
         await withDiscardingTaskGroup { streamGroup in
-            for await streamChannel in connection.inboundStreams {
+            for await stream in connection.inboundStreams {
                 streamGroup.addTask {
-                    await self.handleStreamChannel(channel: streamChannel, handler: handler, context: context)
+                    #if UnstableHTTPDatagrams
+                    await self.handleStreamChannel(
+                        channel: stream.channel,
+                        handler: handler,
+                        context: context,
+                        datagramStream: stream.datagramStream
+                    )
+                    #else
+                    await self.handleStreamChannel(channel: stream.channel, handler: handler, context: context)
+                    #endif
                 }
             }
         }
@@ -114,22 +125,12 @@ extension NIOHTTPServer {
         authenticator: NIOQUIC.Authenticator?
     ) async throws -> [(
         quicChannel: any Channel,
-        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-            NIOQUIC.QUICStreamCreator
-        >
+        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>
     )] {
         let bootstrap = DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 
-        var serverChannels = [
-            (
-                any Channel,
-                HTTP3ServerConnectionMultiplexer<
-                    NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, NIOQUIC.QUICStreamCreator
-                >
-            )
-        ]()
+        var serverChannels = [(any Channel, HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>)]()
         do {
             for bindTarget in bindTargets {
                 switch bindTarget.backing {
@@ -168,14 +169,9 @@ extension NIOHTTPServer {
         authenticator: NIOQUIC.Authenticator?
     ) throws -> (
         quicChannel: any Channel,
-        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, NIOQUIC.QUICStreamCreator
-        >
+        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>
     ) {
-        let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<
-            NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-            NIOQUIC.QUICStreamCreator
-        >()
+        let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>()
 
         let quicHandler = QUICHandler(
             channel: channel,
@@ -218,20 +214,44 @@ extension NIOHTTPServer {
         http3Configuration: NIOHTTPServerConfiguration.HTTP3,
         connectionChannel: any Channel,
         streamCreator: NIOQUIC.QUICStreamCreator,
-    ) throws -> HTTP3ServerConnection<
-        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        NIOQUIC.QUICStreamCreator
-    > {
+    ) throws -> HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
         let loopBoundHandler = NIOLoopBoundBox<HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>?>(
             nil,
             eventLoop: connectionChannel.eventLoop
         )
 
+        #if UnstableHTTPDatagrams
+        // TODO: If support for datagrams was not negotiated, we shouldn't create the datagram handler and demultiplexer.
+        let demultiplexer = NIOLoopBound(HTTP3DatagramDemultiplexer(), eventLoop: connectionChannel.eventLoop)
+        #endif
+
         let connection = HTTP3ServerConnection(connectionHandler: loopBoundHandler) { streamInitializerParameters in
             let streamChannel = streamInitializerParameters.channel
 
             return streamChannel.eventLoop.makeCompletedFuture {
-                try self.setupHTTP3Stream(streamChannel: streamChannel)
+                #if !UnstableHTTPDatagrams
+                return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
+                #else
+                guard let datagramConfiguration = http3Configuration.datagramConfiguration else {
+                    return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
+                }
+
+                let datagramStream = HTTP3UnreliableDatagramStream(
+                    streamID: streamInitializerParameters.streamID,
+                    connectionChannel: connectionChannel,
+                    maxBufferedDatagrams: datagramConfiguration.maxBufferedDatagrams
+                )
+                demultiplexer.value.register(datagramStream: datagramStream)
+
+                streamChannel.closeFuture.whenComplete { _ in
+                    demultiplexer.value.deregister(streamID: datagramStream.streamID)
+                    datagramStream.finish()
+                }
+                return HTTP3Stream(
+                    channel: try self.setupHTTP3Stream(streamChannel: streamChannel),
+                    datagramStream: datagramStream
+                )
+                #endif
             }
         }
 
@@ -261,6 +281,10 @@ extension NIOHTTPServer {
         )
         loopBoundHandler.value = http3Handler
         try connectionChannel.pipeline.syncOperations.addHandler(http3Handler)
+
+        #if UnstableHTTPDatagrams
+        try connectionChannel.pipeline.syncOperations.addHandlers([HTTP3DatagramHandler(), demultiplexer.value])
+        #endif
 
         return connection
     }

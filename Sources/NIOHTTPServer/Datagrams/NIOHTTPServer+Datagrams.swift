@@ -36,11 +36,38 @@ extension NIOHTTPServer {
         public typealias ReadFailure = any Error
         public typealias FinalElement = Void
 
+        /// The iterator over the inbound datagrams.
+        private var iterator: AsyncStream<ByteBuffer>.AsyncIterator
+
+        /// A reusable buffer handed to the body closure on each call to ``read(body:)``.
+        private var buffer: UniqueArray<UInt8>
+
+        init(iterator: AsyncStream<ByteBuffer>.AsyncIterator) {
+            self.iterator = iterator
+            self.buffer = UniqueArray<UInt8>()
+        }
+
         public mutating func read<Return: ~Copyable, Failure: Error>(
             body: (inout Buffer, consuming FinalElement?) async throws(Failure) -> Return
         ) async throws(EitherError<ReadFailure, Failure>) -> Return {
-            // TODO: The datagram transport is not yet implemented.
-            throw .first(DatagramsError.notImplemented)
+            let payload = await self.iterator.next(isolation: #isolation)
+
+            self.buffer.removeAll(keepingCapacity: true)
+            let finalElement: Void?
+            if let payload {
+                self.buffer.reserveCapacity(payload.readableBytes)
+                self.buffer.append(copying: payload.readableBytesUInt8Span)
+                finalElement = nil
+            } else {
+                // No more datagrams will be delivered on this stream.
+                finalElement = ()
+            }
+
+            do {
+                return try await body(&self.buffer, finalElement)
+            } catch {
+                throw .second(error)
+            }
         }
     }
 
@@ -50,19 +77,26 @@ extension NIOHTTPServer {
         public typealias WriteFailure = any Error
         public typealias FinalElement = Void
 
+        /// The unreliable datagram stream to write to.
+        private let unreliableStream: HTTP3UnreliableDatagramStream
+
+        init(unreliableStream: HTTP3UnreliableDatagramStream) {
+            self.unreliableStream = unreliableStream
+        }
+
         public mutating func write<Buffer: RangeReplaceableContainer<WriteElement> & ~Copyable>(
             buffer: inout Buffer
         ) async throws where Buffer.Element: ~Copyable {
-            // TODO: The datagram transport is not yet implemented.
-            throw DatagramsError.notImplemented
+            try await self.unreliableStream.write(ByteBuffer(draining: &buffer))
         }
 
         public consuming func finish<Buffer: RangeReplaceableContainer<WriteElement> & ~Copyable>(
             buffer: inout Buffer,
             finalElement: consuming Void
         ) async throws where Buffer.Element: ~Copyable {
-            // TODO: The datagram transport is not yet implemented.
-            throw DatagramsError.notImplemented
+            if !buffer.isEmpty {
+                try await self.unreliableStream.write(ByteBuffer(draining: &buffer))
+            }
         }
     }
 }

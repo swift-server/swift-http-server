@@ -239,9 +239,10 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(nil))
         source.finish()
 
+        let (datagrams, datagramSource) = AsyncStream<ByteBuffer>.makeStream()
         var requestBodyReader = NIOHTTPServer.Reader(
             readerState: .init(iterator: stream.makeAsyncIterator()),
-            datagramReader: NIOHTTPServer.DatagramReader()
+            datagramReader: NIOHTTPServer.DatagramReader(iterator: datagrams.makeAsyncIterator())
         )
 
         let datagramReader = requestBodyReader.takeDatagramReader()
@@ -256,13 +257,10 @@ struct NIOHTTPServerReaderTests {
             return
         }
 
-        // TODO: The underlying unreliable datagrams transport is not yet implemented.
-        let error = try await #require(throws: EitherError<Error, Never>.self) {
-            try await datagramReader.read { _, _ in }
-        }
-        try #require(throws: DatagramsError.notImplemented) { try error.unwrap() }
+        datagramSource.yield(ByteBuffer(bytes: [4, 5]))
 
         #expect(collected == [1, 2, 3])
+        #expect(try await TestHelpers.readDatagram(&datagramReader) == [4, 5])
     }
     #endif  // HTTP3 && UnstableHTTPDatagrams
 }

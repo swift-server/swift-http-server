@@ -117,24 +117,7 @@ extension NIOHTTPServer.ResponseSender {
         public mutating func write(
             buffer: inout some RangeReplaceableContainer<UInt8> & ~Copyable
         ) async throws(WriteFailure) {
-            var byteBuffer = ByteBuffer()
-            byteBuffer.reserveCapacity(buffer.count)
-
-            var consumer = buffer.consumeAll()
-            // `while !done { ... }` instead of `while true { ... break }` to
-            // dodge a SIL ownership-verifier crash on the nightly main
-            // toolchain (https://github.com/swiftlang/swift/issues/89639).
-            var done = false
-            while !done {
-                let span = consumer.drainNext()
-                if span.isEmpty {
-                    done = true
-                } else {
-                    byteBuffer.writeBytes(span.span.bytes)
-                }
-            }
-
-            try await self.writer.write(.body(byteBuffer))
+            try await self.writer.write(.body(ByteBuffer(draining: &buffer)))
         }
 
         public consuming func finish(
@@ -142,24 +125,7 @@ extension NIOHTTPServer.ResponseSender {
             finalElement: consuming HTTPFields?
         ) async throws(WriteFailure) {
             if !buffer.isEmpty {
-                var byteBuffer = ByteBuffer()
-                byteBuffer.reserveCapacity(buffer.count)
-
-                var consumer = buffer.consumeAll()
-                // `while !done { ... }` instead of `while true { ... break }` to
-                // dodge a SIL ownership-verifier crash on the nightly main
-                // toolchain (https://github.com/swiftlang/swift/issues/89639).
-                var done = false
-                while !done {
-                    let span = consumer.drainNext()
-                    if span.isEmpty {
-                        done = true
-                    } else {
-                        byteBuffer.writeBytes(span.span.bytes)
-                    }
-                }
-
-                try await self.writer.write(.body(byteBuffer))
+                try await self.writer.write(.body(ByteBuffer(draining: &buffer)))
             }
             try await self.writer.write(.end(finalElement))
             self.writerState.wrapped.withLock { $0.finishedWriting = true }
@@ -182,3 +148,26 @@ extension NIOHTTPServer.ResponseSender: Sendable {}
 
 @available(*, unavailable)
 extension NIOHTTPServer.ResponseSender.Writer: Sendable {}
+
+extension ByteBuffer {
+    /// Drains `buffer` into a newly allocated `ByteBuffer`.
+    init<Buffer: RangeReplaceableContainer<UInt8> & ~Copyable>(
+        draining buffer: inout Buffer
+    ) where Buffer.Element: ~Copyable {
+        self.init()
+        self.reserveCapacity(buffer.count)
+
+        var consumer = buffer.consumeAll()
+        // `while !done { ... }` instead of `while true { ... break }` to dodge a SIL ownership-verifier crash on the
+        // nightly main toolchain (https://github.com/swiftlang/swift/issues/89639).
+        var done = false
+        while !done {
+            let span = consumer.drainNext()
+            if span.isEmpty {
+                done = true
+            } else {
+                self.writeBytes(span.span.bytes)
+            }
+        }
+    }
+}

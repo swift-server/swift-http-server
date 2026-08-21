@@ -32,6 +32,50 @@ extension NIOHTTPServerConfiguration {
         /// HTTP/3 connection settings exchanged with the client during connection establishment.
         public var connectionSettings: ConnectionSettings = .defaults
 
+        #if UnstableHTTPDatagrams
+        /// The HTTP/3 datagram configuration. If set to `nil`, the server will not advertise support for receiving
+        /// HTTP/3 datagrams.
+        public var datagramConfiguration: DatagramConfiguration? = .defaults {
+            didSet {
+                self.updateDatagramConfiguration()
+            }
+        }
+        #endif  // UnstableHTTPDatagrams
+
+        private mutating func updateDatagramConfiguration() {
+            // Update `self.quicConfiguration` and `self.connectionSettings` when the value changes.
+            if let datagramConfig = self.datagramConfiguration {
+                self.quicConfiguration.maxDatagramFrameSize = datagramConfig.maxDatagramFrameSize
+                self.connectionSettings.http3Datagram = true
+            } else {
+                // Set `maxDatagramFrameSize` to 0 and `http3Datagram` to `false` so that the server doesn't
+                // advertise support for receiving datagrams.
+                self.quicConfiguration.maxDatagramFrameSize = 0
+                self.connectionSettings.http3Datagram = false
+            }
+        }
+
+        #if UnstableHTTPDatagrams
+        /// Creates an HTTP/3 configuration.
+        ///
+        /// - Parameters:
+        ///   - preferHuffmanEncoding: Whether Huffman encoding is used where applicable.
+        ///   - quicConfiguration: QUIC transport parameters.
+        ///   - connectionSettings: HTTP/3 connection-level settings exchanged with the client.
+        ///   - datagramConfiguration: The HTTP/3 datagram configuration. If set to `nil`, the server will not advertise
+        ///     support for receiving HTTP/3 datagrams.
+        public init(
+            preferHuffmanEncoding: Bool,
+            quicConfiguration: QUICConfiguration,
+            connectionSettings: ConnectionSettings,
+            datagramConfiguration: DatagramConfiguration? = .defaults
+        ) {
+            self.preferHuffmanEncoding = preferHuffmanEncoding
+            self.quicConfiguration = quicConfiguration
+            self.connectionSettings = connectionSettings
+            self.datagramConfiguration = datagramConfiguration
+        }
+        #else
         /// Creates an HTTP/3 configuration.
         ///
         /// - Parameters:
@@ -47,6 +91,7 @@ extension NIOHTTPServerConfiguration {
             self.quicConfiguration = quicConfiguration
             self.connectionSettings = connectionSettings
         }
+        #endif  // UnstableHTTPDatagrams
 
         /// The default HTTP/3 configuration.
         ///
@@ -54,12 +99,22 @@ extension NIOHTTPServerConfiguration {
         /// - `preferHuffmanEncoding`: `true`.
         /// - `quicConfiguration`: ``QUICConfiguration/defaults``.
         /// - `connectionSettings`: ``ConnectionSettings/defaults``.
+        /// - `datagramConfiguration`: ``DatagramConfiguration/defaults``.
         public static var defaults: Self {
+            #if UnstableHTTPDatagrams
             Self(
                 preferHuffmanEncoding: true,
                 quicConfiguration: .defaults,
                 connectionSettings: .defaults,
+                datagramConfiguration: .defaults
             )
+            #else
+            Self(
+                preferHuffmanEncoding: true,
+                quicConfiguration: .defaults,
+                connectionSettings: .defaults
+            )
+            #endif  // UnstableHTTPDatagrams
         }
 
         // The fallback connection RTT to use if there is an error obtaining the RTT estimate channel option.

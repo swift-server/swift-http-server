@@ -345,6 +345,71 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
+    #if HTTP3 && UnstableHTTPDatagrams
+    /// Invokes the request handler with the appropriate reader/writer state.
+    func invokeHandler<Handler: HTTPServerRequestHandler>(
+        request: HTTPRequest,
+        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        requestContext: RequestContext,
+        datagramStream: HTTP3UnreliableDatagramStream?,
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        let readerState = Reader.ReaderState(iterator: iterator)
+        let writerState = ResponseSender.WriterState()
+
+        let datagramReader: DatagramReader?
+        let datagramWriter: DatagramWriter?
+
+        if let datagramStream {
+            datagramReader = DatagramReader(iterator: datagramStream.inbound.makeAsyncIterator())
+            datagramWriter = DatagramWriter(unreliableStream: datagramStream)
+        } else {
+            datagramReader = nil
+            datagramWriter = nil
+        }
+
+        let requestReader = Reader(readerState: readerState, datagramReader: datagramReader)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: datagramWriter)
+
+        do {
+            try await handler.handle(
+                request: request,
+                requestContext: requestContext,
+                reader: requestReader,
+                responseSender: responseSender
+            )
+        } catch {
+            // A throwing handler signals that the exchange failed. The error is deliberately not propagated to any
+            // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can choose
+            // by conforming to `HTTPServerHTTP2StreamResetErrorConvertible` /
+            // `HTTPServerHTTP3StreamResetErrorConvertible`.
+            self.logger.debug(
+                "Error thrown while handling request: aborting.",
+                error: error,
+                metadata: [LoggingKeys.protocol: "\(requestContext.connectionContext.httpVersion)"]
+            )
+
+            // Only abort a response that is still in flight. A response the handler already concluded has nothing left
+            // to abort, and resetting the stream afterwards can make the peer discard a response it has already
+            // received in full: RFC 9000 § 3.1 permits `RESET_STREAM` from the "Data Sent" state, so over HTTP/3 the
+            // reset does reach the client rather than being dropped as it is over HTTP/2.
+            if !writerState.wrapped.withLock({ $0.finishedWriting }) {
+                Self.abortRequest(requestContext: requestContext, error: error)
+            }
+        }
+
+        if !writerState.wrapped.withLock({ $0.finishedWriting }) {
+            self.logger.debug("Handler did not conclude the response.")
+        }
+    }
+    #endif
+
     /// Shared core: invokes the request handler with the appropriate reader/writer state.
     /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
     /// or `nil` if the request could not be fully consumed.
@@ -363,15 +428,8 @@ public struct NIOHTTPServer: HTTPServer {
         let readerState = Reader.ReaderState(iterator: iterator)
         let writerState = ResponseSender.WriterState()
 
-        #if HTTP3 && UnstableHTTPDatagrams
-        // TODO: `swift-nio-http3` currently does not provide APIs for reading/writing bytes on the unreliable datagram
-        // stream. This is why we currently pass `nil` to the `datagramReader` and `datagramWriter` arguments.
-        let requestReader = Reader(readerState: readerState, datagramReader: nil)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: nil)
-        #else
         let requestReader = Reader(readerState: readerState)
         let responseSender = ResponseSender(writer: outbound, writerState: writerState)
-        #endif
 
         do {
             try await handler.handle(

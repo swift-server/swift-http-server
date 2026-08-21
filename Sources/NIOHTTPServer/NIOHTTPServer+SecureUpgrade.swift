@@ -366,6 +366,64 @@ extension NIOHTTPServer {
         }
     }
 
+    #if HTTP3 && UnstableHTTPDatagrams
+    /// Handles a stream channel.
+    ///
+    /// - Parameter datagramStream: The unreliable datagram stream if both the client and server agreed on
+    ///   sending/receiving unreliable datagrams.
+    func handleStreamChannel<Handler: HTTPServerRequestHandler>(
+        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        handler: Handler,
+        context: ConnectionContext,
+        datagramStream: HTTP3UnreliableDatagramStream?
+    ) async
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        do {
+            try await channel.executeThenClose { inbound, outbound in
+                var iterator = inbound.makeAsyncIterator()
+
+                guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                    outbound.finish()
+                    return
+                }
+
+                let requestContext = RequestContext(connectionContext: context, channel: channel.channel)
+
+                _ = await self.invokeHandler(
+                    request: httpRequest,
+                    iterator: iterator,
+                    outbound: outbound,
+                    requestContext: requestContext,
+                    datagramStream: datagramStream,
+                    handler: handler
+                )
+
+                // TODO: handle the remaining state scenarios for a handler that returned without throwing. For example,
+                // if we didn't finish reading but we wrote back a response, we should send a RST_STREAM with NO_ERROR
+                // set. If we finished reading but we didn't write back a response, then RST_STREAM is also likely
+                // appropriate but unclear about the error. (A handler that throws already resets the stream; see
+                // `invokeHandler`.)
+
+                // Finish the outbound and wait on the close future to make sure all pending writes are actually
+                // written.
+                outbound.finish()
+                try await channel.channel.closeFuture.get()
+            }
+        } catch {
+            self.logger.debug(
+                "Error thrown while handling stream",
+                error: error,
+                metadata: [LoggingKeys.protocol: "\(context.httpVersion)"]
+            )
+            try? await channel.channel.close()
+        }
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
+
     /// Handles a stream channel, which carries exactly one request per stream.
     func handleStreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,

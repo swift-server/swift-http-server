@@ -159,6 +159,43 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// debugging and analysis.
         public var qLogConfiguration: QLogConfiguration?
 
+        /// The maximum datagram frame size in bytes. If set to 0, the server will not advertise support for receiving
+        /// unreliable datagrams.
+        var maxDatagramFrameSize: Int
+
+        init(
+            serverName: String,
+            keyExchangeGroup: KeyExchangeGroup,
+            maxIdleTimeout: Duration,
+            initialMaxData: Int,
+            initialMaxStreamDataBidirectionalLocal: Int,
+            initialMaxStreamDataBidirectionalRemote: Int,
+            initialMaxStreamDataUnidirectional: Int,
+            initialMaxStreamsBidirectional: Int,
+            initialMaxStreamsUnidirectional: Int,
+            keepAliveInterval: Duration? = nil,
+            sendRetry: Bool,
+            keyLogPath: String? = nil,
+            qLogConfiguration: QLogConfiguration? = nil
+        ) {
+            self.serverName = serverName
+            self.keyExchangeGroup = keyExchangeGroup
+            self.maxIdleTimeout = maxIdleTimeout
+            self.initialMaxData = initialMaxData
+            self.initialMaxStreamDataBidirectionalLocal = initialMaxStreamDataBidirectionalLocal
+            self.initialMaxStreamDataBidirectionalRemote = initialMaxStreamDataBidirectionalRemote
+            self.initialMaxStreamDataUnidirectional = initialMaxStreamDataUnidirectional
+            self.initialMaxStreamsBidirectional = initialMaxStreamsBidirectional
+            self.initialMaxStreamsUnidirectional = initialMaxStreamsUnidirectional
+            self.keepAliveInterval = keepAliveInterval
+            self.sendRetry = sendRetry
+            self.keyLogPath = keyLogPath
+            self.qLogConfiguration = qLogConfiguration
+            // Set `maxDatagramFrameSize` to 65535. This will later be updated in the
+            // `NIOHTTPServerConfiguration.HTTP3` callsite to stay consistent with the HTTP/3 configuration.
+            self.maxDatagramFrameSize = 65535
+        }
+
         /// The default QUIC transport configuration.
         ///
         /// Uses the following default values:
@@ -275,7 +312,8 @@ extension NIOQUIC.QUICConfiguration {
             keepAliveInterval: config.keepAliveInterval,
             sendRetry: config.sendRetry,
             keyLogPath: config.keyLogPath,
-            qLogConfiguration: config.qLogConfiguration.map { .init($0) }
+            qLogConfiguration: config.qLogConfiguration.map { .init($0) },
+            maxDatagramFrameSize: config.maxDatagramFrameSize
         )
     }
 }

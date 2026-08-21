@@ -20,24 +20,36 @@ extension NIOHTTPServerConfiguration.HTTP3 {
     /// Initialize an HTTP/3 configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// HTTP/3 configuration contains three sub-scopes. All keys are optional and resolve to their default values if not
+    /// HTTP/3 configuration contains four sub-scopes. All keys are optional and resolve to their default values if not
     /// provided:
     /// - ``NIOHTTPServerConfiguration/HTTP3/defaults``
     /// - ``NIOHTTPServerConfiguration/HTTP3/ConnectionSettings/defaults``
     /// - ``NIOHTTPServerConfiguration/HTTP3/QUICConfiguration/defaults``.
+    /// - ``NIOHTTPServerConfiguration/HTTP3/DatagramConfiguration/defaults``.
     ///
     /// - **`"protocolConfiguration"`**: HTTP/3 protocol-level settings (see ``ProtocolConfiguration/init(config:)``).
     /// - **`"connectionSettings"`**: HTTP/3 connection settings exchanged with the client (see
     ///     ``ConnectionSettings/init(config:)``).
     /// - **`"quicConfiguration"`**: QUIC transport configuration (see ``QUICConfiguration/init(config:)``).
+    /// - **`"datagramConfiguration"`**: HTTP/3 datagram configuration (see ``DatagramConfiguration/init(config:)``).
+    ///   Note that the `UnstableHTTPDatagrams` trait must be enabled for this configuration to have any effect.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) throws {
+        #if UnstableHTTPDatagrams
+        self.init(
+            preferHuffmanEncoding: config.bool(forKey: "preferHuffmanEncoding", default: true),
+            quicConfiguration: try .init(config: config.scoped(to: "quicConfiguration")),
+            connectionSettings: .init(config: config.scoped(to: "connectionSettings")),
+            datagramConfiguration: .init(config: config.scoped(to: "datagramConfiguration"))
+        )
+        #else
         self.init(
             preferHuffmanEncoding: config.bool(forKey: "preferHuffmanEncoding", default: true),
             quicConfiguration: try .init(config: config.scoped(to: "quicConfiguration")),
             connectionSettings: .init(config: config.scoped(to: "connectionSettings"))
         )
+        #endif
     }
 }
 
@@ -198,4 +210,31 @@ extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
         )
     }
 }
+
+#if UnstableHTTPDatagrams
+@available(anyAppleOS 26.0, *)
+extension NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration {
+    /// Initialize HTTP/3 connection settings from a config reader.
+    ///
+    /// ## Configuration keys:
+    /// - `datagramsEnabled` (bool, optional, default: true): Whether the server should advertise support for receiving
+    ///    HTTP/3 datagrams.
+    /// - `maxDatagramFrameSize` (int, optional, default: 65535): The maximum datagram frame size in bytes.
+    /// - `maxBufferedDatagrams` (int, optional, default: 16): The maximum number of inbound HTTP/3 datagrams that will
+    ///   be buffered for each stream.
+    ///
+    /// - SeeAlso: ``NIOHTTPServerConfiguration/HTTP3/DatagramConfiguration``.
+    ///
+    /// - Parameter config: The configuration reader.
+    public init?(config: ConfigSnapshotReader) {
+        guard config.bool(forKey: "datagramsEnabled", default: true) else { return nil }
+
+        self.init(
+            maxDatagramFrameSize: config.int(forKey: "maxDatagramFrameSize", default: 65535),
+            maxBufferedDatagrams: config.int(forKey: "maxBufferedDatagrams", default: 16)
+        )
+    }
+}
+#endif  // UnstableHTTPDatagrams
+
 #endif  // HTTP3 && Configuration

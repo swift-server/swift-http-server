@@ -38,10 +38,7 @@ extension NIOHTTPServer {
         #if HTTP3
         case http3(
             quicChannel: any Channel,
-            connectionMultiplexer: HTTP3ServerConnectionMultiplexer<
-                NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-                QUICStreamCreator
-            >
+            connectionMultiplexer: HTTP3ServerConnectionMultiplexer<NIOHTTPServer.HTTP3Stream, QUICStreamCreator>
         )
         #endif
     }
