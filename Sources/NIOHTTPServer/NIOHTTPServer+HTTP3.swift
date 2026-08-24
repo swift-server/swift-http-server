@@ -146,6 +146,10 @@ extension NIOHTTPServer {
                     }
 
                     serverChannels.append((quicChannel, multiplexer))
+
+                case .unixDomainSocket(_):
+                    // Rejected during configuration validation; see NIOHTTPServerConfiguration.init.
+                    preconditionFailure("Unix domain sockets are not supported for HTTP/3")
                 }
             }
         } catch {

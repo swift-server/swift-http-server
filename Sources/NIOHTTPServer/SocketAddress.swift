@@ -55,6 +55,7 @@ extension NIOHTTPServer {
         enum Base: Hashable, Sendable {
             case ipv4(IPv4)
             case ipv6(IPv6)
+            case unixDomainSocket(path: String)
         }
 
         let base: Base
@@ -88,23 +89,38 @@ extension NIOHTTPServer {
         }
 
         /// The ``SocketAddress``'s host.
-        public var host: String {
+        public var host: String? {
             switch self.base {
             case .ipv4(let ipv4):
                 return ipv4.host
             case .ipv6(let ipv6):
                 return ipv6.host
+            case .unixDomainSocket(_):
+                return nil
             }
         }
 
         /// The ``SocketAddress``'s port.
-        public var port: Int {
+        public var port: Int? {
             switch self.base {
             case .ipv4(let ipv4):
                 return ipv4.port
-
             case .ipv6(let ipv6):
                 return ipv6.port
+            case .unixDomainSocket(_):
+                return nil
+            }
+        }
+
+        /// The ``SocketAddress``'s unix domain socket path.
+        public var unixDomainSocketPath: String? {
+            switch self.base {
+            case .ipv4(_):
+                return nil
+            case .ipv6(_):
+                return nil
+            case .unixDomainSocket(let path):
+                return path
             }
         }
     }

@@ -26,6 +26,7 @@ import NIOPosix
 import NIOSSL
 import NIOTLS
 import X509
+import System
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
@@ -224,17 +225,13 @@ extension NIOHTTPServer {
         http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
         sslContext: NIOSSLContext
     ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
-        let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
-            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-
         var serverChannels = [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)]()
         do {
             for bindTarget in bindTargets {
-                switch bindTarget.backing {
-                case .hostAndPort(let host, let port):
-                    let serverQuiescingHelper = ServerQuiescingHelper(group: self.eventLoopGroup)
-
-                    let serverChannel = try await bootstrap.serverChannelInitializer { channel in
+                let serverQuiescingHelper = ServerQuiescingHelper(group: self.eventLoopGroup)
+                let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
+                    .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
+                    .serverChannelInitializer { channel in
                         channel.eventLoop.makeCompletedFuture {
                             try channel.pipeline.syncOperations.addHandler(
                                 serverQuiescingHelper.makeServerChannelHandler(channel: channel)
@@ -246,15 +243,15 @@ extension NIOHTTPServer {
                                 )
                             }
                         }
-                    }.bind(host: host, port: port) { channel in
-                        self.setupSecureUpgradeConnectionChildChannel(
-                            channel: channel,
-                            http2Configuration: http2Configuration,
-                            sslContext: sslContext
-                        )
                     }
-                    serverChannels.append((serverChannel, serverQuiescingHelper))
+                let serverChannel = try await ServerBootstrap.bind(bootstrap, to: bindTarget) { channel in
+                    self.setupSecureUpgradeConnectionChildChannel(
+                        channel: channel,
+                        http2Configuration: http2Configuration,
+                        sslContext: sslContext
+                    )
                 }
+                serverChannels.append((serverChannel, serverQuiescingHelper))
             }
         } catch {
             // A later bind failed: close any channels we already bound to avoid leaking sockets.

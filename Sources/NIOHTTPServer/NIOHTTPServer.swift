@@ -30,6 +30,7 @@ import ServiceLifecycle
 import SwiftASN1
 import Synchronization
 import X509
+import System
 
 /// A generic HTTP server that can handle incoming HTTP requests.
 ///
@@ -185,6 +186,10 @@ public struct NIOHTTPServer: HTTPServer {
         defer { self.finishListeningAddressPromise() }
 
         let serverChannels = try await self.makeServerChannels()
+
+        // Remove the socket files for any UDS bind targets so their paths are freed for the next run.
+        // Registered only after all binds succeeded, so every path is one we created.
+        defer { await self.removeUNIXDomainSocketFiles() }
 
         return try await withTaskCancellationHandler {
             try await withGracefulShutdownHandler {
@@ -475,6 +480,23 @@ public struct NIOHTTPServer: HTTPServer {
             }
         }
     }
+
+    /// Removes the socket files backing any unix-domain-socket bind targets.
+    private func removeUNIXDomainSocketFiles() async {
+        let fileIO = NonBlockingFileIO(threadPool: .singleton)
+        for bindTarget in self.configuration.bindTargets {
+            guard case .unixDomainSocket(let path) = bindTarget.backing else { continue }
+            do {
+                try await fileIO.unlink(path: path.string)
+            } catch {
+                self.logger.debug(
+                    "Failed to remove unix domain socket file",
+                    metadata: ["path": "\(path)", "error": "\(error)"]
+                )
+            }
+        }
+    }
+
 }
 
 @available(anyAppleOS 26.0, *)

@@ -59,9 +59,18 @@ extension ClientBootstrap {
         at serverAddress: NIOHTTPServer.SocketAddress,
         tlsConfig: TLSConfiguration
     ) async throws -> TestClientConnection {
-        let (connectionChannel, alpnResultFuture) = try await self.connect(
-            to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
-        ) { channel in
+        let target: NIOCore.SocketAddress
+
+        switch serverAddress.base {
+        case .ipv4(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .ipv6(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .unixDomainSocket(path: let path):
+            target = try NIOCore.SocketAddress(unixDomainSocketPath: path)
+        }
+
+        let (connectionChannel, alpnResultFuture) = try await self.connect(to: target) { channel in
             channel.configureTestClientSSLPipeline(tlsConfig: tlsConfig).flatMap {
                 channel.configureTestSecureUpgradeClientPipeline().map { alpnResultFuture in
                     (channel, alpnResultFuture)

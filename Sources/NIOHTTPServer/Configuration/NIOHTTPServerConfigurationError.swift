@@ -22,6 +22,7 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
     case pemRawPublicKeysNotCurrentlySupported
     // swift-nio-quic doesn't currently support mTLS. See https://github.com/apple/swift-nio-quic/issues/5.
     case mTLSNotCurrentlySupportedOverHTTP3
+    case unixDomainSocketNotSupportedOverHTTP3
 
     var description: String {
         switch self {
@@ -45,6 +46,9 @@ enum NIOHTTPServerConfigurationError: Error, CustomStringConvertible {
 
         case .mTLSNotCurrentlySupportedOverHTTP3:
             "Invalid configuration: mTLS is not currently supported over HTTP/3."
+
+        case .unixDomainSocketNotSupportedOverHTTP3:
+            "Invalid configuration: unix domain socket bind targets are not supported over HTTP/3, which runs over QUIC/UDP."
         }
     }
 }

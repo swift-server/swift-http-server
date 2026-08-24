@@ -21,6 +21,7 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
     case trustRootsSourceAndVerificationCallbackMismatch
     case singularAndPluralBindTargetsProvided
     case bindTargetsHostsAndPortsLengthMismatch
+    case hostPortAndSocketPathProvided
 
     var description: String {
         switch self {
@@ -38,6 +39,9 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
 
         case .bindTargetsHostsAndPortsLengthMismatch:
             "Invalid configuration: 'bindTargets.hosts' and 'bindTargets.ports' must have the same number of elements."
+
+        case .hostPortAndSocketPathProvided:
+            "Invalid configuration: a bind target has both 'host'/'port' and 'socketPath' set. Use either a host and port, or a unix domain socket path, not both."
         }
     }
 }

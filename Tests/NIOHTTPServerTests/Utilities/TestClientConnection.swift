@@ -183,13 +183,28 @@ extension TestClientConnection {
 
         #if HTTP3
         case (.http3, .some(let trustRootsPEMPath)):
+            // HTTP/3 runs over QUIC/UDP and does not support Unix domain sockets, so it always
+            // connects to a host and port.
+            let host: String
+            let port: Int
+            switch serverAddress.base {
+            case .ipv4(let address):
+                host = address.host
+                port = address.port
+            case .ipv6(let address):
+                host = address.host
+                port = address.port
+            case .unixDomainSocket:
+                throw TestError.invalidClientConfiguration
+            }
+
             let (quicChannel, multiplexer) = try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .setupTestHTTP3Client(logger: configuration.logger, trustRootsPath: trustRootsPEMPath)
 
             do {
                 let h3Connection = try await multiplexer.concurrencyView.createConnection(
                     serverName: "127.0.0.1",
-                    remoteAddress: .init(ipAddress: serverAddress.host, port: serverAddress.port),
+                    remoteAddress: .init(ipAddress: host, port: port),
                     inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
                 )
                 connection = TestClientConnection(

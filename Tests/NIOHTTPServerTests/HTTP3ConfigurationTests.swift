@@ -77,5 +77,19 @@ struct HTTP3ConfigurationTests {
             }
         }
     }
+
+    @Test("Unix domain socket bind target is rejected for HTTP/3")
+    @available(anyAppleOS 26.0, *)
+    func unixDomainSocketRejectedForHTTP3() {
+        #expect(throws: NIOHTTPServerConfigurationError.unixDomainSocketNotSupportedOverHTTP3) {
+            _ = try NIOHTTPServerConfiguration(
+                bindTarget: .unixDomainSocket(path: "/tmp/http3.sock"),
+                supportedHTTPVersions: [.http3(config: .defaults)],
+                transportSecurity: .tls(
+                    credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"))
+                )
+            )
+        }
+    }
 }
 #endif  // HTTP3

@@ -616,7 +616,9 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { _, _, _, _ in },
             body: { addresses in
                 #expect(addresses.count == 2)
-                #expect(addresses[0].port != addresses[1].port)
+                let firstPort = try #require(addresses[0].port)
+                let secondPort = try #require(addresses[1].port)
+                #expect(firstPort != secondPort)
             }
         )
     }

@@ -19,6 +19,8 @@ import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOPosix
 
+@testable import NIOHTTPServer
+
 @available(anyAppleOS 26.0, *)
 extension Channel {
     /// Adds HTTP/1.1 client handlers to the pipeline.
@@ -57,11 +59,20 @@ extension ClientBootstrap {
     func connectToTestHTTP1Server(
         at serverAddress: NIOHTTPServer.SocketAddress
     ) async throws -> TestClientConnection {
-        .init(
+        let target: NIOCore.SocketAddress
+
+        switch serverAddress.base {
+        case .ipv4(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .ipv6(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .unixDomainSocket(path: let path):
+            target = try NIOCore.SocketAddress(unixDomainSocketPath: path)
+        }
+
+        return .init(
             connectionProtocol: .http1(
-                connectionChannel: try await self.connect(
-                    to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
-                ) { channel in
+                connectionChannel: try await self.connect(to: target) { channel in
                     channel.configureTestHTTP1ClientPipeline()
                 }
             )

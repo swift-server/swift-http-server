@@ -41,6 +41,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
             case .hostAndPort(let host, let port):
                 #expect(host == "localhost")
                 #expect(port == 8080)
+            case .unixDomainSocket(let path):
+                Issue.record("Expected first bind target to be host/port, got unix domain socket path: \(path)")
             }
         }
 
@@ -70,6 +72,36 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             #expect("Missing required config value for key: port." == "\(configError)")
+        }
+
+        @Test("Valid unix domain socket path")
+        @available(anyAppleOS 26.0, *)
+        func testValidUnixDomainSocketConfig() throws {
+            let provider = InMemoryProvider(values: ["socketPath": "/tmp/test.sock"])
+
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            let bindTarget = try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
+
+            switch bindTarget.backing {
+            case .unixDomainSocket(let path):
+                #expect(path == "/tmp/test.sock")
+            case .hostAndPort(let host, let port):
+                Issue.record("Expected a unix domain socket bind target, got host \(host) and port \(port) instead.")
+            }
+        }
+
+        @Test("Init fails when both socketPath and host/port are provided")
+        @available(anyAppleOS 26.0, *)
+        func testSocketPathAndHostPortThrows() throws {
+            let provider = InMemoryProvider(values: ["socketPath": "/tmp/test.sock", "host": "localhost", "port": 8080])
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.hostPortAndSocketPathProvided) {
+                try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
+            }
         }
     }
 

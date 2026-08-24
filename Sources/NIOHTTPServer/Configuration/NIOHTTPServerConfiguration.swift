@@ -15,6 +15,7 @@
 import NIOCore
 import NIOSSL
 public import X509
+public import System
 
 #if HTTP3
 import NIOQUIC
@@ -33,6 +34,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
     public struct BindTarget: Sendable {
         enum Backing {
             case hostAndPort(host: String, port: Int)
+            case unixDomainSocket(path: FilePath)
         }
 
         let backing: Backing
@@ -51,7 +53,21 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public static func hostAndPort(host: String, port: Int) -> Self {
             Self(backing: .hostAndPort(host: host, port: port))
         }
+
+        /// Creates a bind target for a unix domain socket.
+        ///
+        /// - Parameter path: The file system path to bind the unix domain socket to (e.g., "/tmp/server.sock")
+        /// - Returns: A configured `BindTarget` instance
+        ///
+        /// ## Example
+        /// ```swift
+        /// let target = BindTarget.unixDomainSocket(path: "/tmp/server.sock")
+        /// ```
+        public static func unixDomainSocket(path: FilePath) -> Self {
+            Self(backing: .unixDomainSocket(path: path))
+        }
     }
+
 
     /// Configuration for transport security settings.
     ///
@@ -401,6 +417,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
         if supportedHTTPVersions.isEmpty {
             throw NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified
         }
+
+        #if HTTP3
+        // HTTP/3 runs over QUIC/UDP and cannot be served over a unix domain socket.
+        if supportedHTTPVersions.http3ConfigIfSupported != nil {
+            for bindTarget in bindTargets {
+                if case .unixDomainSocket = bindTarget.backing {
+                    throw NIOHTTPServerConfigurationError.unixDomainSocketNotSupportedOverHTTP3
+                }
+            }
+        }
+        #endif
 
         self.bindTargets = bindTargets
         self.supportedHTTPVersions = supportedHTTPVersions
