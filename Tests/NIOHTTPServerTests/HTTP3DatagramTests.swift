@@ -91,7 +91,7 @@ struct HTTP3DatagramTests {
 
     @Test("The oldest datagram is dropped once the buffer is full")
     @available(anyAppleOS 26.0, *)
-    func theOldestDatagramIsDroppedOnceTheBufferIsFull() async throws {
+    func oldestDatagramIsDroppedOnceTheBufferIsFull() async throws {
         let channel = EmbeddedChannel()
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 2)
 

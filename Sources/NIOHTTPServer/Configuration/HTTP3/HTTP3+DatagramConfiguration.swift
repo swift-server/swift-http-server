@@ -30,12 +30,16 @@ extension NIOHTTPServerConfiguration.HTTP3 {
             )
         }
 
-        /// The maximum number of inbound HTTP/3 datagrams that will be buffered for each stream.
-        public var maxBufferedDatagrams: Int
+        /// The maximum number of bytes from HTTP/3 datagrams that can be buffered at one time per connection.
+        public var maxBufferedDatagramBytes: Int
 
-        init(maxDatagramFrameSize: Int, maxBufferedDatagrams: Int) {
+        /// The maximum number of HTTP/3 datagrams that can be buffered at one time per stream.
+        public var maxBufferedStreamDatagrams: Int
+
+        init(maxDatagramFrameSize: Int, maxBufferedDatagramBytes: Int, maxBufferedStreamDatagrams: Int) {
             self.maxDatagramFrameSize = maxDatagramFrameSize
-            self.maxBufferedDatagrams = maxBufferedDatagrams
+            self.maxBufferedDatagramBytes = maxBufferedDatagramBytes
+            self.maxBufferedStreamDatagrams = maxBufferedStreamDatagrams
 
             self.validateMaxDatagramFrameSize()
         }
@@ -43,9 +47,10 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// The default HTTP/3 datagram configuration. Uses the following default values:
         ///
         /// - `maxDatagramFrameSize`: 65535
-        /// - `maxBufferedDatagrams`: 16
+        /// - `maxBufferedDatagramBytes`: 16384
+        /// - `maxBufferedStreamDatagrams`: 16
         public static var defaults: Self {
-            Self(maxDatagramFrameSize: 65535, maxBufferedDatagrams: 16)
+            Self(maxDatagramFrameSize: 65535, maxBufferedDatagramBytes: 16384, maxBufferedStreamDatagrams: 16)
         }
     }
 }

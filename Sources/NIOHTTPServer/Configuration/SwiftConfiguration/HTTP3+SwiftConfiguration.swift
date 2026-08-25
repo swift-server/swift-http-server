@@ -220,8 +220,10 @@ extension NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration {
     /// - `datagramsEnabled` (bool, optional, default: true): Whether the server should advertise support for receiving
     ///    HTTP/3 datagrams.
     /// - `maxDatagramFrameSize` (int, optional, default: 65535): The maximum datagram frame size in bytes.
-    /// - `maxBufferedDatagrams` (int, optional, default: 16): The maximum number of inbound HTTP/3 datagrams that will
-    ///   be buffered for each stream.
+    /// - `maxBufferedDatagramBytes` (int, optional, default: 16384): The maximum number of bytes from HTTP/3 datagrams
+    ///    that can be buffered at one time per connection.
+    /// - `maxBufferedStreamDatagrams` (int, optional, default: 16): The maximum number of HTTP/3 datagrams that can be
+    ///    buffered at one time per stream.
     ///
     /// - SeeAlso: ``NIOHTTPServerConfiguration/HTTP3/DatagramConfiguration``.
     ///
@@ -231,7 +233,8 @@ extension NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration {
 
         self.init(
             maxDatagramFrameSize: config.int(forKey: "maxDatagramFrameSize", default: 65535),
-            maxBufferedDatagrams: config.int(forKey: "maxBufferedDatagrams", default: 16)
+            maxBufferedDatagramBytes: config.int(forKey: "maxBufferedDatagramBytes", default: 16384),
+            maxBufferedStreamDatagrams: config.int(forKey: "maxBufferedStreamDatagrams", default: 16)
         )
     }
 }

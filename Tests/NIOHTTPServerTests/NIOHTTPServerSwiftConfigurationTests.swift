@@ -390,7 +390,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "quicConfiguration.qlog.description": "description",
                 "datagramConfiguration.datagramsEnabled": true,
                 "datagramConfiguration.maxDatagramFrameSize": 1200,
-                "datagramConfiguration.maxBufferedDatagrams": 12,
+                "datagramConfiguration.maxBufferedDatagramBytes": 12000,
+                "datagramConfiguration.maxBufferedStreamDatagrams": 12,
             ])
             let snapshot = ConfigReader(provider: provider).snapshot()
 
@@ -406,7 +407,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #if UnstableHTTPDatagrams
             let datagramConfiguration = try #require(http3.datagramConfiguration)
             #expect(datagramConfiguration.maxDatagramFrameSize == 1200)
-            #expect(datagramConfiguration.maxBufferedDatagrams == 12)
+            #expect(datagramConfiguration.maxBufferedDatagramBytes == 12000)
+            #expect(datagramConfiguration.maxBufferedStreamDatagrams == 12)
             #endif
 
             let quic = http3.quicConfiguration
@@ -496,13 +498,15 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     provider: InMemoryProvider(values: [
                         "datagramsEnabled": true,
                         "maxDatagramFrameSize": 1200,
-                        "maxBufferedDatagrams": 12,
+                        "maxBufferedDatagramBytes": 12000,
+                        "maxBufferedStreamDatagrams": 12,
                     ])
                 ).snapshot()
 
                 let config = try #require(NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration(config: snapshot))
                 #expect(config.maxDatagramFrameSize == 1200)
-                #expect(config.maxBufferedDatagrams == 12)
+                #expect(config.maxBufferedDatagramBytes == 12000)
+                #expect(config.maxBufferedStreamDatagrams == 12)
             }
 
             @Test("Datagrams configuration `nil` when `datagramsEnabled` set to false")

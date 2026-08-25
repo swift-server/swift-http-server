@@ -239,7 +239,7 @@ extension NIOHTTPServer {
                 let datagramStream = HTTP3UnreliableDatagramStream(
                     streamID: streamInitializerParameters.streamID,
                     connectionChannel: connectionChannel,
-                    maxBufferedDatagrams: datagramConfiguration.maxBufferedDatagrams
+                    maxBufferedDatagrams: datagramConfiguration.maxBufferedStreamDatagrams
                 )
                 demultiplexer.value.register(datagramStream: datagramStream)
 
@@ -280,10 +280,11 @@ extension NIOHTTPServer {
             connection: connection
         )
         loopBoundHandler.value = http3Handler
-        try connectionChannel.pipeline.syncOperations.addHandler(http3Handler)
 
         #if UnstableHTTPDatagrams
-        try connectionChannel.pipeline.syncOperations.addHandlers([HTTP3DatagramHandler(), demultiplexer.value])
+        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, demultiplexer.value])
+        #else
+        try connectionChannel.pipeline.syncOperations.addHandler(http3Handler)
         #endif
 
         return connection
