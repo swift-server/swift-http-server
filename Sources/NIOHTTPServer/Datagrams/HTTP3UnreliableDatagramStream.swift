@@ -48,22 +48,16 @@ struct HTTP3UnreliableDatagramStream: Sendable {
     }
 
     /// Delivers an inbound datagram to the request stream's datagram reader.
-    ///
-    /// - Precondition: Must be called on the connection channel's event loop.
     func receive(_ payload: ByteBuffer) {
         _ = self.inboundContinuation.yield(payload)
     }
 
     /// Ends the datagram stream.
-    ///
-    /// - Precondition: Must be called on the connection channel's event loop.
     func finish() {
         self.inboundContinuation.finish()
     }
 
     /// Writes `payload` as a datagram for this request stream.
-    ///
-    /// - Precondition: Must be called on the connection channel's event loop.
     ///
     /// - Note: Datagrams larger than the negotiated `max_datagram_frame_size` will be rejected by the QUIC connection
     ///   channel.
