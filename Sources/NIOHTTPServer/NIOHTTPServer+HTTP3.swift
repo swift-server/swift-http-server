@@ -177,7 +177,8 @@ extension NIOHTTPServer {
             channel: channel,
             quicConfiguration: .init(
                 http3Configuration.quicConfiguration,
-                authenticationConfiguration: authenticationConfiguration
+                authenticationConfiguration: authenticationConfiguration,
+                datagramConfiguration: http3Configuration.datagramConfiguration
             ),
             // TODO: mTLS is not yet supported by NIOQUIC so we don't specify a value for `asyncVerifier`.
             asyncVerifier: nil,
@@ -275,7 +276,10 @@ extension NIOHTTPServer {
         let http3Handler = HTTP3ConnectionHandler.server(
             eventLoop: connectionChannel.eventLoop,
             configuration: h3ServerConfig,
-            settings: .init(http3Configuration.connectionSettings),
+            settings: .init(
+                http3Configuration.connectionSettings,
+                supportDatagrams: http3Configuration.datagramConfiguration != nil
+            ),
             streamCreator: streamCreator,
             logger: self.logger,
             connection: connection

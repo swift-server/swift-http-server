@@ -74,12 +74,12 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 
 @available(anyAppleOS 26.0, *)
 extension HTTP3.HTTP3Settings {
-    init(_ configuration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings) {
+    init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings, supportDatagrams: Bool) {
         self.init(
-            qpackMaximumTableCapacity: configuration.qpackMaximumTableCapacity,
-            qpackBlockedStreams: configuration.qpackBlockedStreams,
-            maximumFieldSectionSize: configuration.maximumFieldSectionSize,
-            h3Datagram: configuration.supportDatagrams
+            qpackMaximumTableCapacity: connectionConfiguration.qpackMaximumTableCapacity,
+            qpackBlockedStreams: connectionConfiguration.qpackBlockedStreams,
+            maximumFieldSectionSize: connectionConfiguration.maximumFieldSectionSize,
+            h3Datagram: supportDatagrams
         )
     }
 }
