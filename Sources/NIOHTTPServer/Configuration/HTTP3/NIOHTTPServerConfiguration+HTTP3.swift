@@ -46,12 +46,12 @@ extension NIOHTTPServerConfiguration {
             // Update `self.quicConfiguration` and `self.connectionSettings` when the value changes.
             if let datagramConfig = self.datagramConfiguration {
                 self.quicConfiguration.maxDatagramFrameSize = datagramConfig.maxDatagramFrameSize
-                self.connectionSettings.http3Datagram = true
+                self.connectionSettings.supportDatagrams = true
             } else {
-                // Set `maxDatagramFrameSize` to 0 and `http3Datagram` to `false` so that the server doesn't
+                // Set `maxDatagramFrameSize` to 0 and `supportDatagrams` to `false` so that the server doesn't
                 // advertise support for receiving datagrams.
                 self.quicConfiguration.maxDatagramFrameSize = 0
-                self.connectionSettings.http3Datagram = false
+                self.connectionSettings.supportDatagrams = false
             }
         }
 

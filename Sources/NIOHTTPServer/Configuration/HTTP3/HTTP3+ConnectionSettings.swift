@@ -41,7 +41,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         ///
         /// - SeeAlso: https://www.rfc-editor.org/rfc/rfc9297.html#section-2.1.1-1. Corresponds to
         ///   `SETTINGS_H3_DATAGRAM`.
-        var http3Datagram: Bool
+        var supportDatagrams: Bool
 
         init(
             qpackMaximumTableCapacity: UInt64,
@@ -51,9 +51,9 @@ extension NIOHTTPServerConfiguration.HTTP3 {
             self.qpackMaximumTableCapacity = qpackMaximumTableCapacity
             self.qpackBlockedStreams = qpackBlockedStreams
             self.maximumFieldSectionSize = maximumFieldSectionSize
-            // Set `http3Datagram` to `true`. This will later be updated in the `NIOHTTPServerConfiguration.HTTP3`
+            // Set `supportDatagrams` to `true`. This will later be updated in the `NIOHTTPServerConfiguration.HTTP3`
             // callsite to stay consistent with the QUIC configuration.
-            self.http3Datagram = true
+            self.supportDatagrams = true
         }
 
         /// The default HTTP/3 connection settings configuration.
@@ -79,7 +79,7 @@ extension HTTP3.HTTP3Settings {
             qpackMaximumTableCapacity: configuration.qpackMaximumTableCapacity,
             qpackBlockedStreams: configuration.qpackBlockedStreams,
             maximumFieldSectionSize: configuration.maximumFieldSectionSize,
-            h3Datagram: configuration.http3Datagram
+            h3Datagram: configuration.supportDatagrams
         )
     }
 }
