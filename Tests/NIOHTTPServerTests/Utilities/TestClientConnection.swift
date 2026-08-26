@@ -189,10 +189,14 @@ extension TestClientConnection {
 
         #if HTTP3
         case (.http3, .some(let trustRootsPEMPath)):
-            let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .setupTestHTTP3Client(logger: configuration.logger, trustRootsPath: trustRootsPEMPath)
+            let (quicChannel, connectionCreator) = try await DatagramBootstrap(
+                group: .singletonMultiThreadedEventLoopGroup
+            )
+            .setupTestHTTP3Client(logger: configuration.logger, trustRootsPath: trustRootsPEMPath)
 
-            let multiplexer = HTTP3ClientConnectionMultiplexer<TestHTTP3SingleConnectionCreator, NIOQUIC.QUICStreamCreator>(
+            let multiplexer = HTTP3ClientConnectionMultiplexer<
+                TestHTTP3SingleConnectionCreator, NIOQUIC.QUICStreamCreator
+            >(
                 eventLoop: quicChannel.eventLoop,
                 createNewConnection: connectionCreator
             )

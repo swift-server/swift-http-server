@@ -369,8 +369,8 @@ extension NIOHTTPServer {
     #if HTTP3 && UnstableHTTPDatagrams
     /// Handles a stream channel.
     ///
-    /// - Parameter datagramStream: The unreliable datagram stream if both the client and server agreed on
-    ///   sending/receiving unreliable datagrams.
+    /// - Parameter datagramStream: The unreliable datagram stream if both the client and server agreed on sending and
+    ///   receiving unreliable datagrams.
     func handleStreamChannel<Handler: HTTPServerRequestHandler>(
         channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         handler: Handler,
