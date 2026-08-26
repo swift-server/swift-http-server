@@ -244,6 +244,42 @@ extension TestClientConnection {
                 .executeThenClose(body)
         }
     }
+
+    #if HTTP3 && UnstableHTTPDatagrams
+    /// Establishes a client connection to `serverAddress`, opens a request stream on it, and runs the `body` closure
+    /// with the HTTP/3 connection channel (for reading/writing datagrams) and the request stream channel. The stream
+    /// and the underlying connection are closed when `body` returns.
+    static func withConnectedHTTP3ConnectionAndRequestChannel(
+        configuration: TestHelpers.ClientConfiguration,
+        serverAddress: NIOHTTPServer.SocketAddress,
+        body: (
+            _ streamID: QUICStreamID,
+            _ connectionChannel: NIOAsyncChannel<HTTP3Datagram, HTTP3Datagram>,
+            _ streamChannel: NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
+        ) async throws -> Void
+    ) async throws {
+        try await Self.withConnection(configuration: configuration, serverAddress: serverAddress) { connection in
+            guard case .http3(_, let connectionChannel, let connectionHandle) = connection.connectionProtocol else {
+                Issue.record("Expected an HTTP/3 connection")
+                return
+            }
+
+            // Wrap the connection channel in an async channel so we can conveniently read/write datagrams.
+            let asyncConnectionChannel = try await connectionChannel.eventLoop.submit {
+                try NIOAsyncChannel<HTTP3Datagram, HTTP3Datagram>(wrappingChannelSynchronously: connectionChannel)
+            }.get()
+
+            let streamChannel = try await connectionHandle.makeRequestStream()
+            let streamID = try await streamChannel.channel.getOption(.quicStreamID).get()
+
+            try await body(
+                QUICStreamID(rawValue: streamID),
+                asyncConnectionChannel,
+                streamChannel
+            )
+        }
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
 }
 
 extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {

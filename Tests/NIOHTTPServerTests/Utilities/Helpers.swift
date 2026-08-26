@@ -27,6 +27,12 @@ import X509
 
 @testable import NIOHTTPServer
 
+#if HTTP3
+import NIOHTTP3
+import NIOQUIC
+import NIOQUICHelpers
+#endif
+
 extension NIOAsyncTestingChannel {
     /// Forwards all of our outbound writes to `other` and vice-versa.
     func glueTo(_ other: NIOAsyncTestingChannel) async throws {
@@ -314,6 +320,35 @@ struct TestHelpers {
             }
         }
     }
+
+    #if HTTP3 && UnstableHTTPDatagrams
+    static func withClientServerHTTP3ConnectionAndRequestChannel(
+        clientConfiguration: ClientConfiguration,
+        server: NIOHTTPServer,
+        serverHandler: some HTTPServerRequestHandler<
+            NIOHTTPServer.RequestContext,
+            NIOHTTPServer.Reader,
+            NIOHTTPServer.ResponseSender
+        >,
+        body: (
+            _ serverAddress: NIOHTTPServer.SocketAddress,
+            _ streamID: QUICStreamID,
+            _ connectionChannel: NIOAsyncChannel<HTTP3Datagram, HTTP3Datagram>,
+            _ streamChannel: NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>
+        ) async throws -> Void
+    ) async throws {
+        try #require(server.configuration.supportedHTTPVersions.contains(.http3))
+
+        try await Self.withServer(server: server, serverHandler: serverHandler) { serverAddress in
+            try await TestClientConnection.withConnectedHTTP3ConnectionAndRequestChannel(
+                configuration: clientConfiguration,
+                serverAddress: serverAddress
+            ) { streamID, connectionChannel, streamChannel in
+                try await body(serverAddress, streamID, connectionChannel, streamChannel)
+            }
+        }
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
 
     /// Reads from `responseStream` and asserts each part matches the expected head, body, and trailers in order.
     static func validateResponse(
