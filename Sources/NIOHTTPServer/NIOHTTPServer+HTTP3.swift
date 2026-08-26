@@ -222,7 +222,8 @@ extension NIOHTTPServer {
 
         #if UnstableHTTPDatagrams
         // TODO: If support for datagrams was not negotiated, we shouldn't create the datagram handler and demultiplexer.
-        let demultiplexer = NIOLoopBound(HTTP3DatagramDemultiplexer(), eventLoop: connectionChannel.eventLoop)
+        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: connectionChannel.eventLoop)
+        let loopBoundDemultiplexer = NIOLoopBound(demultiplexer, eventLoop: connectionChannel.eventLoop)
         #endif
 
         let connection = HTTP3ServerConnection(connectionHandler: loopBoundHandler) { streamInitializerParameters in
@@ -241,10 +242,10 @@ extension NIOHTTPServer {
                     connectionChannel: connectionChannel,
                     maxBufferedDatagrams: datagramConfiguration.maxBufferedStreamDatagrams
                 )
-                demultiplexer.value.register(datagramStream: datagramStream)
+                loopBoundDemultiplexer.value.register(datagramStream: datagramStream)
 
                 streamChannel.closeFuture.whenComplete { _ in
-                    demultiplexer.value.deregister(streamID: datagramStream.streamID)
+                    loopBoundDemultiplexer.value.deregister(streamID: datagramStream.streamID)
                     datagramStream.finish()
                 }
                 return HTTP3Stream(
@@ -282,7 +283,7 @@ extension NIOHTTPServer {
         loopBoundHandler.value = http3Handler
 
         #if UnstableHTTPDatagrams
-        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, demultiplexer.value])
+        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, loopBoundDemultiplexer.value])
         #else
         try connectionChannel.pipeline.syncOperations.addHandler(http3Handler)
         #endif

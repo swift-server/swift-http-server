@@ -23,13 +23,21 @@ import NIOQUICHelpers
 final class HTTP3DatagramDemultiplexer: ChannelInboundHandler {
     typealias InboundIn = HTTP3Datagram
 
-    /// The ``HTTP3DatagramStream`` instance for each open request stream.
+    /// The event loop of the connection channel.
+    private let eventLoop: any EventLoop
+
+    /// The registered ``HTTP3DatagramStream`` instance for each open request stream.
     private var datagramStreams: [QUICStreamID: HTTP3UnreliableDatagramStream] = [:]
+
+    init(eventLoop: any EventLoop) {
+        self.eventLoop = eventLoop
+    }
 
     /// Starts routing datagrams received for `datagramStream.streamID` to the provided `datagramStream`.
     ///
     /// - Precondition: Must only be called on the connection channel's event loop.
     func register(datagramStream: HTTP3UnreliableDatagramStream) {
+        self.eventLoop.preconditionInEventLoop()
         self.datagramStreams[datagramStream.streamID] = datagramStream
     }
 
@@ -37,6 +45,7 @@ final class HTTP3DatagramDemultiplexer: ChannelInboundHandler {
     ///
     /// - Precondition: Must only be called on the connection channel's event loop.
     func deregister(streamID: QUICStreamID) {
+        self.eventLoop.preconditionInEventLoop()
         self.datagramStreams.removeValue(forKey: streamID)
     }
 

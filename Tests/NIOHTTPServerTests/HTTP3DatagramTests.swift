@@ -33,7 +33,7 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func datagramsAreRoutedByStreamID() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer()
+        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
         try channel.pipeline.syncOperations.addHandler(demultiplexer)
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -57,7 +57,7 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func datagramsAfterDeregisteringAreDropped() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer()
+        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
         try channel.pipeline.syncOperations.addHandler(demultiplexer)
 
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -75,7 +75,7 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func closingTheConnectionEndsEveryDatagramStream() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer()
+        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
         try channel.pipeline.syncOperations.addHandler(demultiplexer)
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
