@@ -25,17 +25,24 @@ import NIOPosix
 import NIOQUIC
 
 @available(anyAppleOS 26.0, *)
-struct QUICConnectionCreator: HTTP3ConnectionCreator {
+struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     let quicHandler: QUICHandler
     let connectionInitializer: @Sendable (any Channel, NIOQUIC.QUICStreamCreator) -> EventLoopFuture<any Channel>
     let inboundStreamInitializer: @Sendable (any Channel) -> EventLoopFuture<Void>
+
+    var connectionEstablished: Bool = false
+    let connectionChannelPromise: EventLoopPromise<Channel>
 
     func createNewConnection(
         serverName: String,
         remoteAddress: SocketAddress,
         connectionInitializer h3ConnectionInitializer: @escaping @Sendable (any Channel) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<any Channel> {
-        self.quicHandler.createOutboundConnection(
+        guard self.connectionEstablished == false else {
+            fatalError("This connection creator only supports creating one connection.")
+        }
+
+        let connectionChannelFuture = self.quicHandler.createOutboundConnection(
             serverName: serverName,
             remoteAddress: remoteAddress,
             connectionInitializer: { [connectionInitializer] connectionChannel, streamCreator in
@@ -47,22 +54,23 @@ struct QUICConnectionCreator: HTTP3ConnectionCreator {
         ).map { connectionChannel, _ in
             connectionChannel
         }
+
+        // Fulfill the promise once the connection has been established.
+        connectionChannelFuture.cascade(to: self.connectionChannelPromise)
+
+        return connectionChannelFuture
     }
 }
 
 @available(anyAppleOS 26.0, *)
 extension Channel {
-    /// Adds HTTP/3 client handlers to the pipeline.
-    func configureTestHTTP3ClientPipeline(
+    func makeConnectionCreator(
         logger: Logger,
         settings: HTTP3Settings,
         configuration: HTTP3ClientConfiguration,
         quicConfiguration: QUICConfiguration,
         asyncVerifier: NIOQUIC.AsyncVerifier
-    ) throws -> (
-        any Channel,
-        HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, QUICStreamCreator>
-    ) {
+    ) throws -> TestHTTP3SingleConnectionCreator {
         let quicHandler = QUICHandler(
             channel: self,
             quicConfiguration: quicConfiguration,
@@ -75,37 +83,32 @@ extension Channel {
         )
         try self.pipeline.syncOperations.addHandler(quicHandler)
 
-        let connectionMultiplexer = HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, QUICStreamCreator>(
-            eventLoop: self.eventLoop,
-            createNewConnection: NIOLoopBound(
-                QUICConnectionCreator(
-                    quicHandler: quicHandler,
-                    connectionInitializer: { connectionChannel, streamCreator in
-                        connectionChannel.eventLoop.makeCompletedFuture {
-                            let h3Handler = HTTP3ConnectionHandler.client(
-                                eventLoop: connectionChannel.eventLoop,
-                                configuration: configuration,
-                                settings: settings,
-                                streamCreator: streamCreator,
-                                logger: logger,
-                                inboundPushStreamInitializer: { _ in fatalError() }
-                            )
-                            try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
-                            return connectionChannel
-                        }
-                    },
-                    inboundStreamInitializer: { streamChannel in
-                        streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self)
-                            .flatMap { http3Handler in
-                                http3Handler.inboundStreamReceived(streamChannel)
-                            }
+        let connectionCreator = TestHTTP3SingleConnectionCreator(
+            quicHandler: quicHandler,
+            connectionInitializer: { connectionChannel, streamCreator in
+                connectionChannel.eventLoop.makeCompletedFuture {
+                    let h3Handler = HTTP3ConnectionHandler.client(
+                        eventLoop: connectionChannel.eventLoop,
+                        configuration: configuration,
+                        settings: settings,
+                        streamCreator: streamCreator,
+                        logger: logger,
+                        inboundPushStreamInitializer: { _ in fatalError() }
+                    )
+                    try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
+                    return connectionChannel
+                }
+            },
+            inboundStreamInitializer: { streamChannel in
+                streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<QUICStreamCreator>.self)
+                    .flatMap { http3Handler in
+                        http3Handler.inboundStreamReceived(streamChannel)
                     }
-                ),
-                eventLoop: self.eventLoop
-            )
+            },
+            connectionChannelPromise: self.eventLoop.makePromise()
         )
 
-        return (self, connectionMultiplexer)
+        return connectionCreator
     }
 }
 
@@ -115,14 +118,11 @@ extension DatagramBootstrap {
     func setupTestHTTP3Client(
         logger: Logger,
         trustRootsPath: String
-    ) async throws -> (
-        any Channel,
-        HTTP3ClientConnectionMultiplexer<QUICConnectionCreator, QUICStreamCreator>
-    ) {
+    ) async throws -> (any Channel, NIOLoopBound<TestHTTP3SingleConnectionCreator>) {
         try await self.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    try channel.configureTestHTTP3ClientPipeline(
+                    let connectionCreator = try channel.makeConnectionCreator(
                         logger: logger,
                         settings: .init(),
                         configuration: .defaults,
@@ -133,6 +133,9 @@ extension DatagramBootstrap {
                             eventLoop: channel.eventLoop
                         )
                     )
+                    let loopBoundConnectionCreator = NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop)
+
+                    return (channel, loopBoundConnectionCreator)
                 }
             }
     }

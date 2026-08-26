@@ -19,7 +19,6 @@ import NIOHTTP2
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP2
 import NIOPosix
-import NIOQUIC
 import NIOSSL
 import Testing
 
@@ -27,6 +26,8 @@ import Testing
 
 #if HTTP3
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOQUIC
+import NIOQUICHelpers
 #endif
 
 /// A testing utility that wraps an established HTTP/1.1, HTTP/2, or HTTP/3 client connection and provides an opaque
@@ -42,7 +43,11 @@ struct TestClientConnection {
         )
 
         #if HTTP3
-        case http3(connection: HTTP3ClientConnection<Never, QUICStreamCreator>, quicChannel: any Channel)
+        case http3(
+            quicChannel: any Channel,
+            connectionChannel: any Channel,
+            connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+        )
         #endif
     }
 
@@ -71,7 +76,7 @@ struct TestClientConnection {
             return try await streamMultiplexer.makeRequestStream()
 
         #if HTTP3
-        case .http3(let http3Connection, _):
+        case .http3(_, _, let http3Connection):
             try #require(
                 expectedHTTPVersion == .http3,
                 "Unexpectedly established an HTTP/3 connection.",
@@ -112,9 +117,10 @@ struct TestClientConnection {
             }
 
         #if HTTP3
-        case .http3(_, let channel):
+        case .http3(let quicChannel, let connectionChannel, _):
             do {
-                try await channel.close()
+                try await quicChannel.close()
+                try await connectionChannel.close()
             } catch ChannelError.alreadyClosed {
                 ()
             }
@@ -183,22 +189,31 @@ extension TestClientConnection {
 
         #if HTTP3
         case (.http3, .some(let trustRootsPEMPath)):
-            let (quicChannel, multiplexer) = try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup)
                 .setupTestHTTP3Client(logger: configuration.logger, trustRootsPath: trustRootsPEMPath)
 
-            do {
-                let h3Connection = try await multiplexer.concurrencyView.createConnection(
-                    serverName: "127.0.0.1",
-                    remoteAddress: .init(ipAddress: serverAddress.host, port: serverAddress.port),
-                    inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
+            let multiplexer = HTTP3ClientConnectionMultiplexer<TestHTTP3SingleConnectionCreator, NIOQUIC.QUICStreamCreator>(
+                eventLoop: quicChannel.eventLoop,
+                createNewConnection: connectionCreator
+            )
+
+            let h3Connection = try await multiplexer.concurrencyView.createConnection(
+                serverName: "127.0.0.1",
+                remoteAddress: .init(ipAddress: serverAddress.host, port: serverAddress.port),
+                inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
+            )
+
+            let connectionChannel = try await quicChannel.eventLoop.flatSubmit {
+                connectionCreator.value.connectionChannelPromise.futureResult
+            }.get()
+
+            connection = TestClientConnection(
+                connectionProtocol: .http3(
+                    quicChannel: quicChannel,
+                    connectionChannel: connectionChannel,
+                    connection: h3Connection
                 )
-                connection = TestClientConnection(
-                    connectionProtocol: .http3(connection: h3Connection, quicChannel: quicChannel)
-                )
-            } catch {
-                try? await quicChannel.close()
-                throw error
-            }
+            )
         #endif
 
         default:
