@@ -15,6 +15,7 @@
 #if HTTP3 && UnstableHTTPDatagrams
 
 import BasicContainers
+import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP3
@@ -25,6 +26,9 @@ import Testing
 
 @Suite
 struct HTTP3DatagramTests {
+    static let serverLogger = Logger(label: "HTTP3DatagramTests.server")
+    static let clientLogger = Logger(label: "HTTP3DatagramTests.client")
+
     @Test("Datagrams are routed to the request stream they belong to")
     @available(anyAppleOS 26.0, *)
     func datagramsAreRoutedByStreamID() async throws {
@@ -191,6 +195,67 @@ struct HTTP3DatagramTests {
         let datagram = try channel.readOutbound(as: HTTP3Datagram.self)
         #expect(datagram?.streamID == 4)
         #expect(datagram?.payload == ByteBuffer([2]))
+    }
+
+    @Test("Read and write datagrams")
+    @available(anyAppleOS 26.2, *)
+    func readAndWriteDatagrams() async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: .http3,
+            clientLogger: Self.clientLogger,
+            serverLogger: Self.serverLogger
+        )
+
+        let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+
+        try await TestHelpers.withClientServerHTTP3ConnectionAndRequestChannel(
+            clientConfiguration: clientConfiguration,
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
+                streamOpenedPromise.succeed()
+
+                var reader = reader
+                var datagramReader = reader.takeDatagramReader()!
+
+                // Read the datagram.
+                let collectedDatagram = try #require(await TestHelpers.readDatagram(&datagramReader))
+                #expect(collectedDatagram == .init(ByteBuffer.testData.readableBytesView))
+
+                // Echo the datagram back.
+                var writer = try await responseSender.send(.init(status: .ok))
+                var datagramWriter = writer.takeDatagramWriter()!
+                var writeBuffer = UniqueArray<UInt8>(copying: collectedDatagram)
+                try await datagramWriter.write(buffer: &writeBuffer)
+            }
+        ) { _, streamID, connectionChannel, streamChannel in
+            try await connectionChannel.executeThenClose { connectionInbound, connectionOutbound in
+                try await streamChannel.executeThenClose { streamInbound, streamOutbound in
+                    // Start the request.
+                    try await streamOutbound.write(.testHead(method: .post, for: .http3))
+
+                    // Wait for the stream to be opened.
+                    try await streamOpenedPromise.futureResult.get()
+
+                    // Now write a datagram.
+                    try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
+
+                    var inboundDatagramIterator = connectionInbound.makeAsyncIterator()
+
+                    // TODO: swift-nio-quic currently only fires a channelRead and not a channelReadComplete when
+                    // datagrams are received. But NIOAsyncChannelHandler only delivers data when channelReadComplete is
+                    // called. We need to remove this manual channelReadComplete invocation once the bug is fixed.
+                    try await Task.sleep(for: .milliseconds(500))  // Wait for the channelRead.
+                    connectionChannel.channel.pipeline.fireChannelReadComplete()
+
+                    let collectedDatagram = try await inboundDatagramIterator.next()
+                    #expect(collectedDatagram?.streamID == streamID)
+                    #expect(collectedDatagram?.payload == .testData)
+
+                    // Now end the request.
+                    try await streamOutbound.write(.end(nil))
+                }
+            }
+        }
     }
 }
 #endif  // HTTP3 && UnstableHTTPDatagrams
