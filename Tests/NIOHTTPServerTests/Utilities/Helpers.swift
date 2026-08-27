@@ -320,7 +320,7 @@ struct TestHelpers {
     }
 
     #if HTTP3 && UnstableHTTPDatagrams
-    static func withClientServerHTTP3ConnectionAndRequestChannel(
+    static func withHTTP3ClientServerConnectionAndRequestChannel(
         clientConfiguration: TestClientConnection.Configuration,
         server: NIOHTTPServer,
         serverHandler: some HTTPServerRequestHandler<

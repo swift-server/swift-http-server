@@ -119,15 +119,16 @@ extension DatagramBootstrap {
         logger: Logger,
         trustRootsPath: String,
         quicConfiguration: QUICConfiguration,
-        http3Configuration: HTTP3ClientConfiguration = .defaults
+        http3ClientConfiguration: HTTP3ClientConfiguration = .defaults,
+        http3ConnectionSettings: HTTP3Settings = .init()
     ) async throws -> (any Channel, NIOLoopBound<TestHTTP3SingleConnectionCreator>) {
         try await self.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let connectionCreator = try channel.makeConnectionCreator(
                         logger: logger,
-                        settings: .init(),
-                        configuration: http3Configuration,
+                        settings: http3ConnectionSettings,
+                        configuration: http3ClientConfiguration,
                         quicConfiguration: quicConfiguration,
                         asyncVerifier: try! .init(
                             trustRootsPath: trustRootsPath,

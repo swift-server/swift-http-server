@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import HTTP3
 import HTTPTypes
 import Logging
 import NIOCore
@@ -167,7 +168,11 @@ extension TestClientConnection {
             case http1_1
             case http2
             #if HTTP3
-            case http3(quicConfiguration: QUICConfiguration, http3Configuration: HTTP3ClientConfiguration)
+            case http3(
+                quicConfiguration: QUICConfiguration,
+                http3ClientConfiguration: HTTP3ClientConfiguration,
+                http3ConnectionSettings: HTTP3Settings
+            )
             #endif
 
             var alpnIdentifier: String {
@@ -211,7 +216,8 @@ extension TestClientConnection {
                 case .http3:
                     .http3(
                         quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
-                        http3Configuration: .defaults
+                        http3ClientConfiguration: .defaults,
+                        http3ConnectionSettings: .init()
                     )
                 #endif
                 }
@@ -251,13 +257,14 @@ extension TestClientConnection {
                 .connectToTestSecureUpgradeHTTPServer(at: serverAddress, tlsConfig: tlsConfiguration)
 
         #if HTTP3
-        case (.http3(let quicConfiguration, let http3Configuration), .some(let trustRootsPEMPath)):
+        case (.http3(let quicConfiguration, let clientConfiguration, let settings), .some(let trustRootsPEMPath)):
             let (quicChannel, connectionCreator) =
                 try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup).setupTestHTTP3Client(
                     logger: configuration.logger,
                     trustRootsPath: trustRootsPEMPath,
                     quicConfiguration: quicConfiguration,
-                    http3Configuration: http3Configuration
+                    http3ClientConfiguration: clientConfiguration,
+                    http3ConnectionSettings: settings
                 )
 
             let multiplexer = HTTP3ClientConnectionMultiplexer<

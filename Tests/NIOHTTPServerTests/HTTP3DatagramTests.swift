@@ -228,7 +228,7 @@ struct HTTP3DatagramTests {
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
 
-        try await TestHelpers.withClientServerHTTP3ConnectionAndRequestChannel(
+        try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
@@ -246,6 +246,8 @@ struct HTTP3DatagramTests {
                 var datagramWriter = await writer.takeDatagramWriter()!
                 var writeBuffer = UniqueArray<UInt8>(copying: collectedDatagram)
                 try await datagramWriter.write(buffer: &writeBuffer)
+
+                try await writer.finish()
             }
         ) { _, streamID, connectionChannel, streamChannel in
             try await connectionChannel.executeThenClose { connectionInbound, connectionOutbound in
@@ -267,6 +269,12 @@ struct HTTP3DatagramTests {
 
                     // Now end the request.
                     try await streamOutbound.write(.end(nil))
+
+                    try await TestHelpers.validateResponse(
+                        streamInbound,
+                        expectedHead: [.makeResponse(status: .ok, for: .http3)],
+                        expectedBody: []
+                    )
                 }
             }
         }
@@ -287,12 +295,13 @@ struct HTTP3DatagramTests {
                 caPath: clientConfiguration.trustRootsPEMPath,
                 maxDatagramFrameSize: clientMaxDatagramFrameSize
             ),
-            http3Configuration: .defaults
+            http3ClientConfiguration: .defaults,
+            http3ConnectionSettings: .init()
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
 
-        try await TestHelpers.withClientServerHTTP3ConnectionAndRequestChannel(
+        try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
             server: server,
             serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
@@ -322,6 +331,8 @@ struct HTTP3DatagramTests {
                 await #expect(throws: Never.self) {
                     try await datagramWriter.write(buffer: &bufferTwo)
                 }
+
+                try await writer.finish()
             }
         ) { _, streamID, connectionChannel, streamChannel in
             try await connectionChannel.executeThenClose { connectionInbound, connectionOutbound in
@@ -344,6 +355,64 @@ struct HTTP3DatagramTests {
 
                     // Now end the request.
                     try await streamOutbound.write(.end(nil))
+
+                    try await TestHelpers.validateResponse(
+                        streamInbound,
+                        expectedHead: [.makeResponse(status: .ok, for: .http3)],
+                        expectedBody: []
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("Datagram reader and writer not vended when client does not support datagrams")
+    @available(anyAppleOS 26.2, *)
+    func datagramReaderAndWriterNotVendedWhenNotSupportedByClient() async throws {
+        var (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: .http3,
+            clientLogger: Self.clientLogger,
+            serverLogger: Self.serverLogger
+        )
+        // The client advertises that it does not support receiving datagrams.
+        clientConfiguration.httpVersion = .http3(
+            quicConfiguration: .makeClientQUICConfig(
+                caPath: clientConfiguration.trustRootsPEMPath,
+                maxDatagramFrameSize: 0,
+            ),
+            http3ClientConfiguration: .defaults,
+            http3ConnectionSettings: .init(h3Datagram: false)
+        )
+
+        try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
+            clientConfiguration: clientConfiguration,
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
+                var reader = reader
+
+                // The datagram reader and writer should not be available because the client does not support receiving
+                // datagrams.
+                let datagramReaderIsNotAvailable = await reader.takeDatagramReader() == nil
+                #expect(datagramReaderIsNotAvailable)
+
+                var reliableStreamWriter = try await responseSender.send(.init(status: .ok))
+                let datagramWriterIsNotAvailable = await reliableStreamWriter.takeDatagramWriter() == nil
+                #expect(datagramWriterIsNotAvailable)
+
+                try await reliableStreamWriter.finish()
+            }
+        ) { _, streamID, connectionChannel, streamChannel in
+            try await connectionChannel.executeThenClose { connectionInbound, connectionOutbound in
+                try await streamChannel.executeThenClose { streamInbound, streamOutbound in
+                    try await streamOutbound.write(.testHead(method: .post, for: .http3))
+                    try await streamOutbound.write(.testBody)
+                    try await streamOutbound.write(.end(nil))
+
+                    try await TestHelpers.validateResponse(
+                        streamInbound,
+                        expectedHead: [.makeResponse(status: .ok, for: .http3)],
+                        expectedBody: []
+                    )
                 }
             }
         }
