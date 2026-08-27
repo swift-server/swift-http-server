@@ -133,11 +133,13 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         context.close(mode: .all, promise: nil)
     }
 
-    func handlerRemoved(context: ChannelHandlerContext) {
+    func channelInactive(context: ChannelHandlerContext) {
         #if UnstableHTTPDatagrams
         self.datagramContext?.finish()
         self.datagramContext = nil
         #endif
+
+        context.fireChannelInactive()
     }
 }
 

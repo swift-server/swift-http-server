@@ -289,5 +289,66 @@ struct NIOHTTPServerReaderTests {
         // We should be able to read the datagram from the datagram reader.
         #expect(try await TestHelpers.readDatagram(&datagramReader) == [4, 5])
     }
+
+    @Test("Inbound datagrams are buffered up to a limit", arguments: [10, 20, 100])
+    @available(anyAppleOS 26.0, *)
+    func datagramsAreBufferedUpToLimit(maxBufferedDatagrams: Int) async throws {
+        let (reliableStream, _) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+
+        // Set up a mock connection channel where we will write a datagram to.
+        let connectionChannel = EmbeddedChannel()
+        let datagramsNegotiatedPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        let handler = HTTP3ConnectionManager(
+            eventLoop: connectionChannel.eventLoop,
+            logger: .init(label: "test"),
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try connectionChannel.pipeline.syncOperations.addHandler(handler)
+
+        // Now create the reader.
+        let datagramStreamPromise = connectionChannel.eventLoop.makePromise(of: HTTP3UnreliableDatagramStream.self)
+        var requestBodyReader = NIOHTTPServer.Reader(
+            readerState: .init(iterator: reliableStream.makeAsyncIterator()),
+            datagramStreamFuture: datagramStreamPromise.futureResult
+        )
+
+        // Simulate the peer advertising support for receiving datagrams.
+        datagramsNegotiatedPromise.succeed()
+
+        // Now simulate the arrival of a new stream with ID 0.
+        let mockStream = HTTP3UnreliableDatagramStream(
+            streamID: 0,
+            connectionChannel: connectionChannel,
+            maxBufferedDatagrams: maxBufferedDatagrams
+        )
+        handler.register(datagramStream: mockStream)
+        datagramStreamPromise.succeed(mockStream)
+
+        let datagramReader = await requestBodyReader.takeDatagramReader()
+        guard var datagramReader = datagramReader else {
+            Issue.record("Expected a datagram reader but received `nil`.")
+            return
+        }
+
+        // Now write datagrams until the buffer is full.
+        for i in 0..<maxBufferedDatagrams {
+            let payload = ByteBuffer([UInt8(i)])
+            try connectionChannel.writeInbound(HTTP3Datagram(streamID: 0, payload: payload))
+        }
+        let lastInteger = UInt8(maxBufferedDatagrams)
+        // Write two more datagrams.
+        try connectionChannel.writeInbound(HTTP3Datagram(streamID: 0, payload: .init([lastInteger])))
+        try connectionChannel.writeInbound(HTTP3Datagram(streamID: 0, payload: .init([lastInteger + 1])))
+        try await connectionChannel.close()
+
+        // We should be able to read just `maxBufferedDatagrams` number of datagrams. The two oldest datagrams should be
+        // dropped.
+        for i in 2..<maxBufferedDatagrams + 2 {
+            let payload = [UInt8(i)]
+            #expect(try await TestHelpers.readDatagram(&datagramReader) == payload)
+        }
+        #expect(try await TestHelpers.readDatagram(&datagramReader) == nil)
+        #expect(try await TestHelpers.readDatagram(&datagramReader) == nil)
+    }
     #endif  // HTTP3 && UnstableHTTPDatagrams
 }
