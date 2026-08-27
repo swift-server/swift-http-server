@@ -22,8 +22,8 @@ import NIOQUICHelpers
 struct HTTP3UnreliableDatagramStream: Sendable {
     /// The maximum number of received but not yet consumed datagrams to buffer.
     ///
-    /// Note: The size of a datagram is at most the negotiated `max_datagram_frame_size`. Therefore, the memory occupied
-    /// by buffered datagrams is bounded by the negotiated `max_datagram_frame_size` multiplied by this count.
+    /// - Note: The size of a datagram is at most `max_datagram_frame_size`. Therefore, the memory occupied by buffered
+    ///   datagrams is bounded by `max_datagram_frame_size` multiplied by this count.
     var maxBufferedDatagrams: Int
 
     // The QUIC stream ID.
@@ -32,6 +32,7 @@ struct HTTP3UnreliableDatagramStream: Sendable {
     /// The inbound datagram stream.
     let inbound: AsyncStream<ByteBuffer>
 
+    /// The continuation associated with `inbound`.
     private let inboundContinuation: AsyncStream<ByteBuffer>.Continuation
 
     /// The connection channel.
@@ -59,8 +60,8 @@ struct HTTP3UnreliableDatagramStream: Sendable {
 
     /// Writes `payload` as a datagram for this request stream.
     ///
-    /// - Note: Datagrams larger than the negotiated `max_datagram_frame_size` will be rejected by the QUIC connection
-    ///   channel.
+    /// - Throws: `NIOQUIC.QUICError.datagramTooLarge` when attempting to write a datagram larger than the
+    ///   `max_datagram_frame_size` advertised by the client.
     func write(_ payload: ByteBuffer) async throws {
         try await self.connectionChannel.writeAndFlush(HTTP3Datagram(streamID: self.streamID, payload: payload))
     }

@@ -166,16 +166,22 @@ extension TestClientConnection {
             case plaintextHTTP1_1
             case http1_1
             case http2
+            #if HTTP3
             case http3(quicConfiguration: QUICConfiguration, http3Configuration: HTTP3ClientConfiguration)
+            #endif
 
             var alpnIdentifier: String {
                 switch self {
                 case .plaintextHTTP1_1, .http1_1:
                     "http/1.1"
+
                 case .http2:
                     "h2"
+
+                #if HTTP3
                 case .http3:
                     "h3"
+                #endif
                 }
             }
         }
@@ -194,15 +200,20 @@ extension TestClientConnection {
                 switch httpVersion {
                 case .plaintextHTTP1_1:
                     .plaintextHTTP1_1
+
                 case .http1_1:
                     .http1_1
+
                 case .http2:
                     .http2
+
+                #if HTTP3
                 case .http3:
                     .http3(
                         quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
                         http3Configuration: .defaults
                     )
+                #endif
                 }
         }
     }
@@ -381,12 +392,17 @@ extension NIOHTTPServer.HTTPVersion {
         switch version {
         case .plaintextHTTP1_1:
             self = .plaintextHTTP1_1
+
         case .http1_1:
             self = .http1_1
+
         case .http2:
             self = .http2
+
+        #if HTTP3
         case .http3:
             self = .http3
+        #endif
         }
     }
 }

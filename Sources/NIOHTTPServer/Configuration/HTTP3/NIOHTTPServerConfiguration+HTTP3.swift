@@ -36,9 +36,7 @@ extension NIOHTTPServerConfiguration {
         /// The HTTP/3 datagram configuration. If set to `nil`, the server will not advertise support for receiving
         /// HTTP/3 datagrams.
         public var datagramConfiguration: DatagramConfiguration? = .defaults
-        #endif  // UnstableHTTPDatagrams
 
-        #if UnstableHTTPDatagrams
         /// Creates an HTTP/3 configuration.
         ///
         /// - Parameters:

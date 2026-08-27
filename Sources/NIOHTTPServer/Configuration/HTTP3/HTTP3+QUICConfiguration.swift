@@ -255,28 +255,28 @@ extension NIOQUIC.AuthenticationConfiguration {
 extension NIOQUIC.QUICConfiguration {
     /// Creates a `NIOQUIC.QUICConfiguration` from a `NIOHTTPServerConfiguration.HTTP3.QUICConfiguration` instance.
     init(
-        _ configuration: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
+        _ config: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
         authenticationConfiguration: NIOQUIC.AuthenticationConfiguration,
         datagramConfiguration: NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration?
     ) {
         self = .server(
             // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. See
             // https://github.com/apple/swift-nio-quic/issues/4.
-            serverName: configuration.serverName,
+            serverName: config.serverName,
             authenticationConfiguration: authenticationConfiguration,
-            keyExchangeGroup: .init(configuration.keyExchangeGroup),
+            keyExchangeGroup: .init(config.keyExchangeGroup),
             applicationProtocols: ["h3"],
-            maxIdleTimeout: configuration.maxIdleTimeout,
-            initialMaxData: configuration.initialMaxData,
-            initialMaxStreamDataBidiLocal: configuration.initialMaxStreamDataBidirectionalLocal,
-            initialMaxStreamDataBidiRemote: configuration.initialMaxStreamDataBidirectionalRemote,
-            initialMaxStreamDataUni: configuration.initialMaxStreamDataUnidirectional,
-            initialMaxStreamsBidi: configuration.initialMaxStreamsBidirectional,
-            initialMaxStreamsUni: configuration.initialMaxStreamsUnidirectional,
-            keepAliveInterval: configuration.keepAliveInterval,
-            sendRetry: configuration.sendRetry,
-            keyLogPath: configuration.keyLogPath,
-            qLogConfiguration: configuration.qLogConfiguration.map { .init($0) },
+            maxIdleTimeout: config.maxIdleTimeout,
+            initialMaxData: config.initialMaxData,
+            initialMaxStreamDataBidiLocal: config.initialMaxStreamDataBidirectionalLocal,
+            initialMaxStreamDataBidiRemote: config.initialMaxStreamDataBidirectionalRemote,
+            initialMaxStreamDataUni: config.initialMaxStreamDataUnidirectional,
+            initialMaxStreamsBidi: config.initialMaxStreamsBidirectional,
+            initialMaxStreamsUni: config.initialMaxStreamsUnidirectional,
+            keepAliveInterval: config.keepAliveInterval,
+            sendRetry: config.sendRetry,
+            keyLogPath: config.keyLogPath,
+            qLogConfiguration: config.qLogConfiguration.map { .init($0) },
             maxDatagramFrameSize: datagramConfiguration?.maxDatagramFrameSize ?? 0
         )
     }

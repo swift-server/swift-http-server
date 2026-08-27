@@ -526,7 +526,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             func frameSizeMustNotBeZeroWhenDatagramsEnabled() async throws {
                 await #expect(processExitsWith: .failure) {
                     // Setting `maxDatagramFrameSize` to 0 means that the QUIC layer will not advertise support for
-                    // receiving datagrams. If users really want to disable receiving datagrams, then `datagramsEnabled`
+                    // receiving datagrams. If users intend to disable receiving datagrams, then `datagramsEnabled`
                     // should be set to `false`.
                     let snapshot = ConfigReader(
                         provider: InMemoryProvider(values: [
