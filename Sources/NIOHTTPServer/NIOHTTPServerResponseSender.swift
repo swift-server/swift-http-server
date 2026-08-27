@@ -120,6 +120,40 @@ extension NIOHTTPServer.ResponseSender {
             try await self.writer.write(.body(ByteBuffer(draining: &buffer)))
         }
 
+        /// Writes a chunk of the response body from borrowed memory.
+        ///
+        /// - Parameter bytes: The body bytes to write. Only borrowed for the duration of the call.
+        public mutating func write(_ bytes: RawSpan) async throws(WriteFailure) {
+            var byteBuffer = ByteBuffer()
+            byteBuffer.reserveCapacity(bytes.byteCount)
+            byteBuffer.writeBytes(bytes)
+
+            try await self.writer.write(.body(byteBuffer))
+        }
+
+        /// Writes a final chunk of the response body from borrowed memory and completes the response.
+        ///
+        /// The borrowing counterpart to ``finish(buffer:finalElement:)``
+        ///
+        /// - Parameters:
+        ///   - bytes: The final body bytes. Only borrowed for the duration of the call. May be empty,
+        ///     in which case no body part is written.
+        ///   - finalElement: Trailing header fields to send with the end of the response, if any.
+        public consuming func finish(
+            bytes: RawSpan,
+            finalElement: consuming HTTPFields?
+        ) async throws(WriteFailure) {
+            if bytes.byteCount > 0 {
+                var byteBuffer = ByteBuffer()
+                byteBuffer.reserveCapacity(bytes.byteCount)
+                byteBuffer.writeBytes(bytes)
+
+                try await self.writer.write(.body(byteBuffer))
+            }
+            try await self.writer.write(.end(finalElement))
+            self.writerState.wrapped.withLock { $0.finishedWriting = true }
+        }
+
         public consuming func finish(
             buffer: inout some RangeReplaceableContainer<UInt8> & ~Copyable,
             finalElement: consuming HTTPFields?
