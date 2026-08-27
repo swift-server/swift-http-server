@@ -142,7 +142,7 @@ struct NIOHTTPServerTests {
                 }
             )
         )
-        let clientLeaf = try #require(clientConfiguration.clientChain?.leaf)
+        let clientLeaf = try #require(clientConfiguration.chain?.leaf)
 
         try await confirmation { responseReceived in
             try await TestHelpers.withClientServerRequestChannel(

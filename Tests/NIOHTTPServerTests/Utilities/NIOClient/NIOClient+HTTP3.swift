@@ -117,7 +117,9 @@ extension DatagramBootstrap {
     /// Sets up a test HTTP/3 client and returns the QUIC connection channel and the connection multiplexer.
     func setupTestHTTP3Client(
         logger: Logger,
-        trustRootsPath: String
+        trustRootsPath: String,
+        quicConfiguration: QUICConfiguration,
+        http3Configuration: HTTP3ClientConfiguration = .defaults
     ) async throws -> (any Channel, NIOLoopBound<TestHTTP3SingleConnectionCreator>) {
         try await self.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
@@ -125,8 +127,8 @@ extension DatagramBootstrap {
                     let connectionCreator = try channel.makeConnectionCreator(
                         logger: logger,
                         settings: .init(),
-                        configuration: .defaults,
-                        quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPath),
+                        configuration: http3Configuration,
+                        quicConfiguration: quicConfiguration,
                         asyncVerifier: try! .init(
                             trustRootsPath: trustRootsPath,
                             certificateVerification: .noHostnameVerification,

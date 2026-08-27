@@ -155,10 +155,61 @@ extension TestClientConnection {
 
 @available(anyAppleOS 26.0, *)
 extension TestClientConnection {
+    /// The information needed to establish a test client connection to a ``NIOHTTPServer``.
+    struct Configuration {
+        var logger: Logger
+        var httpVersion: Version
+        var trustRootsPEMPath: String?
+        var chain: ChainPrivateKeyPair? = nil
+
+        enum Version {
+            case plaintextHTTP1_1
+            case http1_1
+            case http2
+            case http3(quicConfiguration: QUICConfiguration, http3Configuration: HTTP3ClientConfiguration)
+
+            var alpnIdentifier: String {
+                switch self {
+                case .plaintextHTTP1_1, .http1_1:
+                    "http/1.1"
+                case .http2:
+                    "h2"
+                case .http3:
+                    "h3"
+                }
+            }
+        }
+
+        init(
+            logger: Logger,
+            httpVersion: NIOHTTPServer.HTTPVersion,
+            trustRootsPEMPath: String?,
+            chain: ChainPrivateKeyPair? = nil
+        ) {
+            self.logger = logger
+            self.trustRootsPEMPath = trustRootsPEMPath
+            self.chain = chain
+
+            self.httpVersion = switch httpVersion {
+            case .plaintextHTTP1_1:
+                .plaintextHTTP1_1
+            case .http1_1:
+                .http1_1
+            case .http2:
+                .http2
+            case .http3:
+                .http3(
+                    quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
+                    http3Configuration: .defaults
+                )
+            }
+        }
+    }
+
     /// Establishes a client connection to `serverAddress` based on the provided `httpVersion`, runs `body` with the
     /// resulting ``TestClientConnection``. The stream and the underlying connection are closed when `body` returns.
     static func withConnection(
-        configuration: TestHelpers.ClientConfiguration,
+        configuration: Configuration,
         serverAddress: NIOHTTPServer.SocketAddress,
         body: (TestClientConnection) async throws -> Void
     ) async throws {
@@ -171,7 +222,7 @@ extension TestClientConnection {
 
         case (.http1_1, .some(let trustRootsPEMPath)), (.http2, .some(let trustRootsPEMPath)):
             let tlsConfiguration =
-                if let clientChain = configuration.clientChain {
+                if let clientChain = configuration.chain {
                     try TLSConfiguration.makeTestClientMTLSConfiguration(
                         testTrustRoots: .file(trustRootsPEMPath),
                         clientChain: clientChain,
@@ -188,11 +239,14 @@ extension TestClientConnection {
                 .connectToTestSecureUpgradeHTTPServer(at: serverAddress, tlsConfig: tlsConfiguration)
 
         #if HTTP3
-        case (.http3, .some(let trustRootsPEMPath)):
-            let (quicChannel, connectionCreator) = try await DatagramBootstrap(
-                group: .singletonMultiThreadedEventLoopGroup
-            )
-            .setupTestHTTP3Client(logger: configuration.logger, trustRootsPath: trustRootsPEMPath)
+        case (.http3(let quicConfiguration, let http3Configuration), .some(let trustRootsPEMPath)):
+            let (quicChannel, connectionCreator) =
+                try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup).setupTestHTTP3Client(
+                    logger: configuration.logger,
+                    trustRootsPath: trustRootsPEMPath,
+                    quicConfiguration: quicConfiguration,
+                    http3Configuration: http3Configuration
+                )
 
             let multiplexer = HTTP3ClientConnectionMultiplexer<
                 TestHTTP3SingleConnectionCreator, NIOQUIC.QUICStreamCreator
@@ -236,7 +290,7 @@ extension TestClientConnection {
     /// Establishes a client connection to `serverAddress`, opens a request stream on it, and runs the `body` closure.
     /// The stream and the underlying connection are closed when `body` returns.
     static func withConnectedRequestChannel(
-        configuration: TestHelpers.ClientConfiguration,
+        configuration: Configuration,
         serverAddress: NIOHTTPServer.SocketAddress,
         body: (
             NIOAsyncChannelInboundStream<HTTPResponsePart>,
@@ -244,7 +298,7 @@ extension TestClientConnection {
         ) async throws -> Void
     ) async throws {
         try await Self.withConnection(configuration: configuration, serverAddress: serverAddress) { connection in
-            try await connection.makeRequestChannel(expectedHTTPVersion: configuration.httpVersion)
+            try await connection.makeRequestChannel(expectedHTTPVersion: .init(configuration.httpVersion))
                 .executeThenClose(body)
         }
     }
@@ -254,7 +308,7 @@ extension TestClientConnection {
     /// with the HTTP/3 connection channel (for reading/writing datagrams) and the request stream channel. The stream
     /// and the underlying connection are closed when `body` returns.
     static func withConnectedHTTP3ConnectionAndRequestChannel(
-        configuration: TestHelpers.ClientConfiguration,
+        configuration: Configuration,
         serverAddress: NIOHTTPServer.SocketAddress,
         body: (
             _ streamID: QUICStreamID,
@@ -316,6 +370,22 @@ extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {
                     configuration: .init(isOutboundHalfClosureEnabled: true)
                 )
             }
+        }
+    }
+}
+
+@available(anyAppleOS 26.0, *)
+extension NIOHTTPServer.HTTPVersion {
+    init(_ version: TestClientConnection.Configuration.Version) {
+        switch version {
+        case .plaintextHTTP1_1:
+            self = .plaintextHTTP1_1
+        case .http1_1:
+            self = .http1_1
+        case .http2:
+            self = .http2
+        case .http3:
+            self = .http3
         }
     }
 }

@@ -378,7 +378,7 @@ struct NIOHTTPServiceLifecycleTests {
         secondClientHTTPVersion: NIOHTTPServer.HTTPVersion
     ) async throws {
         // Configure two listeners. We want to test whether graceful shutdown works independently on each listener.
-        let (serverConfiguration, trustRootsPEMPath) = try TestHelpers.makeSecureUpgradeServerConfiguration(
+        let (serverConfiguration, trustRootsPEMPath) = try TestHelpers.makeTLSServerConfiguration(
             supportedHTTPVersions: [.http1_1, .http2],
             concurrentListeners: 2
         )
@@ -433,7 +433,7 @@ struct NIOHTTPServiceLifecycleTests {
                     let secondServerAddress = try await server.listeningAddresses[1]
 
                     try await TestClientConnection.withConnectedRequestChannel(
-                        configuration: TestHelpers.ClientConfiguration(
+                        configuration: TestClientConnection.Configuration(
                             logger: self.clientLogger,
                             httpVersion: firstClientHTTPVersion,
                             trustRootsPEMPath: trustRootsPEMPath
@@ -447,7 +447,7 @@ struct NIOHTTPServiceLifecycleTests {
                         try await firstTargetRequestStartedPromise.futureResult.get()
 
                         try await TestClientConnection.withConnectedRequestChannel(
-                            configuration: TestHelpers.ClientConfiguration(
+                            configuration: TestClientConnection.Configuration(
                                 logger: self.clientLogger,
                                 httpVersion: secondClientHTTPVersion,
                                 trustRootsPEMPath: trustRootsPEMPath
