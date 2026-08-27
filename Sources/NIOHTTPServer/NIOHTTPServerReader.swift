@@ -79,18 +79,15 @@ extension NIOHTTPServer {
         #if HTTP3 && UnstableHTTPDatagrams
         /// The unreliable datagram reader, present when the underlying transport is capable of reading/writing
         /// unreliable datagrams.
-        private var datagramReader: Disconnected<NIOHTTPServer.DatagramReader?>?
+        private var datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?
 
         /// Initializes a new request body reader that can also vend an unreliable datagram reader if the underlying
         /// transport supports unreliable datagrams.
-        init(
-            readerState: ReaderState,
-            datagramReader: consuming sending NIOHTTPServer.DatagramReader? = nil
-        ) {
+        init(readerState: ReaderState, datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil) {
             self.state = readerState
             self.iterator = readerState.takeIterator()
             self.buffer = UniqueArray<UInt8>()
-            self.datagramReader = Disconnected(value: datagramReader)
+            self.datagramStreamFuture = datagramStreamFuture
         }
         #endif
 
@@ -142,11 +139,27 @@ extension NIOHTTPServer.Reader: Sendable {}
 #if HTTP3 && UnstableHTTPDatagrams
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer.Reader {
-    /// Returns the unreliable datagram reader for this stream, if there is one.
+    /// Returns the unreliable datagram reader for this stream, if both the server and the client have advertised
+    /// support for receiving datagrams.
     ///
-    /// - Important: A reader will be returned only the first time this function is invoked. Any successive calls will yield `nil`.
-    public mutating func takeDatagramReader() -> sending NIOHTTPServer.DatagramReader? {
-        self.datagramReader?.swap(newValue: nil)
+    /// - Note: This function will suspend until the server has received the SETTINGS frame from the client. This is
+    ///   because the server must send _and_ receive the `SETTINGS_H3_DATAGRAMS` setting with value 1 before sending or
+    ///   receiving unreliable datagrams. See https://datatracker.ietf.org/doc/html/rfc9297#section-2.1.1-3.
+    ///
+    /// - Important: This function can only be called once. Any successive calls will result in a runtime crash.
+    public mutating func takeDatagramReader() async -> sending NIOHTTPServer.DatagramReader? {
+        guard let streamFuture = self.datagramStreamFuture else {
+            // The server did not advertise support for receiving datagrams.
+            return nil
+        }
+
+        do {
+            let stream = try await streamFuture.get()
+            return NIOHTTPServer.DatagramReader(iterator: stream.inbound.makeAsyncIterator())
+        } catch {
+            // The peer did not agree to receiving datagrams.
+            return nil
+        }
     }
 }
 #endif  // HTTP3 && UnstableHTTPDatagrams

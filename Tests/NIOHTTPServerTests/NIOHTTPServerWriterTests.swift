@@ -95,11 +95,11 @@ struct NIOHTTPServerWriterTests {
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
             writerState: .init(),
-            datagramWriter: nil
+            datagramStreamFuture: nil
         )
 
         var responseBodyWriter = try await sender.send(.init(status: .ok))
-        let datagramWriter = responseBodyWriter.takeDatagramWriter()
+        let datagramWriter = await responseBodyWriter.takeDatagramWriter()
 
         if case .some = datagramWriter {
             Issue.record("Unexpectedly received a datagram writer.")
@@ -124,16 +124,19 @@ struct NIOHTTPServerWriterTests {
     func takeDatagramWriterVendsResponseAndDatagramWriter() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let connectionChannel = EmbeddedChannel()
+        let datagramStreamPromise = connectionChannel.eventLoop.makePromise(of: HTTP3UnreliableDatagramStream.self)
         let sender = NIOHTTPServer.ResponseSender(
             writer: outboundWriter,
             writerState: .init(),
-            datagramWriter: NIOHTTPServer.DatagramWriter(
-                unreliableStream: .init(streamID: 4, connectionChannel: connectionChannel, maxBufferedDatagrams: 16)
-            )
+            datagramStreamFuture: datagramStreamPromise.futureResult
+        )
+
+        datagramStreamPromise.succeed(
+            HTTP3UnreliableDatagramStream(streamID: 4, connectionChannel: connectionChannel, maxBufferedDatagrams: 16)
         )
 
         var responseBodyWriter = try await sender.send(.init(status: .ok))
-        let datagramWriter = responseBodyWriter.takeDatagramWriter()
+        let datagramWriter = await responseBodyWriter.takeDatagramWriter()
 
         var testBuffer = UniqueArray<UInt8>(repeating: 5, count: 10)
         try await responseBodyWriter.finish(buffer: &testBuffer)

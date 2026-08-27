@@ -16,6 +16,7 @@ import BasicContainers
 import NIOCore
 import NIOHTTP1
 import NIOHTTPTypes
+import NIOEmbedded
 import NIOPosix
 import Testing
 
@@ -216,7 +217,7 @@ struct NIOHTTPServerReaderTests {
 
         var requestBodyReader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
 
-        let datagramReader = requestBodyReader.takeDatagramReader()
+        let datagramReader = await requestBodyReader.takeDatagramReader()
         var collected: [UInt8] = []
 
         if case .some = datagramReader {
@@ -239,13 +240,20 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(nil))
         source.finish()
 
+        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
+        let datagramStreamPromise = elg.any().makePromise(of: HTTP3UnreliableDatagramStream.self)
+
         let (datagrams, datagramSource) = AsyncStream<ByteBuffer>.makeStream()
         var requestBodyReader = NIOHTTPServer.Reader(
             readerState: .init(iterator: stream.makeAsyncIterator()),
-            datagramReader: NIOHTTPServer.DatagramReader(iterator: datagrams.makeAsyncIterator())
+            datagramStreamFuture: datagramStreamPromise.futureResult
         )
 
-        let datagramReader = requestBodyReader.takeDatagramReader()
+        datagramStreamPromise.succeed(
+            HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: EmbeddedChannel(), maxBufferedDatagrams: 16)
+        )
+
+        let datagramReader = await requestBodyReader.takeDatagramReader()
         var collected: [UInt8] = []
 
         try await requestBodyReader.read { buffer, _ in

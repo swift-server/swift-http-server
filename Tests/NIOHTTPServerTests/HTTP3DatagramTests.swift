@@ -33,13 +33,20 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func datagramsAreRoutedByStreamID() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
-        try channel.pipeline.syncOperations.addHandler(demultiplexer)
+        let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
+
+        let manager = HTTP3ConnectionManager(
+            eventLoop: channel.eventLoop,
+            logger: Self.serverLogger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try channel.pipeline.syncOperations.addHandler(manager)
+        manager.datagramContext?.datagramsNegotiatedPromise.succeed()
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 2, connectionChannel: channel, maxBufferedDatagrams: 16)
-        demultiplexer.register(datagramStream: first)
-        demultiplexer.register(datagramStream: second)
+        manager.register(datagramStream: first)
+        manager.register(datagramStream: second)
 
         var firstReader = NIOHTTPServer.DatagramReader(iterator: first.inbound.makeAsyncIterator())
         var secondReader = NIOHTTPServer.DatagramReader(iterator: second.inbound.makeAsyncIterator())
@@ -57,14 +64,20 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func datagramsAfterDeregisteringAreDropped() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
-        try channel.pipeline.syncOperations.addHandler(demultiplexer)
+        let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
+        let manager = HTTP3ConnectionManager(
+            eventLoop: channel.eventLoop,
+            logger: Self.serverLogger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try channel.pipeline.syncOperations.addHandler(manager)
+        manager.datagramContext?.datagramsNegotiatedPromise.succeed()
 
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
-        demultiplexer.register(datagramStream: stream)
+        manager.register(datagramStream: stream)
         var reader = NIOHTTPServer.DatagramReader(iterator: stream.inbound.makeAsyncIterator())
 
-        demultiplexer.deregister(streamID: stream.streamID)
+        manager.deregister(streamID: stream.streamID)
         try channel.writeInbound(HTTP3Datagram(streamID: 0, payload: ByteBuffer([1])))
         stream.finish()
 
@@ -75,13 +88,19 @@ struct HTTP3DatagramTests {
     @available(anyAppleOS 26.0, *)
     func closingTheConnectionEndsEveryDatagramStream() async throws {
         let channel = EmbeddedChannel()
-        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: channel.eventLoop)
-        try channel.pipeline.syncOperations.addHandler(demultiplexer)
+        let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
+        let manager = HTTP3ConnectionManager(
+            eventLoop: channel.eventLoop,
+            logger: Self.serverLogger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try channel.pipeline.syncOperations.addHandler(manager)
+        manager.datagramContext?.datagramsNegotiatedPromise.succeed()
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 16, connectionChannel: channel, maxBufferedDatagrams: 16)
-        demultiplexer.register(datagramStream: first)
-        demultiplexer.register(datagramStream: second)
+        manager.register(datagramStream: first)
+        manager.register(datagramStream: second)
 
         var firstReader = NIOHTTPServer.DatagramReader(iterator: first.inbound.makeAsyncIterator())
         var secondReader = NIOHTTPServer.DatagramReader(iterator: second.inbound.makeAsyncIterator())
@@ -215,7 +234,7 @@ struct HTTP3DatagramTests {
                 streamOpenedPromise.succeed()
 
                 var reader = reader
-                var datagramReader = reader.takeDatagramReader()!
+                var datagramReader = await reader.takeDatagramReader()!
 
                 // Read the datagram.
                 let collectedDatagram = try #require(await TestHelpers.readDatagram(&datagramReader))
@@ -223,7 +242,7 @@ struct HTTP3DatagramTests {
 
                 // Echo the datagram back.
                 var writer = try await responseSender.send(.init(status: .ok))
-                var datagramWriter = writer.takeDatagramWriter()!
+                var datagramWriter = await writer.takeDatagramWriter()!
                 var writeBuffer = UniqueArray<UInt8>(copying: collectedDatagram)
                 try await datagramWriter.write(buffer: &writeBuffer)
             }

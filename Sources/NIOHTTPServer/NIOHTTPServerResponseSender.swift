@@ -32,18 +32,18 @@ extension NIOHTTPServer {
         }
 
         #if HTTP3 && UnstableHTTPDatagrams
-        private var datagramWriter: Disconnected<NIOHTTPServer.DatagramWriter?>?
+        private var datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?
 
         /// Initializes a response sender that can also vend an unreliable datagram writer if the underlying transport
         /// supports unreliable datagrams.
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
             writerState: WriterState,
-            datagramWriter: consuming sending NIOHTTPServer.DatagramWriter? = nil
+            datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil
         ) {
             self.writer = writer
             self.writerState = writerState
-            self.datagramWriter = Disconnected(value: datagramWriter)
+            self.datagramStreamFuture = datagramStreamFuture
         }
         #endif
 
@@ -60,7 +60,7 @@ extension NIOHTTPServer {
             return Writer(
                 writer: self.writer,
                 writerState: self.writerState,
-                datagramWriter: self.datagramWriter
+                datagramStreamFuture: self.datagramStreamFuture
             )
             #else
             return Writer(writer: self.writer, writerState: self.writerState)
@@ -101,16 +101,16 @@ extension NIOHTTPServer.ResponseSender {
 
         #if HTTP3 && UnstableHTTPDatagrams
         /// The unreliable datagram writer, present when the underlying transport supports unreliable datagrams.
-        private var datagramWriter: Disconnected<NIOHTTPServer.DatagramWriter?>?
+        private var datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?
 
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
             writerState: WriterState,
-            datagramWriter: consuming Disconnected<NIOHTTPServer.DatagramWriter?>? = nil
+            datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil
         ) {
             self.writer = writer
             self.writerState = writerState
-            self.datagramWriter = datagramWriter
+            self.datagramStreamFuture = datagramStreamFuture
         }
         #endif
 
@@ -132,12 +132,26 @@ extension NIOHTTPServer.ResponseSender {
         }
 
         #if HTTP3 && UnstableHTTPDatagrams
-        /// Returns the unreliable datagram writer for this stream, if there is one.
+        /// Returns the unreliable datagram writer for this stream, if both the server and the client have advertised
+        /// support for receiving datagrams.
         ///
-        /// - Important: A writer will be returned only the first time this function is invoked.
-        /// Any successive calls will yield `nil`.
-        public mutating func takeDatagramWriter() -> sending NIOHTTPServer.DatagramWriter? {
-            self.datagramWriter?.swap(newValue: nil)
+        /// - Note: This function will suspend until the server has received the SETTINGS frame from the client. This is
+        ///   because the server must send _and_ receive the `SETTINGS_H3_DATAGRAMS` setting with value 1 before sending
+        ///   or receiving unreliable datagrams. See https://datatracker.ietf.org/doc/html/rfc9297#section-2.1.1-3.
+        ///
+        /// - Important: This function can only be called once. Any successive calls will result in a runtime crash.
+        public mutating func takeDatagramWriter() async -> sending NIOHTTPServer.DatagramWriter? {
+            guard let streamFuture = self.datagramStreamFuture else {
+                // The peer did not agree to receiving datagrams.
+                return nil
+            }
+
+            do {
+                return NIOHTTPServer.DatagramWriter(unreliableStream: try await streamFuture.get())
+            } catch {
+                // The peer did not agree to receiving datagrams.
+                return nil
+            }
         }
         #endif  // HTTP3 && UnstableHTTPDatagrams
     }

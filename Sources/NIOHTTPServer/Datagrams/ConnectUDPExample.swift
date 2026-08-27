@@ -32,7 +32,7 @@ func connectUDPExample(
     }
 
     var streamReader = reader
-    let maybeDatagramReader = streamReader.takeDatagramReader()
+    let maybeDatagramReader = await streamReader.takeDatagramReader()
 
     // The unreliable datagram transport will not be available if the underlying transport does not support
     // unreliable datagrams, like in HTTP/1.1 and HTTP/2 over TCP, or also over HTTP/3 when support for datagrams is
@@ -62,7 +62,7 @@ func connectUDPExample(
 
     // Now accept the request and access the datagram writer through the response writer.
     var streamWriter = try await responseSender.send(ConnectUDPHelper.makeSuccessResponse(version: context.httpVersion))
-    let datagramWriter = streamWriter.takeDatagramWriter()
+    let datagramWriter = await streamWriter.takeDatagramWriter()
 
     let streamWriterBox = RefBox(value: Disconnected(value: streamWriter))
     let datagramWriterBox = RefBox(value: Disconnected(value: datagramWriter))

@@ -33,8 +33,8 @@ extension NIOHTTPServer {
         var channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
 
         #if UnstableHTTPDatagrams
-        /// The unreliable datagram stream. `nil` if HTTP datagram support was not negotiated.
-        var datagramStream: HTTP3UnreliableDatagramStream?
+        /// The unreliable datagram stream future. `nil` if HTTP datagram support was not enabled by the server.
+        var datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?
         #endif
     }
 
@@ -111,7 +111,7 @@ extension NIOHTTPServer {
                             requestContext: context,
                             inboundIterator: inboundIterator,
                             outbound: outbound,
-                            datagramStream: stream.datagramStream,
+                            datagramStreamFuture: stream.datagramStreamFuture,
                             handler: handler
                         )
                         #else
@@ -229,43 +229,57 @@ extension NIOHTTPServer {
         connectionChannel: any Channel,
         streamCreator: NIOQUIC.QUICStreamCreator,
     ) throws -> HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
-        let loopBoundHandler = NIOLoopBoundBox<HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>?>(
-            nil,
-            eventLoop: connectionChannel.eventLoop
-        )
+        let connectionEventLoop = connectionChannel.eventLoop
+        let loopBoundHandler =
+            NIOLoopBoundBox<HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>?>(nil, eventLoop: connectionEventLoop)
+
 
         #if UnstableHTTPDatagrams
-        // TODO: If support for datagrams was not negotiated, we shouldn't create the datagram handler and demultiplexer.
-        let demultiplexer = HTTP3DatagramDemultiplexer(eventLoop: connectionChannel.eventLoop)
-        let loopBoundDemultiplexer = NIOLoopBound(demultiplexer, eventLoop: connectionChannel.eventLoop)
+        let datagramsNegotiatedPromise =
+            http3Configuration.datagramConfiguration.map { _ in connectionEventLoop.makePromise(of: Void.self) }
+        let connectionManager = HTTP3ConnectionManager(
+            eventLoop: connectionEventLoop,
+            logger: self.logger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        let loopBoundManager = NIOLoopBound(connectionManager, eventLoop: connectionChannel.eventLoop)
+        #else
+        let connectionManager = HTTP3ConnectionManager(eventLoop: connectionEventLoop, logger: self.logger)
         #endif
 
         let connection = HTTP3ServerConnection(connectionHandler: loopBoundHandler) { streamInitializerParameters in
             let streamChannel = streamInitializerParameters.channel
 
             return streamChannel.eventLoop.makeCompletedFuture {
-                #if !UnstableHTTPDatagrams
-                return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
-                #else
-                guard let datagramConfiguration = http3Configuration.datagramConfiguration else {
+                #if UnstableHTTPDatagrams
+                guard let datagramConfiguration = http3Configuration.datagramConfiguration,
+                      let negotiationPromise = datagramsNegotiatedPromise
+                else {
                     return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
                 }
 
-                let datagramStream = HTTP3UnreliableDatagramStream(
-                    streamID: streamInitializerParameters.streamID,
-                    connectionChannel: connectionChannel,
-                    maxBufferedDatagrams: datagramConfiguration.maxBufferedStreamDatagrams
-                )
-                loopBoundDemultiplexer.value.register(datagramStream: datagramStream)
+                // Create the unreliable stream only when we know the peer supports receiving datagrams.
+                let datagramStreamFuture = negotiationPromise.futureResult.map { _ in
+                    let datagramStream = HTTP3UnreliableDatagramStream(
+                        streamID: streamInitializerParameters.streamID,
+                        connectionChannel: connectionChannel,
+                        maxBufferedDatagrams: datagramConfiguration.maxBufferedStreamDatagrams
+                    )
+                    loopBoundManager.value.register(datagramStream: datagramStream)
 
-                streamChannel.closeFuture.whenComplete { _ in
-                    loopBoundDemultiplexer.value.deregister(streamID: datagramStream.streamID)
-                    datagramStream.finish()
+                    return datagramStream
                 }
+
+                datagramStreamFuture.and(streamChannel.closeFuture).whenComplete { _ in
+                    loopBoundManager.value.deregister(streamID: streamInitializerParameters.streamID)
+                }
+
                 return HTTP3Stream(
                     channel: try self.setupHTTP3Stream(streamChannel: streamChannel),
-                    datagramStream: datagramStream
+                    datagramStreamFuture: datagramStreamFuture
                 )
+                #else
+                return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
                 #endif
             }
         }
@@ -300,9 +314,9 @@ extension NIOHTTPServer {
         loopBoundHandler.value = http3Handler
 
         #if UnstableHTTPDatagrams
-        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, loopBoundDemultiplexer.value])
+        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, loopBoundManager.value])
         #else
-        try connectionChannel.pipeline.syncOperations.addHandler(http3Handler)
+        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, manager])
         #endif
 
         return connection

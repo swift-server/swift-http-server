@@ -389,7 +389,7 @@ public struct NIOHTTPServer: HTTPServer {
         requestContext: RequestContext,
         inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        datagramStream: HTTP3UnreliableDatagramStream?,
+        datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?,
         handler: Handler
     ) async
     where
@@ -397,22 +397,11 @@ public struct NIOHTTPServer: HTTPServer {
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        let datagramReader: DatagramReader?
-        let datagramWriter: DatagramWriter?
-
-        if let datagramStream {
-            datagramReader = DatagramReader(iterator: datagramStream.inbound.makeAsyncIterator())
-            datagramWriter = DatagramWriter(unreliableStream: datagramStream)
-        } else {
-            datagramReader = nil
-            datagramWriter = nil
-        }
-
         let readerState = Reader.ReaderState(iterator: inboundIterator)
         let writerState = ResponseSender.WriterState()
 
-        let requestReader = Reader(readerState: readerState, datagramReader: datagramReader)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: datagramWriter)
+        let requestReader = Reader(readerState: readerState, datagramStreamFuture: datagramStreamFuture)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramStreamFuture: datagramStreamFuture)
 
         _ = await self.invokeHandler(
             request: request,
