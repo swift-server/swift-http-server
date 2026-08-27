@@ -15,6 +15,7 @@
 import BasicContainers
 import NIOCore
 import NIOHTTP1
+import NIOHTTP3
 import NIOHTTPTypes
 import NIOEmbedded
 import NIOPosix
@@ -235,39 +236,53 @@ struct NIOHTTPServerReaderTests {
     @Test("takeDatagramReader vends a request body and datagram reader")
     @available(anyAppleOS 26.0, *)
     func takeDatagramReaderVendsRequestAndDatagramReader() async throws {
-        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
-        source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
-        source.yield(.end(nil))
-        source.finish()
+        let (reliableStream, reliableSource) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        reliableSource.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
+        reliableSource.yield(.end(nil))
+        reliableSource.finish()
 
-        let elg: EventLoopGroup = .singletonMultiThreadedEventLoopGroup
-        let datagramStreamPromise = elg.any().makePromise(of: HTTP3UnreliableDatagramStream.self)
+        // Set up a mock connection channel where we will write a datagram to.
+        let connectionChannel = EmbeddedChannel()
+        let datagramsNegotiatedPromise = connectionChannel.eventLoop.makePromise(of: Void.self)
+        let handler = HTTP3ConnectionManager(
+            eventLoop: connectionChannel.eventLoop,
+            logger: .init(label: "test"),
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try connectionChannel.pipeline.syncOperations.addHandler(handler)
 
-        let (datagrams, datagramSource) = AsyncStream<ByteBuffer>.makeStream()
+        // Now create the reader.
+        let datagramStreamPromise = connectionChannel.eventLoop.makePromise(of: HTTP3UnreliableDatagramStream.self)
         var requestBodyReader = NIOHTTPServer.Reader(
-            readerState: .init(iterator: stream.makeAsyncIterator()),
+            readerState: .init(iterator: reliableStream.makeAsyncIterator()),
             datagramStreamFuture: datagramStreamPromise.futureResult
         )
 
-        datagramStreamPromise.succeed(
-            HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: EmbeddedChannel(), maxBufferedDatagrams: 16)
-        )
-
-        let datagramReader = await requestBodyReader.takeDatagramReader()
+        // First read from the reliable stream.
         var collected: [UInt8] = []
-
         try await requestBodyReader.read { buffer, _ in
             for index in buffer.indices { collected.append(buffer[index]) }
         }
+        #expect(collected == [1, 2, 3])
 
+        // Simulate the peer advertising support for receiving datagrams.
+        datagramsNegotiatedPromise.succeed()
+
+        // Now simulate the arrival of a new stream with ID 0.
+        let mockStream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: connectionChannel, maxBufferedDatagrams: 16)
+        handler.register(datagramStream: mockStream)
+        datagramStreamPromise.succeed(mockStream)
+
+        let datagramReader = await requestBodyReader.takeDatagramReader()
         guard var datagramReader = datagramReader else {
             Issue.record("Expected a datagram reader but received `nil`.")
             return
         }
 
-        datagramSource.yield(ByteBuffer(bytes: [4, 5]))
+        // Now write a datagram addressed for stream ID 0 to the connection channel.
+        try connectionChannel.writeInbound(HTTP3Datagram(streamID: 0, payload: .init([4, 5])))
 
-        #expect(collected == [1, 2, 3])
+        // We should be able to read the datagram from the datagram reader.
         #expect(try await TestHelpers.readDatagram(&datagramReader) == [4, 5])
     }
     #endif  // HTTP3 && UnstableHTTPDatagrams
