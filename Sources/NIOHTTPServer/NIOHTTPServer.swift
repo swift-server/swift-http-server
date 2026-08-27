@@ -322,102 +322,14 @@ public struct NIOHTTPServer: HTTPServer {
         }
     }
 
-    /// Reads the next request head from the iterator. Returns `nil` if the connection is done or
-    /// an unexpected part is received.
-    ///
-    /// Skips over leftover `.body` and `.end` parts from a previous request that the
-    /// handler didn't fully consume. The ``HTTPKeepAliveHandler`` separately ensures that connections are closed (with
-    /// `Connection: close`) when the server responds before the request `.end` arrives, preventing unbounded leftover state.
-    func nextRequestHead(
-        from iterator: inout NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator
-    ) async throws -> HTTPRequest? {
-        while true {
-            switch try await iterator.next(isolation: #isolation) {
-            case .head(let request):
-                return request
-            case .body, .end:
-                // Leftover parts from a previous request. Skip and look for the next head.
-                continue
-            case .none:
-                self.logger.trace("No more request parts on connection")
-                return nil
-            }
-        }
-    }
-
-    #if HTTP3 && UnstableHTTPDatagrams
-    /// Invokes the request handler with the appropriate reader/writer state.
-    func invokeHandler<Handler: HTTPServerRequestHandler>(
-        request: HTTPRequest,
-        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
-        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        requestContext: RequestContext,
-        datagramStream: HTTP3UnreliableDatagramStream?,
-        handler: Handler
-    ) async
-    where
-        Handler.RequestContext == RequestContext,
-        Handler.Reader == Reader,
-        Handler.ResponseSender == ResponseSender
-    {
-        let readerState = Reader.ReaderState(iterator: iterator)
-        let writerState = ResponseSender.WriterState()
-
-        let datagramReader: DatagramReader?
-        let datagramWriter: DatagramWriter?
-
-        if let datagramStream {
-            datagramReader = DatagramReader(iterator: datagramStream.inbound.makeAsyncIterator())
-            datagramWriter = DatagramWriter(unreliableStream: datagramStream)
-        } else {
-            datagramReader = nil
-            datagramWriter = nil
-        }
-
-        let requestReader = Reader(readerState: readerState, datagramReader: datagramReader)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: datagramWriter)
-
-        do {
-            try await handler.handle(
-                request: request,
-                requestContext: requestContext,
-                reader: requestReader,
-                responseSender: responseSender
-            )
-        } catch {
-            // A throwing handler signals that the exchange failed. The error is deliberately not propagated to any
-            // caller: it exists to drive the wire, aborting the exchange with protocol error codes the error can choose
-            // by conforming to `HTTPServerHTTP2StreamResetErrorConvertible` /
-            // `HTTPServerHTTP3StreamResetErrorConvertible`.
-            self.logger.debug(
-                "Error thrown while handling request: aborting.",
-                error: error,
-                metadata: [LoggingKeys.protocol: "\(requestContext.connectionContext.httpVersion)"]
-            )
-
-            // Only abort a response that is still in flight. A response the handler already concluded has nothing left
-            // to abort, and resetting the stream afterwards can make the peer discard a response it has already
-            // received in full: RFC 9000 § 3.1 permits `RESET_STREAM` from the "Data Sent" state, so over HTTP/3 the
-            // reset does reach the client rather than being dropped as it is over HTTP/2.
-            if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-                Self.abortRequest(requestContext: requestContext, error: error)
-            }
-        }
-
-        if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-            self.logger.debug("Handler did not conclude the response.")
-        }
-    }
-    #endif
-
     /// Shared core: invokes the request handler with the appropriate reader/writer state.
     /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
     /// or `nil` if the request could not be fully consumed.
-    func invokeHandler<Handler: HTTPServerRequestHandler>(
+    private func invokeHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
-        iterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
-        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
         requestContext: RequestContext,
+        requestReader: consuming sending Reader,
+        responseSender: consuming sending ResponseSender,
         handler: Handler
     ) async -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
     where
@@ -425,11 +337,8 @@ public struct NIOHTTPServer: HTTPServer {
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        let readerState = Reader.ReaderState(iterator: iterator)
-        let writerState = ResponseSender.WriterState()
-
-        let requestReader = Reader(readerState: readerState)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState)
+        let readerState = requestReader.state
+        let writerState = responseSender.writerState
 
         do {
             try await handler.handle(
@@ -472,6 +381,74 @@ public struct NIOHTTPServer: HTTPServer {
         // reading the request body but didn't finish, the iterator was consumed by the
         // reader and not returned, so we can't reuse the connection.
         return readerState.takeIterator()
+    }
+
+    #if HTTP3 && UnstableHTTPDatagrams
+    func invokeHandler<Handler: HTTPServerRequestHandler>(
+        request: HTTPRequest,
+        requestContext: RequestContext,
+        inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        datagramStream: HTTP3UnreliableDatagramStream?,
+        handler: Handler
+    ) async
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        let datagramReader: DatagramReader?
+        let datagramWriter: DatagramWriter?
+
+        if let datagramStream {
+            datagramReader = DatagramReader(iterator: datagramStream.inbound.makeAsyncIterator())
+            datagramWriter = DatagramWriter(unreliableStream: datagramStream)
+        } else {
+            datagramReader = nil
+            datagramWriter = nil
+        }
+
+        let readerState = Reader.ReaderState(iterator: inboundIterator)
+        let writerState = ResponseSender.WriterState()
+
+        let requestReader = Reader(readerState: readerState, datagramReader: datagramReader)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramWriter: datagramWriter)
+
+        _ = await self.invokeHandler(
+            request: request,
+            requestContext: requestContext,
+            requestReader: requestReader,
+            responseSender: responseSender,
+            handler: handler
+        )
+    }
+    #endif  // HTTP3 && UnstableHTTPDatagrams
+
+    func invokeHandler<Handler: HTTPServerRequestHandler>(
+        request: HTTPRequest,
+        requestContext: RequestContext,
+        inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+        handler: Handler
+    ) async -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        let readerState = Reader.ReaderState(iterator: inboundIterator)
+        let writerState = ResponseSender.WriterState()
+
+        let requestReader = Reader(readerState: readerState)
+        let responseSender = ResponseSender(writer: outbound, writerState: writerState)
+
+        return await self.invokeHandler(
+            request: request,
+            requestContext: requestContext,
+            requestReader: requestReader,
+            responseSender: responseSender,
+            handler: handler
+        )
     }
 
     /// Fail the listening address promise if the server is shutting down before it began listening.

@@ -56,7 +56,7 @@ extension NIOHTTPServer {
 
         public typealias ReadFailure = any Error
 
-        private var state: ReaderState
+        var state: ReaderState
 
         /// The iterator that provides HTTP request parts from the underlying channel.
         /// Taken from `state` at construction; returned to `state` when this reader

@@ -214,7 +214,7 @@ extension NIOHTTPServer {
             var iterator = inbound.makeAsyncIterator()
 
             requestLoop: while !Task.isCancelled {
-                guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                guard let httpRequest = try await iterator.nextRequestHead(logger: self.logger) else {
                     break requestLoop
                 }
 
@@ -223,9 +223,9 @@ extension NIOHTTPServer {
                 guard
                     let recoveredIterator = await self.invokeHandler(
                         request: httpRequest,
-                        iterator: iterator,
-                        outbound: outbound,
                         requestContext: requestContext,
+                        inboundIterator: iterator,
+                        outbound: outbound,
                         handler: handler
                     )
                 else {

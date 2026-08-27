@@ -192,7 +192,18 @@ extension NIOHTTPServer {
             do {
                 for try await streamChannel in multiplexer.inbound {
                     streamGroup.addTask {
-                        await self.handleStreamChannel(channel: streamChannel, handler: handler, context: context)
+                        await streamChannel.withRequest(
+                            logger: self.logger,
+                            context: context
+                        ) { request, requestContext, inboundIterator, outbound in
+                            _ = await self.invokeHandler(
+                                request: request,
+                                requestContext: requestContext,
+                                inboundIterator: inboundIterator,
+                                outbound: outbound,
+                                handler: handler
+                            )
+                        }
                     }
                 }
             } catch {
@@ -365,95 +376,53 @@ extension NIOHTTPServer {
             }
         }
     }
+}
 
-    #if HTTP3 && UnstableHTTPDatagrams
-    /// Handles a stream channel.
+extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
+    /// Reads the next request head from the iterator. Returns `nil` if the connection is done or an unexpected part is
+    /// received.
     ///
-    /// - Parameter datagramStream: The unreliable datagram stream if both the client and server agreed on sending and
-    ///   receiving unreliable datagrams.
-    func handleStreamChannel<Handler: HTTPServerRequestHandler>(
-        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: Handler,
-        context: ConnectionContext,
-        datagramStream: HTTP3UnreliableDatagramStream?
-    ) async
-    where
-        Handler.RequestContext == RequestContext,
-        Handler.Reader == Reader,
-        Handler.ResponseSender == ResponseSender
-    {
-        do {
-            try await channel.executeThenClose { inbound, outbound in
-                var iterator = inbound.makeAsyncIterator()
-
-                guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
-                    outbound.finish()
-                    return
-                }
-
-                let requestContext = RequestContext(connectionContext: context, channel: channel.channel)
-
-                _ = await self.invokeHandler(
-                    request: httpRequest,
-                    iterator: iterator,
-                    outbound: outbound,
-                    requestContext: requestContext,
-                    datagramStream: datagramStream,
-                    handler: handler
-                )
-
-                // TODO: handle the remaining state scenarios for a handler that returned without throwing. For example,
-                // if we didn't finish reading but we wrote back a response, we should send a RST_STREAM with NO_ERROR
-                // set. If we finished reading but we didn't write back a response, then RST_STREAM is also likely
-                // appropriate but unclear about the error. (A handler that throws already resets the stream; see
-                // `invokeHandler`.)
-
-                // Finish the outbound and wait on the close future to make sure all pending writes are actually
-                // written.
-                outbound.finish()
-                try await channel.channel.closeFuture.get()
+    /// Skips over leftover `.body` and `.end` parts from a previous request that the handler didn't fully consume.
+    mutating func nextRequestHead(logger: Logger) async throws -> HTTPRequest? {
+        while true {
+            switch try await self.next(isolation: #isolation) {
+            case .head(let request):
+                return request
+            case .body, .end:
+                // Leftover parts from a previous request. Skip and look for the next head.
+                continue
+            case .none:
+                logger.trace("No more request parts on connection")
+                return nil
             }
-        } catch {
-            self.logger.debug(
-                "Error thrown while handling stream",
-                error: error,
-                metadata: [LoggingKeys.protocol: "\(context.httpVersion)"]
-            )
-            try? await channel.channel.close()
         }
     }
-    #endif  // HTTP3 && UnstableHTTPDatagrams
+}
 
-    /// Handles a stream channel, which carries exactly one request per stream.
-    func handleStreamChannel<Handler: HTTPServerRequestHandler>(
-        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        handler: Handler,
-        context: ConnectionContext
-    ) async
-    where
-        Handler.RequestContext == RequestContext,
-        Handler.Reader == Reader,
-        Handler.ResponseSender == ResponseSender
-    {
+@available(anyAppleOS 26.0, *)
+extension NIOAsyncChannel where Inbound == HTTPRequestPart, Outbound == HTTPResponsePart {
+    func withRequest(
+        logger: Logger,
+        context: NIOHTTPServer.ConnectionContext,
+        body: (
+            _ request: HTTPRequest,
+            _ requestContext: NIOHTTPServer.RequestContext,
+            _ inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+            _ outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
+        ) async -> Void
+    ) async {
         do {
-            try await channel.executeThenClose { inbound, outbound in
+            try await self.executeThenClose { inbound, outbound in
                 var iterator = inbound.makeAsyncIterator()
 
-                guard let httpRequest = try await self.nextRequestHead(from: &iterator) else {
+                guard let httpRequest = try await iterator.nextRequestHead(logger: logger) else {
                     outbound.finish()
                     return
                 }
 
-                // Built per request, as on HTTP/1.1. A stream carries exactly one request, so this runs once.
-                let requestContext = RequestContext(connectionContext: context, channel: channel.channel)
+                let requestContext = NIOHTTPServer.RequestContext(connectionContext: context, channel: self.channel)
 
-                _ = await self.invokeHandler(
-                    request: httpRequest,
-                    iterator: iterator,
-                    outbound: outbound,
-                    requestContext: requestContext,
-                    handler: handler
-                )
+                await body(httpRequest, requestContext, iterator, outbound)
 
                 // TODO: handle the remaining state scenarios for a handler that returned without throwing. For
                 // example, if we didn't finish reading but we wrote back a response, we should send a RST_STREAM with
@@ -461,18 +430,14 @@ extension NIOHTTPServer {
                 // likely appropriate but unclear about the error. (A handler that throws already resets the stream;
                 // see `invokeHandler`.)
 
-                // Finish the outbound and wait on the close future to make sure all pending
-                // writes are actually written.
-                outbound.finish()
-                try await channel.channel.closeFuture.get()
+                try await self.channel.closeFuture.get()
             }
         } catch {
-            self.logger.debug(
+            logger.debug(
                 "Error thrown while handling stream",
                 error: error,
                 metadata: [LoggingKeys.protocol: "\(context.httpVersion)"]
             )
-            try? await channel.channel.close()
         }
     }
 }

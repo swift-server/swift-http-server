@@ -101,16 +101,29 @@ extension NIOHTTPServer {
         await withDiscardingTaskGroup { streamGroup in
             for await stream in connection.inboundStreams {
                 streamGroup.addTask {
-                    #if UnstableHTTPDatagrams
-                    await self.handleStreamChannel(
-                        channel: stream.channel,
-                        handler: handler,
-                        context: context,
-                        datagramStream: stream.datagramStream
-                    )
-                    #else
-                    await self.handleStreamChannel(channel: stream.channel, handler: handler, context: context)
-                    #endif
+                    await stream.channel.withRequest(
+                        logger: self.logger,
+                        context: context
+                    ) { request, context, inboundIterator, outbound in
+                        #if UnstableHTTPDatagrams
+                        await self.invokeHandler(
+                            request: request,
+                            requestContext: context,
+                            inboundIterator: inboundIterator,
+                            outbound: outbound,
+                            datagramStream: stream.datagramStream,
+                            handler: handler
+                        )
+                        #else
+                        _ = await self.invokeHandler(
+                            request: request,
+                            requestContext: context,
+                            iterator: inboundIterator,
+                            outbound: outbound,
+                            handler: handler
+                        )
+                        #endif  // UnstableHTTPDatagrams
+                    }
                 }
             }
         }
