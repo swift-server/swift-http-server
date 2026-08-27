@@ -238,7 +238,7 @@ struct HTTP3DatagramTests {
 
                 // Read the datagram.
                 let collectedDatagram = try #require(await TestHelpers.readDatagram(&datagramReader))
-                #expect(collectedDatagram == .init(ByteBuffer.testData.readableBytesView))
+                #expect(collectedDatagram == .init(buffer: .testData))
 
                 // Echo the datagram back.
                 var writer = try await responseSender.send(.init(status: .ok))
@@ -259,12 +259,6 @@ struct HTTP3DatagramTests {
                     try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
 
                     var inboundDatagramIterator = connectionInbound.makeAsyncIterator()
-
-                    // TODO: swift-nio-quic currently only fires a channelRead and not a channelReadComplete when
-                    // datagrams are received. But NIOAsyncChannelHandler only delivers data when channelReadComplete is
-                    // called. We need to remove this manual channelReadComplete invocation once the bug is fixed.
-                    try await Task.sleep(for: .milliseconds(500))  // Wait for the channelRead.
-                    connectionChannel.channel.pipeline.fireChannelReadComplete()
 
                     let collectedDatagram = try await inboundDatagramIterator.next()
                     #expect(collectedDatagram?.streamID == streamID)
