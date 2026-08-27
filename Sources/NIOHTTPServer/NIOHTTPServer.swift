@@ -401,7 +401,11 @@ public struct NIOHTTPServer: HTTPServer {
         let writerState = ResponseSender.WriterState()
 
         let requestReader = Reader(readerState: readerState, datagramStreamFuture: datagramStreamFuture)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState, datagramStreamFuture: datagramStreamFuture)
+        let responseSender = ResponseSender(
+            writer: outbound,
+            writerState: writerState,
+            datagramStreamFuture: datagramStreamFuture
+        )
 
         _ = await self.invokeHandler(
             request: request,

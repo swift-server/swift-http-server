@@ -190,19 +190,20 @@ extension TestClientConnection {
             self.trustRootsPEMPath = trustRootsPEMPath
             self.chain = chain
 
-            self.httpVersion = switch httpVersion {
-            case .plaintextHTTP1_1:
-                .plaintextHTTP1_1
-            case .http1_1:
-                .http1_1
-            case .http2:
-                .http2
-            case .http3:
-                .http3(
-                    quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
-                    http3Configuration: .defaults
-                )
-            }
+            self.httpVersion =
+                switch httpVersion {
+                case .plaintextHTTP1_1:
+                    .plaintextHTTP1_1
+                case .http1_1:
+                    .http1_1
+                case .http2:
+                    .http2
+                case .http3:
+                    .http3(
+                        quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
+                        http3Configuration: .defaults
+                    )
+                }
         }
     }
 

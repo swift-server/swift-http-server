@@ -14,10 +14,10 @@
 
 import BasicContainers
 import NIOCore
+import NIOEmbedded
 import NIOHTTP1
 import NIOHTTP3
 import NIOHTTPTypes
-import NIOEmbedded
 import NIOPosix
 import Testing
 
@@ -269,7 +269,11 @@ struct NIOHTTPServerReaderTests {
         datagramsNegotiatedPromise.succeed()
 
         // Now simulate the arrival of a new stream with ID 0.
-        let mockStream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: connectionChannel, maxBufferedDatagrams: 16)
+        let mockStream = HTTP3UnreliableDatagramStream(
+            streamID: 0,
+            connectionChannel: connectionChannel,
+            maxBufferedDatagrams: 16
+        )
         handler.register(datagramStream: mockStream)
         datagramStreamPromise.succeed(mockStream)
 

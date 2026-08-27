@@ -233,7 +233,6 @@ extension NIOHTTPServer {
         let loopBoundHandler =
             NIOLoopBoundBox<HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>?>(nil, eventLoop: connectionEventLoop)
 
-
         #if UnstableHTTPDatagrams
         let datagramsNegotiatedPromise =
             http3Configuration.datagramConfiguration.map { _ in connectionEventLoop.makePromise(of: Void.self) }
@@ -253,7 +252,7 @@ extension NIOHTTPServer {
             return streamChannel.eventLoop.makeCompletedFuture {
                 #if UnstableHTTPDatagrams
                 guard let datagramConfiguration = http3Configuration.datagramConfiguration,
-                      let negotiationPromise = datagramsNegotiatedPromise
+                    let negotiationPromise = datagramsNegotiatedPromise
                 else {
                     return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
                 }

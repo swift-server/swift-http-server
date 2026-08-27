@@ -309,7 +309,7 @@ struct HTTP3DatagramTests {
                 var writer = try await responseSender.send(.init(status: .ok))
                 var datagramWriter = await writer.takeDatagramWriter()!
 
-                let largerThanMaxFrameSize = Array<UInt8>(repeating: 1, count: clientMaxDatagramFrameSize + 50)
+                let largerThanMaxFrameSize = [UInt8](repeating: 1, count: clientMaxDatagramFrameSize + 50)
                 var bufferOne = UniqueArray<UInt8>(copying: largerThanMaxFrameSize.span)
 
                 await #expect(throws: QUICError.datagramTooLarge) {
@@ -317,7 +317,7 @@ struct HTTP3DatagramTests {
                 }
 
                 // But writing a datagram whose size is within the limit should be successful.
-                let smallerThanMaxFrameSize = Array<UInt8>(repeating: 1, count: clientMaxDatagramFrameSize - 50)
+                let smallerThanMaxFrameSize = [UInt8](repeating: 1, count: clientMaxDatagramFrameSize - 50)
                 var bufferTwo = UniqueArray<UInt8>(copying: smallerThanMaxFrameSize.span)
                 await #expect(throws: Never.self) {
                     try await datagramWriter.write(buffer: &bufferTwo)
