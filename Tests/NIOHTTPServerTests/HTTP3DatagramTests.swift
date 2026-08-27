@@ -19,6 +19,7 @@ import Logging
 import NIOCore
 import NIOEmbedded
 import NIOHTTP3
+import NIOQUIC
 import NIOQUICHelpers
 import Testing
 
@@ -263,6 +264,83 @@ struct HTTP3DatagramTests {
                     let collectedDatagram = try await inboundDatagramIterator.next()
                     #expect(collectedDatagram?.streamID == streamID)
                     #expect(collectedDatagram?.payload == .testData)
+
+                    // Now end the request.
+                    try await streamOutbound.write(.end(nil))
+                }
+            }
+        }
+    }
+
+    @Test("Writing a datagram larger than the max_datagram_frame_size fails")
+    @available(anyAppleOS 26.2, *)
+    func writingDatagramLargerThanMaxFrameSizeFails() async throws {
+        let clientMaxDatagramFrameSize = 150
+
+        var (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: .http3,
+            clientLogger: Self.clientLogger,
+            serverLogger: Self.serverLogger
+        )
+        clientConfiguration.httpVersion = .http3(
+            quicConfiguration: .makeClientQUICConfig(
+                caPath: clientConfiguration.trustRootsPEMPath,
+                maxDatagramFrameSize: clientMaxDatagramFrameSize
+            ),
+            http3Configuration: .defaults
+        )
+
+        let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+
+        try await TestHelpers.withClientServerHTTP3ConnectionAndRequestChannel(
+            clientConfiguration: clientConfiguration,
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, reader, responseSender in
+                streamOpenedPromise.succeed()
+
+                var reader = reader
+                var datagramReader = await reader.takeDatagramReader()!
+
+                // Read the datagram.
+                let collectedDatagram = try #require(await TestHelpers.readDatagram(&datagramReader))
+                #expect(collectedDatagram == .init(buffer: .testData))
+
+                // Try to write a datagram larger than 150 bytes.
+                var writer = try await responseSender.send(.init(status: .ok))
+                var datagramWriter = await writer.takeDatagramWriter()!
+
+                let largerThanMaxFrameSize = Array<UInt8>(repeating: 1, count: clientMaxDatagramFrameSize + 50)
+                var bufferOne = UniqueArray<UInt8>(copying: largerThanMaxFrameSize.span)
+
+                await #expect(throws: QUICError.datagramTooLarge) {
+                    try await datagramWriter.write(buffer: &bufferOne)
+                }
+
+                // But writing a datagram whose size is within the limit should be successful.
+                let smallerThanMaxFrameSize = Array<UInt8>(repeating: 1, count: clientMaxDatagramFrameSize - 50)
+                var bufferTwo = UniqueArray<UInt8>(copying: smallerThanMaxFrameSize.span)
+                await #expect(throws: Never.self) {
+                    try await datagramWriter.write(buffer: &bufferTwo)
+                }
+            }
+        ) { _, streamID, connectionChannel, streamChannel in
+            try await connectionChannel.executeThenClose { connectionInbound, connectionOutbound in
+                try await streamChannel.executeThenClose { streamInbound, streamOutbound in
+                    // Start the request.
+                    try await streamOutbound.write(.testHead(method: .get, for: .http3))
+
+                    // Wait for the stream to be opened.
+                    try await streamOpenedPromise.futureResult.get()
+
+                    // Write a datagram.
+                    try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
+
+                    var inboundDatagramIterator = connectionInbound.makeAsyncIterator()
+
+                    // Now read the smaller datagram the server sent (the larger one will have failed).
+                    let collectedDatagram = try await inboundDatagramIterator.next()
+                    #expect(collectedDatagram?.streamID == streamID)
+                    #expect(collectedDatagram?.payload == .init(repeating: 1, count: clientMaxDatagramFrameSize - 50))
 
                     // Now end the request.
                     try await streamOutbound.write(.end(nil))
