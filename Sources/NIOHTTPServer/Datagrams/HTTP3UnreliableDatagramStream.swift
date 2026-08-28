@@ -20,12 +20,6 @@ import NIOQUICHelpers
 
 @available(anyAppleOS 26.0, *)
 struct HTTP3UnreliableDatagramStream: Sendable {
-    /// The maximum number of received but not yet consumed datagrams to buffer.
-    ///
-    /// - Note: The size of a datagram is at most `max_datagram_frame_size`. Therefore, the memory occupied by buffered
-    ///   datagrams is bounded by `max_datagram_frame_size` multiplied by this count.
-    var maxBufferedDatagrams: Int
-
     // The QUIC stream ID.
     let streamID: QUICStreamID
 
@@ -38,10 +32,13 @@ struct HTTP3UnreliableDatagramStream: Sendable {
     /// The connection channel.
     private let connectionChannel: any Channel
 
+    /// - Parameters:
+    ///   - streamID: The QUIC stream ID.
+    ///   - connectionChannel: The HTTP/3 connection channel.
+    ///   - maxBufferedDatagrams: The maximum number of received but not yet consumed datagrams to buffer.
     init(streamID: QUICStreamID, connectionChannel: any Channel, maxBufferedDatagrams: Int) {
         self.streamID = streamID
         self.connectionChannel = connectionChannel
-        self.maxBufferedDatagrams = maxBufferedDatagrams
 
         (self.inbound, self.inboundContinuation) = AsyncStream<ByteBuffer>.makeStream(
             bufferingPolicy: .bufferingNewest(maxBufferedDatagrams)

@@ -35,7 +35,10 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
 
     #if UnstableHTTPDatagrams
     struct DatagramContext {
-        let datagramsNegotiatedPromise: EventLoopPromise<Void>
+        /// The promise for the outcome of datagram negotiation.
+        ///
+        /// Set to `nil` once the promise is fulfilled.
+        private var datagramsNegotiatedPromise: EventLoopPromise<Void>?
 
         /// The registered ``HTTP3DatagramStream`` instance for each open request stream.
         var datagramStreams: [QUICStreamID: HTTP3UnreliableDatagramStream] = [:]
@@ -58,17 +61,31 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         }
 
         mutating func finish() {
+            // The connection is going away, so datagrams will never be negotiated if they haven't been already.
+            self.completeNegotiation(datagramsSupported: false)
+
             for datagramStream in self.datagramStreams.values {
                 datagramStream.finish()
             }
             self.datagramStreams.removeAll()
         }
 
-        mutating func receivedSettings(_ result: ReceivedSettings) {
-            if result.datagramsSupported {
-                self.datagramsNegotiatedPromise.succeed()
+        mutating func receivedSettings(datagramsSupported: Bool) {
+            self.completeNegotiation(datagramsSupported: datagramsSupported)
+        }
+
+        /// Completes the negotiation promise, if it has not been completed already.
+        private mutating func completeNegotiation(datagramsSupported: Bool) {
+            guard let promise = self.datagramsNegotiatedPromise else {
+                // We fulfilled the promise earlier.
+                return
+            }
+            self.datagramsNegotiatedPromise = nil
+
+            if datagramsSupported {
+                promise.succeed()
             } else {
-                self.datagramsNegotiatedPromise.fail(DatagramsNotSupported())
+                promise.fail(DatagramsNotSupported())
             }
         }
     }
@@ -118,7 +135,7 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         switch event {
         case let event as ReceivedSettings:
             #if UnstableHTTPDatagrams
-            self.datagramContext?.receivedSettings(event)
+            self.datagramContext?.receivedSettings(datagramsSupported: event.datagramsSupported)
             #endif
             context.fireUserInboundEventTriggered(event)
 
