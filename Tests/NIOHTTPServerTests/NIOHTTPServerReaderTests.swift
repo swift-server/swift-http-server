@@ -266,7 +266,7 @@ struct NIOHTTPServerReaderTests {
         #expect(collected == [1, 2, 3])
 
         // Simulate the peer advertising support for receiving datagrams.
-        handler.datagramContext?.receivedSettings(datagramsSupported: true)
+        connectionChannel.pipeline.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
 
         // Now simulate the arrival of a new stream with ID 0.
         let mockStream = HTTP3UnreliableDatagramStream(
@@ -313,7 +313,7 @@ struct NIOHTTPServerReaderTests {
         )
 
         // Simulate the peer advertising support for receiving datagrams.
-        handler.datagramContext?.receivedSettings(datagramsSupported: true)
+        connectionChannel.pipeline.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
 
         // Now simulate the arrival of a new stream with ID 0.
         let mockStream = HTTP3UnreliableDatagramStream(

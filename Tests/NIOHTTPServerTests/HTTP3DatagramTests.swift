@@ -42,7 +42,7 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        manager.datagramContext?.receivedSettings(datagramsSupported: true)
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 2, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -72,7 +72,7 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        manager.datagramContext?.receivedSettings(datagramsSupported: true)
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
 
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         manager.register(datagramStream: stream)
@@ -96,7 +96,7 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        manager.datagramContext?.receivedSettings(datagramsSupported: true)
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 16, connectionChannel: channel, maxBufferedDatagrams: 16)

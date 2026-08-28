@@ -104,7 +104,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.2.2")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
         // TODO: Update once datagram APIs are released.
-        .package(url: "https://github.com/aryan-25/swift-nio-http3.git", branch: "datagrams-negotiation-result"),
+        .package(url: "https://github.com/apple/swift-nio-http3.git", branch: "main"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.34.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),

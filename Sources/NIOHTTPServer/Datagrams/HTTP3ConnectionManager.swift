@@ -34,7 +34,7 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
     }
 
     #if UnstableHTTPDatagrams
-    struct DatagramContext {
+    private struct DatagramContext {
         /// The promise for the outcome of datagram negotiation.
         ///
         /// Set to `nil` once the promise is fulfilled.
@@ -92,7 +92,7 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
 
     struct DatagramsNotSupported: Error {}
 
-    var datagramContext: DatagramContext?
+    private var datagramContext: DatagramContext?
 
     init(eventLoop: any EventLoop, logger: Logger, datagramsNegotiatedPromise: EventLoopPromise<Void>?) {
         self.eventLoop = eventLoop
