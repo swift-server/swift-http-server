@@ -119,9 +119,8 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         case let event as ReceivedSettings:
             #if UnstableHTTPDatagrams
             self.datagramContext?.receivedSettings(event)
-            #else
-            ()
             #endif
+            context.fireUserInboundEventTriggered(event)
 
         default:
             context.fireUserInboundEventTriggered(event)

@@ -20,13 +20,6 @@ import NIOCore
 import NIOHTTPTypes
 import Synchronization
 
-/// Errors from reading/writing on the unreliable datagram.
-@available(anyAppleOS 26.0, *)
-public enum DatagramsError: Error, Sendable {
-    /// The unreliable datagram transport is not yet implemented.
-    case notImplemented
-}
-
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     /// A reader for the unreliable datagram stream.

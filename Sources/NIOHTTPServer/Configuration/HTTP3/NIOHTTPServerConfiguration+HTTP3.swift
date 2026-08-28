@@ -110,6 +110,12 @@ extension NIOHTTP3.HTTP3ServerConfiguration {
     init(_ configuration: NIOHTTPServerConfiguration.HTTP3) {
         self = .defaults
         self.preferHuffmanEncoding = configuration.preferHuffmanEncoding
+
+        #if UnstableHTTPDatagrams
+        if let datagramConfiguration = configuration.datagramConfiguration {
+            self.maxBufferedDatagramBytes = datagramConfiguration.maxBufferedDatagramBytes
+        }
+        #endif  // UnstableHTTPDatagrams
     }
 }
 #endif  // HTTP3

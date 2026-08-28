@@ -55,13 +55,23 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 
 @available(anyAppleOS 26.0, *)
 extension HTTP3.HTTP3Settings {
-    init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings, supportDatagrams: Bool) {
+    init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings) {
+        self.init(
+            qpackMaximumTableCapacity: connectionConfiguration.qpackMaximumTableCapacity,
+            qpackBlockedStreams: connectionConfiguration.qpackBlockedStreams,
+            maximumFieldSectionSize: connectionConfiguration.maximumFieldSectionSize
+        )
+    }
+
+    #if UnstableHTTPDatagrams
+    init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings, supportsDatagrams: Bool) {
         self.init(
             qpackMaximumTableCapacity: connectionConfiguration.qpackMaximumTableCapacity,
             qpackBlockedStreams: connectionConfiguration.qpackBlockedStreams,
             maximumFieldSectionSize: connectionConfiguration.maximumFieldSectionSize,
-            h3Datagram: supportDatagrams
+            h3Datagram: supportsDatagrams
         )
     }
+    #endif  // UnstableHTTPDatagrams
 }
 #endif  // HTTP3

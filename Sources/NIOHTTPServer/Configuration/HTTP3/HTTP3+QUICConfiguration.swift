@@ -256,8 +256,7 @@ extension NIOQUIC.QUICConfiguration {
     /// Creates a `NIOQUIC.QUICConfiguration` from a `NIOHTTPServerConfiguration.HTTP3.QUICConfiguration` instance.
     init(
         _ config: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
-        authenticationConfiguration: NIOQUIC.AuthenticationConfiguration,
-        datagramConfiguration: NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration?
+        authenticationConfiguration: NIOQUIC.AuthenticationConfiguration
     ) {
         self = .server(
             // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. See
@@ -276,10 +275,21 @@ extension NIOQUIC.QUICConfiguration {
             keepAliveInterval: config.keepAliveInterval,
             sendRetry: config.sendRetry,
             keyLogPath: config.keyLogPath,
-            qLogConfiguration: config.qLogConfiguration.map { .init($0) },
-            maxDatagramFrameSize: datagramConfiguration?.maxDatagramFrameSize ?? 0
+            qLogConfiguration: config.qLogConfiguration.map { .init($0) }
         )
     }
+
+    #if UnstableHTTPDatagrams
+    /// Creates a `NIOQUIC.QUICConfiguration` from a `NIOHTTPServerConfiguration.HTTP3.QUICConfiguration` instance.
+    init(
+        _ config: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
+        authenticationConfiguration: NIOQUIC.AuthenticationConfiguration,
+        datagramConfiguration: NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration?
+    ) {
+        self.init(config, authenticationConfiguration: authenticationConfiguration)
+        self.maxDatagramFrameSize = datagramConfiguration?.maxDatagramFrameSize ?? 0
+    }
+    #endif  // UnstableHTTPDatagrams
 }
 
 @available(anyAppleOS 26.0, *)

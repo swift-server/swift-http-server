@@ -118,7 +118,7 @@ extension NIOHTTPServer {
                         _ = await self.invokeHandler(
                             request: request,
                             requestContext: context,
-                            iterator: inboundIterator,
+                            inboundIterator: inboundIterator,
                             outbound: outbound,
                             handler: handler
                         )
@@ -186,13 +186,22 @@ extension NIOHTTPServer {
     ) {
         let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>()
 
+        #if UnstableHTTPDatagrams
+        let quicConfiguration = QUICConfiguration(
+            http3Configuration.quicConfiguration,
+            authenticationConfiguration: authenticationConfiguration,
+            datagramConfiguration: http3Configuration.datagramConfiguration
+        )
+        #else
+        let quicConfiguration = QUICConfiguration(
+            http3Configuration.quicConfiguration,
+            authenticationConfiguration: authenticationConfiguration
+        )
+        #endif
+
         let quicHandler = QUICHandler(
             channel: channel,
-            quicConfiguration: .init(
-                http3Configuration.quicConfiguration,
-                authenticationConfiguration: authenticationConfiguration,
-                datagramConfiguration: http3Configuration.datagramConfiguration
-            ),
+            quicConfiguration: quicConfiguration,
             // TODO: mTLS is not yet supported by NIOQUIC so we don't specify a value for `asyncVerifier`.
             asyncVerifier: nil,
             authenticator: authenticator,
@@ -299,13 +308,19 @@ extension NIOHTTPServer {
             return rtt
         }
 
+        #if UnstableHTTPDatagrams
+        let h3Settings = HTTP3Settings(
+            http3Configuration.connectionSettings,
+            supportsDatagrams: http3Configuration.datagramConfiguration != nil
+        )
+        #else
+        let h3Settings = HTTP3Settings(http3Configuration.connectionSettings)
+        #endif
+
         let http3Handler = HTTP3ConnectionHandler.server(
             eventLoop: connectionChannel.eventLoop,
             configuration: h3ServerConfig,
-            settings: .init(
-                http3Configuration.connectionSettings,
-                supportDatagrams: http3Configuration.datagramConfiguration != nil
-            ),
+            settings: h3Settings,
             streamCreator: streamCreator,
             logger: self.logger,
             connection: connection
@@ -315,7 +330,7 @@ extension NIOHTTPServer {
         #if UnstableHTTPDatagrams
         try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, loopBoundManager.value])
         #else
-        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, manager])
+        try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, connectionManager])
         #endif
 
         return connection

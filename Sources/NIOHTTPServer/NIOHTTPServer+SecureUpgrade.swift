@@ -430,6 +430,9 @@ extension NIOAsyncChannel where Inbound == HTTPRequestPart, Outbound == HTTPResp
                 // likely appropriate but unclear about the error. (A handler that throws already resets the stream;
                 // see `invokeHandler`.)
 
+                // Finish the outbound and wait on the close future to make sure all pending writes are actually
+                // written.
+                outbound.finish()
                 try await self.channel.closeFuture.get()
             }
         } catch {
