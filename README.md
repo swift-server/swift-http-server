@@ -16,7 +16,7 @@ To get started, please refer to the project's documentation and the Example loca
 ## Package traits
 
 This package offers additional integrations you can enable using
-[package traits](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies#Packages-with-Traits).
+[package traits](https://docs.swift.org/latest/documentation/packagemanagerdocs/addingdependencies#Packages-with-Traits).
 
 Available traits:
 - **`Configuration`** (default): Enables initializing `NIOHTTPServerConfiguration` from a `swift-configuration`
