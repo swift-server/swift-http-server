@@ -126,6 +126,43 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
+    #if HTTP3
+    @Test(
+        "Request context reports the negotiated HTTP version",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
+    )
+    #else
+    @Test(
+        "Request context reports the negotiated HTTP version",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
+    )
+    #endif
+    func testRequestContextHTTPVersion(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: httpVersion,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger
+        )
+
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
+                #expect(requestContext.httpVersion == httpVersion)
+                try await responseWriter.sendAndFinish(.init(status: .ok))
+            }
+        ) { _, inbound, outbound in
+            try await outbound.write(.testHead(method: .get, for: httpVersion))
+            try await outbound.write(.end(nil))
+
+            var iterator = inbound.makeAsyncIterator()
+            while let part = try await iterator.next() {
+                if case .end = part { break }
+            }
+        }
+    }
+
+    @available(anyAppleOS 26.0, *)
     @Test(
         "mTLS request-response with custom verification callback returning peer certificates",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
