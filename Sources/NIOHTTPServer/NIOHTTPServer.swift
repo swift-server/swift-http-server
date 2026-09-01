@@ -384,12 +384,12 @@ public struct NIOHTTPServer: HTTPServer {
     }
 
     #if HTTP3 && UnstableHTTPDatagrams
-    func invokeHandler<Handler: HTTPServerRequestHandler>(
+    func invokeDatagramsEnabledHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
         requestContext: RequestContext,
         inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-        datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?,
+        datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>,
         handler: Handler
     ) async
     where

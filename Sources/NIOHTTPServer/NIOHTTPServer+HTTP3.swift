@@ -106,15 +106,19 @@ extension NIOHTTPServer {
                         context: context
                     ) { request, context, inboundIterator, outbound in
                         #if UnstableHTTPDatagrams
-                        await self.invokeHandler(
-                            request: request,
-                            requestContext: context,
-                            inboundIterator: inboundIterator,
-                            outbound: outbound,
-                            datagramStreamFuture: stream.datagramStreamFuture,
-                            handler: handler
-                        )
-                        #else
+                        if let datagramStreamFuture = stream.datagramStreamFuture {
+                            await self.invokeDatagramsEnabledHandler(
+                                request: request,
+                                requestContext: context,
+                                inboundIterator: inboundIterator,
+                                outbound: outbound,
+                                datagramStreamFuture: datagramStreamFuture,
+                                handler: handler
+                            )
+                            return
+                        }
+                        #endif  // UnstableHTTPDatagrams
+
                         _ = await self.invokeHandler(
                             request: request,
                             requestContext: context,
@@ -122,7 +126,6 @@ extension NIOHTTPServer {
                             outbound: outbound,
                             handler: handler
                         )
-                        #endif  // UnstableHTTPDatagrams
                     }
                 }
             }
