@@ -601,3 +601,24 @@ extension NIOHTTP2Handler.Configuration {
         return clampedMaxFrameSize
     }
 }
+
+extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
+    /// Reads the next request head from the iterator. Returns `nil` if the connection is done or an unexpected part is
+    /// received.
+    ///
+    /// Skips over leftover `.body` and `.end` parts from a previous request that the handler didn't fully consume.
+    mutating func nextRequestHead(logger: Logger) async throws -> HTTPRequest? {
+        while true {
+            switch try await self.next(isolation: #isolation) {
+            case .head(let request):
+                return request
+            case .body, .end:
+                // Leftover parts from a previous request. Skip and look for the next head.
+                continue
+            case .none:
+                logger.trace("No more request parts on connection")
+                return nil
+            }
+        }
+    }
+}
