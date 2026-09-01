@@ -290,13 +290,9 @@ struct HTTP3DatagramTests {
             clientLogger: Self.clientLogger,
             serverLogger: Self.serverLogger
         )
-        clientConfiguration.httpVersion = .http3(
-            quicConfiguration: .makeClientQUICConfig(
-                caPath: clientConfiguration.trustRootsPEMPath,
-                maxDatagramFrameSize: clientMaxDatagramFrameSize
-            ),
-            http3ClientConfiguration: .defaults,
-            http3ConnectionSettings: .init()
+        clientConfiguration.quicConfiguration = .makeClientQUICConfig(
+            caPath: clientConfiguration.trustRootsPEMPath,
+            maxDatagramFrameSize: clientMaxDatagramFrameSize
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
@@ -375,14 +371,11 @@ struct HTTP3DatagramTests {
             serverLogger: Self.serverLogger
         )
         // The client advertises that it does not support receiving datagrams.
-        clientConfiguration.httpVersion = .http3(
-            quicConfiguration: .makeClientQUICConfig(
-                caPath: clientConfiguration.trustRootsPEMPath,
-                maxDatagramFrameSize: 0,
-            ),
-            http3ClientConfiguration: .defaults,
-            http3ConnectionSettings: .init(h3Datagram: false)
+        clientConfiguration.quicConfiguration = .makeClientQUICConfig(
+            caPath: clientConfiguration.trustRootsPEMPath,
+            maxDatagramFrameSize: 0
         )
+        clientConfiguration.http3ConnectionSettings = .init(h3Datagram: false)
 
         try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,

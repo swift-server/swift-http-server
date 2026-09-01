@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import HTTP3
 import HTTPTypes
 import Logging
 import NIOCore
@@ -26,6 +25,7 @@ import Testing
 @testable import NIOHTTPServer
 
 #if HTTP3
+import HTTP3
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOQUIC
 import NIOQUICHelpers
@@ -159,69 +159,17 @@ extension TestClientConnection {
     /// The information needed to establish a test client connection to a ``NIOHTTPServer``.
     struct Configuration {
         var logger: Logger
-        var httpVersion: Version
+        var httpVersion: NIOHTTPServer.HTTPVersion
         var trustRootsPEMPath: String?
         var chain: ChainPrivateKeyPair? = nil
 
-        enum Version {
-            case plaintextHTTP1_1
-            case http1_1
-            case http2
-            #if HTTP3
-            case http3(
-                quicConfiguration: QUICConfiguration,
-                http3ClientConfiguration: HTTP3ClientConfiguration,
-                http3ConnectionSettings: HTTP3Settings
-            )
-            #endif
+        #if HTTP3
+        /// The client's QUIC configuration. Only applies when ``httpVersion`` is `.http3`.
+        var quicConfiguration: QUICConfiguration? = nil
 
-            var alpnIdentifier: String {
-                switch self {
-                case .plaintextHTTP1_1, .http1_1:
-                    "http/1.1"
-
-                case .http2:
-                    "h2"
-
-                #if HTTP3
-                case .http3:
-                    "h3"
-                #endif
-                }
-            }
-        }
-
-        init(
-            logger: Logger,
-            httpVersion: NIOHTTPServer.HTTPVersion,
-            trustRootsPEMPath: String?,
-            chain: ChainPrivateKeyPair? = nil
-        ) {
-            self.logger = logger
-            self.trustRootsPEMPath = trustRootsPEMPath
-            self.chain = chain
-
-            self.httpVersion =
-                switch httpVersion {
-                case .plaintextHTTP1_1:
-                    .plaintextHTTP1_1
-
-                case .http1_1:
-                    .http1_1
-
-                case .http2:
-                    .http2
-
-                #if HTTP3
-                case .http3:
-                    .http3(
-                        quicConfiguration: .makeClientQUICConfig(caPath: trustRootsPEMPath),
-                        http3ClientConfiguration: .defaults,
-                        http3ConnectionSettings: .init()
-                    )
-                #endif
-                }
-        }
+        /// The HTTP/3 settings the client sends to the server. Only applies when ``httpVersion`` is `.http3`.
+        var http3ConnectionSettings = HTTP3Settings()
+        #endif
     }
 
     /// Establishes a client connection to `serverAddress` based on the provided `httpVersion`, runs `body` with the
@@ -257,14 +205,14 @@ extension TestClientConnection {
                 .connectToTestSecureUpgradeHTTPServer(at: serverAddress, tlsConfig: tlsConfiguration)
 
         #if HTTP3
-        case (.http3(let quicConfiguration, let clientConfiguration, let settings), .some(let trustRootsPEMPath)):
+        case (.http3, .some(let trustRootsPEMPath)):
             let (quicChannel, connectionCreator) =
                 try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup).setupTestHTTP3Client(
                     logger: configuration.logger,
                     trustRootsPath: trustRootsPEMPath,
-                    quicConfiguration: quicConfiguration,
-                    http3ClientConfiguration: clientConfiguration,
-                    http3ConnectionSettings: settings
+                    quicConfiguration: configuration.quicConfiguration
+                        ?? .makeClientQUICConfig(caPath: trustRootsPEMPath),
+                    http3ConnectionSettings: configuration.http3ConnectionSettings
                 )
 
             let multiplexer = HTTP3ClientConnectionMultiplexer<
@@ -317,7 +265,7 @@ extension TestClientConnection {
         ) async throws -> Void
     ) async throws {
         try await Self.withConnection(configuration: configuration, serverAddress: serverAddress) { connection in
-            try await connection.makeRequestChannel(expectedHTTPVersion: .init(configuration.httpVersion))
+            try await connection.makeRequestChannel(expectedHTTPVersion: configuration.httpVersion)
                 .executeThenClose(body)
         }
     }
@@ -389,27 +337,6 @@ extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {
                     configuration: .init(isOutboundHalfClosureEnabled: true)
                 )
             }
-        }
-    }
-}
-
-@available(anyAppleOS 26.0, *)
-extension NIOHTTPServer.HTTPVersion {
-    init(_ version: TestClientConnection.Configuration.Version) {
-        switch version {
-        case .plaintextHTTP1_1:
-            self = .plaintextHTTP1_1
-
-        case .http1_1:
-            self = .http1_1
-
-        case .http2:
-            self = .http2
-
-        #if HTTP3
-        case .http3:
-            self = .http3
-        #endif
         }
     }
 }
