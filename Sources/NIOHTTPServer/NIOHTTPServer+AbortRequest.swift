@@ -78,7 +78,7 @@ extension NIOHTTPServer {
     private static func quicErrorCode(_ rawValue: UInt64?) -> QUICApplicationErrorCode {
         // The force unwrap is safe: `H3_INTERNAL_ERROR` (0x0102) is always representable as a QUIC varint.
         rawValue.flatMap(QUICApplicationErrorCode.init)
-            ?? QUICApplicationErrorCode(HTTP3ErrorCode.internalError.rawValue)!
+            ?? QUICApplicationErrorCode(HTTPTypes.HTTP3ErrorCode.internalError.rawValue)!
     }
     #endif
 }

@@ -18,12 +18,10 @@ import NIOCore
 import NIOEmbedded
 import NIOHTTP1
 import NIOHTTP2
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOHTTPTypesHTTP2
 import NIOPosix
-import NIOQUIC
 import NIOSSL
 import SwiftASN1
 import Synchronization
@@ -31,6 +29,11 @@ import Testing
 import X509
 
 @testable import NIOHTTPServer
+
+#if HTTP3
+@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOQUIC
+#endif
 
 @Suite
 struct NIOHTTPServerTests {

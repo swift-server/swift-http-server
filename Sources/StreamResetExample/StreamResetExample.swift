@@ -43,10 +43,10 @@ extension TunnelFailure: HTTPServerHTTP2StreamResetErrorConvertible {
 #if HTTP3
 extension TunnelFailure: HTTPServerHTTP3StreamResetErrorConvertible {
     /// `H3_CONNECT_ERROR` (RFC 9114 § 8.1), the HTTP/3 counterpart of `CONNECT_ERROR`.
-    var http3StreamResetCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
+    var http3StreamResetCode: UInt64 { HTTPTypes.HTTP3ErrorCode.connectError.rawValue }
 
     /// The server is no longer reading the request body, so ask the client to stop sending it.
-    var http3StopSendingCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
+    var http3StopSendingCode: UInt64 { HTTPTypes.HTTP3ErrorCode.connectError.rawValue }
 }
 #endif
 

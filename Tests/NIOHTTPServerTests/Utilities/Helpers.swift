@@ -20,7 +20,6 @@ import NIOCore
 import NIOEmbedded
 import NIOHTTPTypes
 import NIOPosix
-import NIOQUIC
 import NIOSSL
 import Testing
 import X509

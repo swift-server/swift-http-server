@@ -16,12 +16,15 @@ import BasicContainers
 import NIOCore
 import NIOEmbedded
 import NIOHTTP1
-import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import Testing
 
 @testable import NIOHTTPServer
+
+#if HTTP3
+import NIOHTTP3
+#endif
 
 @Suite
 struct NIOHTTPServerReaderTests {

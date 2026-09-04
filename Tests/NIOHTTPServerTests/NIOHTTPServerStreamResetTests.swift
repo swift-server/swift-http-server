@@ -39,8 +39,8 @@ extension StreamResetTestError: HTTPServerHTTP2StreamResetErrorConvertible {
 
 #if HTTP3
 extension StreamResetTestError: HTTPServerHTTP3StreamResetErrorConvertible {
-    var http3StreamResetCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
-    var http3StopSendingCode: UInt64 { HTTP3ErrorCode.connectError.rawValue }
+    var http3StreamResetCode: UInt64 { HTTPTypes.HTTP3ErrorCode.connectError.rawValue }
+    var http3StopSendingCode: UInt64 { HTTPTypes.HTTP3ErrorCode.connectError.rawValue }
 }
 #endif
 
@@ -195,7 +195,7 @@ struct NIOHTTPServerStreamResetTests {
     @available(anyAppleOS 26.0, *)
     private func assertHTTP2Reset(
         throwing error: any Error,
-        expectedCode: HTTP2ErrorCode,
+        expectedCode: NIOHTTP2.HTTP2ErrorCode,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -221,7 +221,7 @@ struct NIOHTTPServerStreamResetTests {
                 ]
                 try await outbound.write(.headers(.init(headers: requestHeaders, endStream: true)))
 
-                var observedCode: HTTP2ErrorCode?
+                var observedCode: NIOHTTP2.HTTP2ErrorCode?
                 for try await payload in inbound {
                     if case .rstStream(let code) = payload {
                         observedCode = code
@@ -267,7 +267,7 @@ struct NIOHTTPServerStreamResetTests {
                 try await outbound.write(.headers(.init(headers: requestHeaders, endStream: true)))
 
                 var sawResponseHeaders = false
-                var resetCode: HTTP2ErrorCode?
+                var resetCode: NIOHTTP2.HTTP2ErrorCode?
                 for try await payload in inbound {
                     switch payload {
                     case .headers:
@@ -336,7 +336,7 @@ struct NIOHTTPServerStreamResetTests {
         )
         channel.embeddedEventLoop.run()
 
-        let expectedCode = QUICApplicationErrorCode(HTTP3ErrorCode.internalError.rawValue)
+        let expectedCode = QUICApplicationErrorCode(HTTPTypes.HTTP3ErrorCode.internalError.rawValue)
         #expect(recorder.events.compactMap { $0 as? QUICResetStreamEvent }.first?.code == expectedCode)
         #expect(recorder.events.compactMap { $0 as? QUICStopSendingEvent }.first?.code == expectedCode)
 
