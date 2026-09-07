@@ -69,17 +69,7 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
-    @Test(
-        "Request-response",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "Request-response",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("Request-response", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testRequestResponse(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -192,17 +182,7 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
-    @Test(
-        "Multiple informational response headers",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "Multiple informational response headers",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("Multiple informational response headers", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testMultipleInformationalResponseHeaders(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -400,17 +380,7 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
-    @Test(
-        "Multiple concurrent connections",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "Multiple concurrent connections",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("Multiple concurrent connections", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testMultipleConcurrentConnections(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -625,17 +595,7 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
-    @Test(
-        "Serve requests on multiple addresses independently",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "Serve requests on multiple addresses independently",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("Serve requests on multiple addresses independently", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testServeOnMultipleAddresses(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -683,17 +643,10 @@ struct NIOHTTPServerTests {
     /// ``ListeningAddressError/serverClosed``. No subset of addresses continues serving after the server
     /// has stopped.
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
     @Test(
         "All addresses stop together and listeningAddresses throws after server stops",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
+        arguments: NIOHTTPServer.HTTPVersion.allCases
     )
-    #else
-    @Test(
-        "All addresses stop together and listeningAddresses throws after server stops",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
     func testAllAddressesStopTogether(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
