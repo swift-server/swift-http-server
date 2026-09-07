@@ -41,6 +41,16 @@ let package = Package(
             path: "Benchmarks/NIOHTTPServerBenchmarks",
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
         ),
+        .executableTarget(
+            name: "NIOHTTPServerEndToEndBenchmarks",
+            dependencies: [
+                .product(name: "Benchmark", package: "benchmark"),
+                .product(name: "NIOEmbedded", package: "swift-nio"),
+                "NIOHTTPServerBenchmarkSupport",
+            ],
+            path: "Benchmarks/NIOHTTPServerEndToEndBenchmarks",
+            plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]
+        ),
         .target(
             name: "NIOHTTPServerBenchmarkSupport",
             dependencies: [
