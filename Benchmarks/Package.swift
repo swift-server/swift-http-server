@@ -35,7 +35,8 @@ let package = Package(
             name: "NIOHTTPServerBenchmarks",
             dependencies: [
                 .product(name: "Benchmark", package: "benchmark"),
-                .product(name: "NIOHTTPServer", package: "swift-http-server"),
+                .product(name: "NIOEmbedded", package: "swift-nio"),
+                "NIOHTTPServerBenchmarkSupport",
             ],
             path: "Benchmarks/NIOHTTPServerBenchmarks",
             plugins: [.plugin(name: "BenchmarkPlugin", package: "benchmark")]

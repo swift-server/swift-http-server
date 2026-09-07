@@ -13,12 +13,37 @@
 //===----------------------------------------------------------------------===//
 
 import Benchmark
-import NIOHTTPServer
+import Benchmark
+import NIOEmbedded
+import NIOHTTPServerBenchmarkSupport
+
+private func makeHTTP3BenchmarkConfiguration() -> Benchmark.Configuration {
+    .init(
+        metrics: [.mallocCountTotal, .instructions, .wallClock],
+        scalingFactor: .one,
+        maxDuration: .seconds(2),
+        maxIterations: 10_000
+    )
+}
+
+let eventLoop = NIOAsyncTestingEventLoop()
+let certificate = try! BenchmarkCertificate.makeSelfSigned()
 
 let benchmarks: @Sendable () -> Void = {
-    Benchmark("Placeholder") { benchmark in
-        for _ in benchmark.scaledIterations {
-            blackHole(1 + 1)
+    var servers = [BenchmarkHTTP3Server]()
+    Benchmark(
+        "HTTP3_serverSetup",
+        configuration: makeHTTP3BenchmarkConfiguration(),
+        closure: { benchmark in
+            for _ in benchmark.scaledIterations {
+                servers.append(try await BenchmarkHTTP3Server.start(eventLoop: eventLoop, certificate: certificate))
+            }
+        },
+        teardown: {
+            for server in servers {
+                try await server.shutdown()
+            }
+            servers.removeAll()
         }
-    }
+    )
 }
