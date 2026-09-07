@@ -46,4 +46,30 @@ let benchmarks: @Sendable () -> Void = {
             servers.removeAll()
         }
     )
+
+    var client: BenchmarkHTTP3Client!
+    var prewarmedServer: BenchmarkHTTP3Server!
+    var connections = [BenchmarkHTTP3Connection]()
+    Benchmark(
+        "HTTP3_openConnection",
+        configuration: makeHTTP3BenchmarkConfiguration(),
+        closure: { benchmark in
+            for _ in benchmark.scaledIterations {
+                connections.append(try await client.openConnection())
+            }
+        },
+        setup: {
+            client = try await BenchmarkHTTP3Client.start(eventLoop: eventLoop, certificate: certificate)
+            prewarmedServer = try await BenchmarkHTTP3Server.start(eventLoop: eventLoop, certificate: certificate)
+            try await client.attach(to: prewarmedServer)
+        },
+        teardown: {
+            for connection in connections {
+                try await connection.close()
+            }
+            connections.removeAll()
+            try await client.shutdown()
+            try await prewarmedServer.shutdown()
+        }
+    )
 }
