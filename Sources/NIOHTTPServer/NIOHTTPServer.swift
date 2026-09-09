@@ -127,6 +127,22 @@ public struct NIOHTTPServer: HTTPServer {
     /// Throwing after the response has been concluded aborts nothing: a complete response is never retracted, so the
     /// only consequence is that the connection is not reused.
     ///
+    /// ## Cancellation when the exchange ends
+    ///
+    /// The task running a handler is cancelled if the exchange carrying its request ends before the handler returns,
+    /// so a handler awaiting work nobody will read stops instead of running to completion. Handlers that hold
+    /// resources or drive requests of their own should therefore honour cancellation.
+    ///
+    /// What counts as the exchange ending depends on the protocol:
+    ///
+    /// - Over HTTP/1.1, the connection closing.
+    /// - Over HTTP/2, the stream closing, whether from the client's `RST_STREAM` or from the connection beneath it
+    ///   going away.
+    /// - Over HTTP/3, the stream closing, or receiving **both** `STOP_SENDING` and `RESET_STREAM` while it is still
+    ///   open. Either frame on its own leaves one direction of the exchange alive, so neither is treated as the end
+    ///   of it; a `STOP_SENDING` that arrives after the request has been fully received is the exception, because
+    ///   nothing remains open in either direction and the stream closes.
+    ///
     /// ## Example
     ///
     /// ```swift
@@ -341,6 +357,9 @@ public struct NIOHTTPServer: HTTPServer {
         let writerState = responseSender.writerState
 
         do {
+            // Cancellation when the exchange ends is not handled here: what can end belongs to the
+            // channel, not to this request, so the race lives at the level that owns the channel —
+            // `handleHTTP1RequestLoop` and `handleStreamChannel`. See `ClientClosed.swift`.
             try await handler.handle(
                 request: request,
                 requestContext: requestContext,
@@ -621,4 +640,11 @@ extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
             }
         }
     }
+}
+
+/// A request channel and the signal that its client has stopped waiting for a response.
+@available(anyAppleOS 26.0, *)
+struct HTTPRequestChannelAndCancellationSignal: Sendable {
+    var channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
+    var clientClosed: AsyncStream<Void>
 }

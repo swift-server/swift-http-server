@@ -26,7 +26,7 @@ extension NIOHTTPServer {
     /// Abstracts over the types of server channels ``NIOHTTPServer`` can serve.
     enum ServerChannel {
         case plaintextHTTP1_1(
-            channel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
+            channel: NIOAsyncChannel<HTTPRequestChannelAndCancellationSignal, Never>,
             quiescingHelper: ServerQuiescingHelper
         )
 

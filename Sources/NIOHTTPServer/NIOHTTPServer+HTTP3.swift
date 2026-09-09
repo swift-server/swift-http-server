@@ -32,6 +32,10 @@ extension NIOHTTPServer {
         /// The stream channel.
         var channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
 
+        /// Yields when the client stops waiting for a response, so the request handler can be cancelled.
+        /// Paired with the continuation held by this stream's ``ClientClosedMonitor``.
+        var clientClosed: AsyncStream<Void>
+
         #if UnstableHTTPDatagrams
         /// The unreliable datagram stream future. `nil` if HTTP datagram support was not enabled by the server.
         var datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>?
@@ -102,6 +106,7 @@ extension NIOHTTPServer {
             for await stream in connection.inboundStreams {
                 streamGroup.addTask {
                     await stream.channel.withRequest(
+                        clientClosed: stream.clientClosed,
                         logger: self.logger,
                         context: context
                     ) { request, context, inboundIterator, outbound in
@@ -266,7 +271,8 @@ extension NIOHTTPServer {
                 guard let datagramConfiguration = http3Configuration.datagramConfiguration,
                     let negotiationPromise = datagramsNegotiatedPromise
                 else {
-                    return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
+                    let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
+                    return HTTP3Stream(channel: stream.channel, clientClosed: stream.clientClosed)
                 }
 
                 // Create the unreliable stream only when we know the peer supports receiving datagrams.
@@ -285,12 +291,15 @@ extension NIOHTTPServer {
                     loopBoundManager.value.deregister(streamID: streamInitializerParameters.streamID)
                 }
 
+                let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
                 return HTTP3Stream(
-                    channel: try self.setupHTTP3Stream(streamChannel: streamChannel),
+                    channel: stream.channel,
+                    clientClosed: stream.clientClosed,
                     datagramStreamFuture: datagramStreamFuture
                 )
                 #else
-                return HTTP3Stream(channel: try self.setupHTTP3Stream(streamChannel: streamChannel))
+                let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
+                return HTTP3Stream(channel: stream.channel, clientClosed: stream.clientClosed)
                 #endif
             }
         }
@@ -340,18 +349,34 @@ extension NIOHTTPServer {
     }
 
     /// Configures the pipeline for an inbound HTTP/3 stream channel and wraps it in a `NIOAsyncChannel`.
-    func setupHTTP3Stream(streamChannel: any Channel) throws -> NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart> {
+    func setupHTTP3Stream(streamChannel: any Channel) throws -> (
+        channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, clientClosed: AsyncStream<Void>
+    ) {
         try streamChannel.pipeline.syncOperations.addReadTimeoutHandlers(
             self.configuration.connectionTimeouts,
             expectMultipleRequests: false
         )
 
-        return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-            wrappingChannelSynchronously: streamChannel,
-            configuration: .init(
-                backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                isOutboundHalfClosureEnabled: true
-            )
+        // Opt into half-closure semantics for STOP_SENDING, so that frame half-closes our write
+        // side and arrives as a `QUICStopSendingEvent` instead of tearing the stream down.
+        try streamChannel.syncOptions?.setOption(.halfCloseOnStopSending, value: true)
+
+        // Reports this stream going inactive, so an in-flight request handler can be cancelled. The paired
+        // stream is returned alongside the channel, for the request handling to race against.
+        let (clientClosed, clientClosedContinuation) = AsyncStream<Void>.makeStream()
+        try streamChannel.pipeline.syncOperations.addHandler(
+            ClientClosedMonitor(clientClosed: clientClosedContinuation)
+        )
+
+        return (
+            channel: try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                wrappingChannelSynchronously: streamChannel,
+                configuration: .init(
+                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                    isOutboundHalfClosureEnabled: true
+                )
+            ),
+            clientClosed: clientClosed
         )
     }
 }
