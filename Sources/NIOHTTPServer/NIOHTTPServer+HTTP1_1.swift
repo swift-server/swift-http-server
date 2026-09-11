@@ -29,40 +29,38 @@ extension NIOHTTPServer {
     /// the child tasks and do not affect other connections.
     ///
     /// - Parameters:
-    ///   - serverChannel: The async channel that produces incoming HTTP/1.1 connections.
+    ///   - connectionStream: The stream of incoming HTTP/1.1 connections.
     ///   - connectionHandler: The connection handler invoked for each accepted connection.
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveInsecureHTTP1_1<Handler: NIOHTTPServerConnectionHandler>(
-        serverChannel: NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>,
+        connectionStream: NIOAsyncChannelInboundStream<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
         connectionHandler: Handler
     ) async throws {
-        try await serverChannel.executeThenClose { inbound in
-            // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
-            // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
-            // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
-            // `inbound`) must be caught and handled directly.
-            let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
-                do {
-                    for try await requestChannel in inbound {
-                        group.addTask {
-                            await self.dispatchPlaintextHTTP1_1Connection(
-                                requestChannel: requestChannel,
-                                connectionHandler: connectionHandler
-                            )
-                        }
+        // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
+        // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
+        // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
+        // `inbound`) must be caught and handled directly.
+        let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
+            do {
+                for try await requestChannel in connectionStream {
+                    group.addTask {
+                        await self.dispatchPlaintextHTTP1_1Connection(
+                            requestChannel: requestChannel,
+                            connectionHandler: connectionHandler
+                        )
                     }
-
-                    return nil
-                } catch {
-                    return error
                 }
-            }
 
-            if let inboundConnectionIterationError {
-                // The error occurred while iterating the inbound connection stream
-                throw inboundConnectionIterationError
+                return nil
+            } catch {
+                return error
             }
+        }
+
+        if let inboundConnectionIterationError {
+            // The error occurred while iterating the inbound connection stream
+            throw inboundConnectionIterationError
         }
     }
 
@@ -111,66 +109,33 @@ extension NIOHTTPServer {
         }
     }
 
-    func setupHTTP1_1ServerChannels(
-        bindTargets: [NIOHTTPServerConfiguration.BindTarget]
-    ) async throws -> [(
-        NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>, ServerQuiescingHelper
-    )] {
-        let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
-            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-
-        var serverChannels = [
-            (NIOAsyncChannel<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>, Never>, ServerQuiescingHelper)
-        ]()
-
-        do {
-            for bindTarget in bindTargets {
-                switch bindTarget.backing {
-                case .hostAndPort(let host, let port):
-                    let serverQuiescingHelper = ServerQuiescingHelper(group: self.eventLoopGroup)
-
-                    let serverChannel = try await bootstrap.serverChannelInitializer { channel in
-                        channel.eventLoop.makeCompletedFuture {
-                            try channel.pipeline.syncOperations.addHandler(
-                                serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                            )
-
-                            if let maxConnections = self.configuration.maxConnections {
-                                try channel.pipeline.syncOperations.addHandler(
-                                    ConnectionLimitHandler(maxConnections: maxConnections)
-                                )
-                            }
-                        }
-                    }.bind(host: host, port: port) { channel in
-                        self.setupHTTP1_1Connection(
-                            channel: channel,
-                            asyncChannelConfiguration: .init(
-                                backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                                isOutboundHalfClosureEnabled: true
-                            ),
-                            isSecure: false
-                        )
-                    }
-                    serverChannels.append((serverChannel, serverQuiescingHelper))
+    /// Adds a child task to `group` that binds a plaintext HTTP/1.1 listener at `address` and serves connections on it
+    /// until the task is cancelled or the server shuts down gracefully.
+    ///
+    /// - Note: The bind address is yielded to the provided `addressContinuation` immediately after the TCP socket has
+    ///   been bound.
+    func addPlaintextHTTP1_1Listener<Handler: NIOHTTPServerConnectionHandler>(
+        to group: inout ThrowingDiscardingTaskGroup<any Error>,
+        address: NIOCore.SocketAddress,
+        addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
+        connectionHandler: Handler
+    ) {
+        group.addTask(name: "Plaintext HTTP/1.1 over \(address)") {
+            try await self.withTCPChannel(
+                address: address,
+                addressContinuation: addressContinuation,
+                childChannelInitializer: { channel in
+                    self.setupHTTP1_1Connection(channel: channel, isSecure: false)
                 }
+            ) { inbound in
+                try await self.serveInsecureHTTP1_1(connectionStream: inbound, connectionHandler: connectionHandler)
             }
-        } catch {
-            // A later bind failed: close any channels we already bound to avoid leaking sockets.
-            // We await the closes so the sockets are fully released by the time we throw, giving the
-            // caller deterministic semantics: when `serve` throws, all cleanup is done.
-            for (serverChannel, _) in serverChannels {
-                try? await serverChannel.channel.close()
-            }
-            throw error
         }
-
-        return serverChannels
     }
 
     /// Configures the HTTP/1.1 server pipeline and the keep-alive handler.
     func setupHTTP1_1Connection(
         channel: any Channel,
-        asyncChannelConfiguration: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>.Configuration,
         isSecure: Bool
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
@@ -183,7 +148,10 @@ extension NIOHTTPServer {
 
             return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
                 wrappingChannelSynchronously: channel,
-                configuration: asyncChannelConfiguration
+                configuration: .init(
+                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                    isOutboundHalfClosureEnabled: true
+                )
             )
         }
     }

@@ -37,7 +37,7 @@ enum ListeningAddressError: CustomStringConvertible, Error {
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
-    func addressesBound(_ addresses: [NIOCore.SocketAddress?]) throws {
+    func addressesBound(_ addresses: [NIOCore.SocketAddress?]) {
         switch self.listeningAddressState.withLockedValue({ $0.addressesBound(addresses) }) {
         case .succeedPromise(let promise, let boundAddresses):
             promise.succeed(boundAddresses)

@@ -41,40 +41,38 @@ extension NIOHTTPServer {
     /// connection errors are handled within the child tasks and do not affect other connections.
     ///
     /// - Parameters:
-    ///   - serverChannel: The async channel that produces incoming connections.
+    ///   - connectionStream: The stream of incoming connections.
     ///   - connectionHandler: The connection handler invoked for each accepted connection.
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveSecureUpgrade<Handler: NIOHTTPServerConnectionHandler>(
-        serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
+        connectionStream: NIOAsyncChannelInboundStream<EventLoopFuture<NegotiatedChannel>>,
         connectionHandler: Handler
     ) async throws {
-        try await serverChannel.executeThenClose { inbound in
-            // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
-            // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
-            // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
-            // `inbound`) must be caught and handled directly.
-            let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
-                do {
-                    for try await upgradeResult in inbound {
-                        connectionGroup.addTask {
-                            await self.dispatchSecureConnection(
-                                upgradeResult: upgradeResult,
-                                connectionHandler: connectionHandler
-                            )
-                        }
+        // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
+        // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
+        // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
+        // `inbound`) must be caught and handled directly.
+        let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
+            do {
+                for try await upgradeResult in connectionStream {
+                    connectionGroup.addTask {
+                        await self.dispatchSecureConnection(
+                            upgradeResult: upgradeResult,
+                            connectionHandler: connectionHandler
+                        )
                     }
-
-                    return nil
-                } catch {
-                    return error
                 }
-            }
 
-            if let inboundConnectionIterationError {
-                // The error occurred while iterating the inbound connection stream
-                throw inboundConnectionIterationError
+                return nil
+            } catch {
+                return error
             }
+        }
+
+        if let inboundConnectionIterationError {
+            // The error occurred while iterating the inbound connection stream
+            throw inboundConnectionIterationError
         }
     }
 
@@ -230,54 +228,29 @@ extension NIOHTTPServer {
         }
     }
 
-    func setupSecureUpgradeServerChannels(
-        bindTargets: [NIOHTTPServerConfiguration.BindTarget],
-        http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
-        sslContext: NIOSSLContext
-    ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
-        let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
-            .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
-
-        var serverChannels = [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)]()
-        do {
-            for bindTarget in bindTargets {
-                switch bindTarget.backing {
-                case .hostAndPort(let host, let port):
-                    let serverQuiescingHelper = ServerQuiescingHelper(group: self.eventLoopGroup)
-
-                    let serverChannel = try await bootstrap.serverChannelInitializer { channel in
-                        channel.eventLoop.makeCompletedFuture {
-                            try channel.pipeline.syncOperations.addHandler(
-                                serverQuiescingHelper.makeServerChannelHandler(channel: channel)
-                            )
-
-                            if let maxConnections = self.configuration.maxConnections {
-                                try channel.pipeline.syncOperations.addHandler(
-                                    ConnectionLimitHandler(maxConnections: maxConnections)
-                                )
-                            }
-                        }
-                    }.bind(host: host, port: port) { channel in
-                        self.setupSecureUpgradeConnectionChildChannel(
-                            channel: channel,
-                            http2Configuration: http2Configuration,
-                            sslContext: sslContext
-                        )
-                    }
-                    serverChannels.append((serverChannel, serverQuiescingHelper))
+    /// Adds a child task to `group` that binds a listener at `address` and serves connections on it until the task is
+    /// cancelled or the server shuts down gracefully. Each accepted connection negotiates HTTP/1.1 or HTTP/2 via ALPN.
+    ///
+    /// - Note: The bind address is yielded to the provided `addressContinuation` immediately after the TCP socket has
+    ///   been bound.
+    func addSecureUpgradeListener<Handler: NIOHTTPServerConnectionHandler>(
+        to group: inout ThrowingDiscardingTaskGroup<any Error>,
+        address: NIOCore.SocketAddress,
+        configuration: ListenerConfiguration.SecureUpgrade,
+        addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
+        connectionHandler: Handler
+    ) {
+        group.addTask(name: "Secure Upgrade over \(address)") {
+            try await self.withTCPChannel(
+                address: address,
+                addressContinuation: addressContinuation,
+                childChannelInitializer: { channel in
+                    self.setupSecureUpgradeConnection(channel: channel, configuration: configuration)
                 }
+            ) { inbound in
+                try await self.serveSecureUpgrade(connectionStream: inbound, connectionHandler: connectionHandler)
             }
-        } catch {
-            // A later bind failed: close any channels we already bound to avoid leaking sockets.
-            // We await the closes so the sockets are fully released by the time we throw, giving the
-            // caller deterministic semantics: when `serve` throws, all cleanup is done.
-            for (serverChannel, _) in serverChannels {
-                try? await serverChannel.channel.close()
-            }
-            throw error
         }
-
-        return serverChannels
     }
 
     private func setupHTTP2Connection(
@@ -329,17 +302,16 @@ extension NIOHTTPServer {
         }
     }
 
-    func setupSecureUpgradeConnectionChildChannel(
+    func setupSecureUpgradeConnection(
         channel: any Channel,
-        http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
-        sslContext: NIOSSLContext
+        configuration: ListenerConfiguration.SecureUpgrade
     ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
         channel.eventLoop.makeCompletedFuture {
             let sslHandler = self.makeSSLServerHandler(
-                sslContext,
+                configuration.sslContext,
                 self.configuration.transportSecurity.customVerificationCallback
             )
-            let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: http2Configuration)
+            let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: configuration.http2Configuration)
 
             try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
 
@@ -356,10 +328,6 @@ extension NIOHTTPServer {
             case (.negotiated("http/1.1"), _):
                 return self.setupHTTP1_1Connection(
                     channel: channel,
-                    asyncChannelConfiguration: .init(
-                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                        isOutboundHalfClosureEnabled: true
-                    ),
                     isSecure: true
                 )
                 .map { .http1_1($0) }

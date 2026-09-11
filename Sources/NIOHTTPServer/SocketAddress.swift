@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOCore
+
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
     /// Represents an IPv4 address.
@@ -106,6 +108,16 @@ extension NIOHTTPServer {
             case .ipv6(let ipv6):
                 return ipv6.port
             }
+        }
+    }
+}
+
+extension NIOCore.SocketAddress {
+    @available(anyAppleOS 26.0, *)
+    init(bindTarget: NIOHTTPServerConfiguration.BindTarget) throws {
+        switch bindTarget.backing {
+        case .hostAndPort(let host, let port):
+            self = try .makeAddressResolvingHost(host, port: port)
         }
     }
 }
