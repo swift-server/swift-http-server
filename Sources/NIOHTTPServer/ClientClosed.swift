@@ -30,8 +30,7 @@ final class ClientClosedMonitor: ChannelInboundHandler, RemovableChannelHandler,
 
     // - TODO: HTTP/1.1 on Darwin does not report a socket closing, as NIO registers for EOF
     // notifications only when `isEarlyEOFDeliveryWorkingOnThisOS` is true, which is hard-coded `false`
-    // on Darwin (rdar://53656794). This means that this handler has no effect on H1 on Darwin until
-    // that bug is resolved.
+    // on Darwin. This means that this handler has no effect on H1 on Darwin until that bug is resolved.
     func channelInactive(context: ChannelHandlerContext) {
         self.clientClosed.yield()
         context.fireChannelInactive()
