@@ -31,7 +31,7 @@ extension NIOHTTPServer {
         )
 
         case secureUpgrade(
-            channel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
+            channel: NIOAsyncChannel<EventLoopFuture<NegotiationResult>, Never>,
             quiescingHelper: ServerQuiescingHelper
         )
 

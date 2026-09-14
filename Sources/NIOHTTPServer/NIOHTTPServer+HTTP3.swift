@@ -65,7 +65,7 @@ extension NIOHTTPServer {
             httpVersion: .http3,
             remoteAddress: nil,
             localAddress: nil,
-            peerCertificateChainFuture: nil
+            validatedPeerCertificateChain: nil
         )
 
         let connection = Connection(

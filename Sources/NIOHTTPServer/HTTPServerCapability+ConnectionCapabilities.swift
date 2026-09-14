@@ -39,6 +39,6 @@ extension HTTPServerCapability {
     /// derived.
     public protocol PeerCertificate: RequestContext {
         /// The peer's validated certificate chain, when available.
-        var peerCertificateChain: X509.ValidatedCertificateChain? { get async throws }
+        var validatedPeerCertificateChain: X509.ValidatedCertificateChain? { get }
     }
 }

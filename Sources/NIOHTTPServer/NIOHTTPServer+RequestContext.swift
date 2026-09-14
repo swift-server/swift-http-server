@@ -64,12 +64,11 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionInfo {
 extension NIOHTTPServer.RequestContext: HTTPServerCapability.PeerCertificate {
     /// The peer's mTLS-validated certificate chain, when available.
     ///
-    /// Returns `nil` when mTLS is not configured, or when the configured
-    /// custom verification callback did not return the derived validated
-    /// chain. May throw if the chain cannot be retrieved.
-    public var peerCertificateChain: X509.ValidatedCertificateChain? {
-        get async throws {
-            try await self.connectionContext.peerCertificateChain
+    /// Returns `nil` when mTLS is not configured, or when the configured custom verification callback did not return
+    /// the derived validated chain.
+    public var validatedPeerCertificateChain: X509.ValidatedCertificateChain? {
+        get {
+            self.connectionContext.validatedPeerCertificateChain
         }
     }
 }

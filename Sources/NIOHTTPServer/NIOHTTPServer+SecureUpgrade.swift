@@ -29,10 +29,18 @@ import X509
 
 @available(anyAppleOS 26.0, *)
 extension NIOHTTPServer {
-    typealias NegotiatedChannel = NIONegotiatedHTTPVersion<
-        NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
-        (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>)
-    >
+    struct NegotiationResult {
+        enum NegotiatedChannel {
+            case http1_1(NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>)
+            case http2(
+                any Channel,
+                NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
+            )
+        }
+
+        let channel: NegotiatedChannel
+        let validatedPeerCertificateChain: X509.ValidatedCertificateChain?
+    }
 
     /// Serves incoming connections. Each connection undergoes ALPN negotiation to determine whether to use HTTP/1.1 or
     /// HTTP/2, and requests are then handled over the negotiated protocol.
@@ -46,7 +54,7 @@ extension NIOHTTPServer {
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveSecureUpgrade<Handler: NIOHTTPServerConnectionHandler>(
-        serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>,
+        serverChannel: NIOAsyncChannel<EventLoopFuture<NegotiationResult>, Never>,
         connectionHandler: Handler
     ) async throws {
         try await serverChannel.executeThenClose { inbound in
@@ -79,33 +87,29 @@ extension NIOHTTPServer {
     }
 
     private func dispatchSecureConnection<Handler: NIOHTTPServerConnectionHandler>(
-        upgradeResult: EventLoopFuture<NegotiatedChannel>,
+        upgradeResult: EventLoopFuture<NegotiationResult>,
         connectionHandler: Handler
     ) async {
-        let negotiatedChannel: NegotiatedChannel
+        let result: NegotiationResult
         do {
-            negotiatedChannel = try await upgradeResult.get()
+            result = try await upgradeResult.get()
         } catch {
-            self.logger.debug(
-                "Negotiating ALPN failed",
-                error: error
-            )
+            self.logger.debug("Negotiating ALPN failed", error: error)
             return
         }
 
-        switch negotiatedChannel {
+        switch result.channel {
         case .http1_1(let requestChannel):
             // The dispatcher owns the channel's `executeThenClose` so the
             // `NIOAsyncWriter` is finished cleanly whether or not the
             // connection handler called `handleRequests`.
             do {
                 try await requestChannel.executeThenClose { inbound, outbound in
-                    let chainFuture = requestChannel.channel.nioSSL_peerValidatedCertificateChain()
                     let context = ConnectionContext(
                         httpVersion: .http1_1,
                         remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
                         localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
-                        peerCertificateChainFuture: chainFuture
+                        validatedPeerCertificateChain: result.validatedPeerCertificateChain
                     )
                     let connection = Connection(
                         server: self,
@@ -132,11 +136,10 @@ extension NIOHTTPServer {
                 )
             }
 
-        case .http2((let connectionChannel, let multiplexer)):
-            let chainFuture = connectionChannel.nioSSL_peerValidatedCertificateChain()
+        case .http2(let connectionChannel, let multiplexer):
             let context = NIOHTTPServer.makeHTTP2ConnectionContext(
                 connectionChannel: connectionChannel,
-                peerCertificateChainFuture: chainFuture
+                validatedPeerCertificateChain: result.validatedPeerCertificateChain
             )
             let connection = Connection(
                 server: self,
@@ -159,13 +162,13 @@ extension NIOHTTPServer {
     /// Builds a ``ConnectionContext`` for an HTTP/2 connection channel.
     static func makeHTTP2ConnectionContext(
         connectionChannel: any Channel,
-        peerCertificateChainFuture: EventLoopFuture<NIOSSL.ValidatedCertificateChain?>?
+        validatedPeerCertificateChain: X509.ValidatedCertificateChain?
     ) -> ConnectionContext {
         ConnectionContext(
             httpVersion: .http2,
             remoteAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.remoteAddress),
             localAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.localAddress),
-            peerCertificateChainFuture: peerCertificateChainFuture
+            validatedPeerCertificateChain: validatedPeerCertificateChain
         )
     }
 
@@ -234,11 +237,11 @@ extension NIOHTTPServer {
         bindTargets: [NIOHTTPServerConfiguration.BindTarget],
         http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
         sslContext: NIOSSLContext
-    ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)] {
+    ) async throws -> [(NIOAsyncChannel<EventLoopFuture<NegotiationResult>, Never>, ServerQuiescingHelper)] {
         let bootstrap = ServerBootstrap(group: self.eventLoopGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
 
-        var serverChannels = [(NIOAsyncChannel<EventLoopFuture<NegotiatedChannel>, Never>, ServerQuiescingHelper)]()
+        var serverChannels = [(NIOAsyncChannel<EventLoopFuture<NegotiationResult>, Never>, ServerQuiescingHelper)]()
         do {
             for bindTarget in bindTargets {
                 switch bindTarget.backing {
@@ -333,7 +336,7 @@ extension NIOHTTPServer {
         channel: any Channel,
         http2Configuration: NIOHTTPServerConfiguration.HTTP2?,
         sslContext: NIOSSLContext
-    ) -> EventLoopFuture<EventLoopFuture<NegotiatedChannel>> {
+    ) -> EventLoopFuture<EventLoopFuture<NegotiationResult>> {
         channel.eventLoop.makeCompletedFuture {
             let sslHandler = self.makeSSLServerHandler(
                 sslContext,
@@ -350,8 +353,8 @@ extension NIOHTTPServer {
     private func makeALPNHandler(
         channel: any Channel,
         http2Config: NIOHTTPServerConfiguration.HTTP2?
-    ) -> NIOTypedApplicationProtocolNegotiationHandler<NegotiatedChannel> {
-        NIOTypedApplicationProtocolNegotiationHandler<NegotiatedChannel> { result in
+    ) -> NIOTypedApplicationProtocolNegotiationHandler<NegotiationResult> {
+        NIOTypedApplicationProtocolNegotiationHandler<NegotiationResult> { result in
             switch (result, http2Config) {
             case (.negotiated("http/1.1"), _):
                 return self.setupHTTP1_1Connection(
@@ -361,14 +364,23 @@ extension NIOHTTPServer {
                         isOutboundHalfClosureEnabled: true
                     ),
                     isSecure: true
-                )
-                .map { .http1_1($0) }
+                ).map { channel in
+                    NegotiationResult(
+                        channel: .http1_1(channel),
+                        validatedPeerCertificateChain: channel.channel.extractPeerCertificateChain(logger: self.logger)
+                    )
+                }
 
             case (.negotiated("h2"), .some(let http2Config)):
                 return self.setupHTTP2Connection(
                     channel: channel,
                     configuration: http2Config
-                ).map { .http2($0) }
+                ).map { (channel, streamMultiplexer) in
+                    NegotiationResult(
+                        channel: .http2(channel, streamMultiplexer),
+                        validatedPeerCertificateChain: channel.extractPeerCertificateChain(logger: self.logger)
+                    )
+                }
 
             case (.negotiated, _), (.fallback, _):
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.
@@ -463,5 +475,22 @@ extension NIOHTTPServer {
         } else {
             return NIOSSLServerHandler(context: sslContext)
         }
+    }
+}
+
+extension Channel {
+    func extractPeerCertificateChain(logger: Logger) -> X509.ValidatedCertificateChain? {
+        self.eventLoop.preconditionInEventLoop()
+
+        do {
+            let peerChain = try self.pipeline.syncOperations.nioSSL_peerValidatedCertificateChain()
+            if let peerChain {
+                return .init(uncheckedCertificateChain: try peerChain.map { try Certificate($0) })
+            }
+        } catch {
+            logger.debug("Failed to extract the peer's certificate chain", error: error)
+        }
+
+        return nil
     }
 }

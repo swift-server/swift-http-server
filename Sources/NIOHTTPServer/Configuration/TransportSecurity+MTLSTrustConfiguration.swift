@@ -110,7 +110,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
         ///   ``CertificateVerificationResult/certificateVerified(_:)`` from the callback if verification succeeds,
         ///   optionally including the validated certificate chain you derived. Returning the validated certificate
         ///   chain allows ``NIOHTTPServer`` to provide access to it in the request handler through
-        ///   ``NIOHTTPServer/RequestContext/peerCertificateChain``. Otherwise, return
+        ///   ``NIOHTTPServer/RequestContext/validatedPeerCertificateChain``. Otherwise, return
         ///   ``CertificateVerificationResult/failed(_:)`` if verification fails.
         ///
         /// - Warning: The provided `callback` will override NIOSSL's default certificate verification logic.

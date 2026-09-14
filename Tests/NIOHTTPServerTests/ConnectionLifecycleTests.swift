@@ -374,17 +374,7 @@ struct ConnectionLifecycleTests {
 
     /// `ConnectionContext.httpVersion` reflects the protocol negotiated for the connection.
     @available(anyAppleOS 26.0, *)
-    #if HTTP3
-    @Test(
-        "ConnectionContext.httpVersion is correct",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "ConnectionContext.httpVersion is correct",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("ConnectionContext.httpVersion is correct", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testHTTPVersion(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
