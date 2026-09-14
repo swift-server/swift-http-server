@@ -15,6 +15,7 @@
 import BasicContainers
 import Logging
 import NIOCore
+import NIOEmbedded
 import NIOHTTPTypes
 import NIOPosix
 import Synchronization
@@ -442,6 +443,33 @@ struct HTTPKeepAliveHandlerTests {
             // The server should have closed the connection.
             let next = try await responseIterator.next()
             #expect(next == nil, "Expected channel close after response; got \(String(describing: next))")
+        }
+    }
+
+    @available(anyAppleOS 26.0, *)
+    @Test func channelClosedOnConnectionError() async throws {
+        let channel = EmbeddedChannel()
+        try await channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).get()
+        try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
+
+        // Simulate an incoming request and then a connection error.
+        try channel.writeInbound(HTTPRequestPart.testHead(method: .get, for: .plaintextHTTP1_1))
+        channel.pipeline.fireErrorCaught(TestError.intentional)
+
+        // The connection error will trigger the channel to be closed on the next event loop tick. Let's test the
+        // behaviour before the tick and after the tick.
+
+        // Trying to write before the channel closes will result in the connection error being propagated.
+        await #expect(throws: TestError.intentional) {
+            try await channel.writeAndFlush(HTTPResponsePart.head(.init(status: .ok)))
+        }
+
+        // Now run the event loop so the channel can close.
+        channel.embeddedEventLoop.run()
+
+        // Now the channel should have closed. Trying to write should result in `ChannelError.ioOnClosedChannel`.
+        await #expect(throws: ChannelError.ioOnClosedChannel) {
+            try await channel.writeAndFlush(HTTPResponsePart.head(.init(status: .ok)))
         }
     }
 }
