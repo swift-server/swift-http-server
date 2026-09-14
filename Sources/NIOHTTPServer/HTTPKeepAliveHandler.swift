@@ -63,7 +63,7 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
         /// and we close once response `.end` is written.
         case streaming
         /// A connection error was encountered previously.
-        case previousError
+        case previousError(any Error)
     }
 
     /// `true` when the request `.end` has been received on the inbound side, or no
@@ -203,14 +203,14 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
                 context.flush()
                 context.close(mode: .output, promise: nil)
             }
-        case .previousError:
-            // A connection error was encountered previously. Drop the write.
-            ()
+        case .previousError(let error):
+            // A connection error was encountered previously. Drop the write and fail the promise with the error.
+            promise?.fail(error)
         }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: any Error) {
-        self.finalResponseState = .previousError
+        self.finalResponseState = .previousError(error)
         context.fireErrorCaught(error)
         context.close(promise: nil)
     }
