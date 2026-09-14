@@ -447,7 +447,7 @@ struct HTTPKeepAliveHandlerTests {
     }
 
     @available(anyAppleOS 26.0, *)
-    @Test func channelClosedOnConnectionError() async throws {
+    @Test func channelClosesOnConnectionError() async throws {
         let channel = EmbeddedChannel()
         try await channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).get()
         try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
