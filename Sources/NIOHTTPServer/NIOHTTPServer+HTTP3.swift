@@ -15,8 +15,7 @@
 #if HTTP3
 import HTTP3
 import Logging
-import NIOCore
-import NIOEmbedded
+public import NIOCore
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
@@ -352,6 +351,40 @@ extension NIOHTTPServer {
                 backPressureStrategy: .init(self.configuration.backpressureStrategy),
                 isOutboundHalfClosureEnabled: true
             )
+        )
+    }
+
+    @_spi(Benchmarks)
+    public func serveHTTP3OverTestChannel<Handler: HTTPServerRequestHandler>(
+        channel: any Channel,
+        handler: Handler
+    ) async throws
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        guard let http3Configuration = self.configuration.supportedHTTPVersions.http3ConfigIfSupported,
+            let authenticationConfiguration = self.configuration.quicAuthenticationConfiguration
+        else {
+
+            preconditionFailure("serveHTTP3OverTestChannel requires HTTP/3 among configuration.supportedHTTPVersions.")
+        }
+
+        let connectionMultiplexer = try await channel.eventLoop.submit {
+            let (_, connectionMultiplexer) = try self.setupQUICChannel(
+                channel: channel,
+                http3Configuration: http3Configuration,
+                authenticationConfiguration: authenticationConfiguration,
+                authenticator: self.configuration.quicAuthenticator
+            )
+            channel.pipeline.fireChannelActive()
+            return connectionMultiplexer
+        }.get()
+
+        await self.serveHTTP3(
+            connectionMultiplexer: connectionMultiplexer,
+            connectionHandler: NIOHTTPServerDefaultConnectionHandler(handler: handler)
         )
     }
 }
