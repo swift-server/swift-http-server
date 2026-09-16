@@ -129,7 +129,7 @@ public struct NIOHTTPServer: HTTPServer {
     ///
     /// ## Cancellation when the exchange ends
     ///
-    /// The task running a handler is cancelled if the exchange carrying its request ends before the handler returns,
+    /// The task running a handler is cancelled if the stream or connection carrying its request ends before the handler returns,
     /// so a handler awaiting work nobody will read stops instead of running to completion. Handlers that hold
     /// resources or drive requests of their own should therefore honour cancellation.
     ///
@@ -138,7 +138,7 @@ public struct NIOHTTPServer: HTTPServer {
     /// - Over HTTP/1.1, the connection closing.
     /// - Over HTTP/2, the stream closing, whether from the client's `RST_STREAM` or from the connection beneath it
     ///   going away.
-    /// - Over HTTP/3, the stream closing, or receiving **both** `STOP_SENDING` and `RESET_STREAM` while it is still
+    /// - Over HTTP/3, the connection closing, or receiving **both** `STOP_SENDING` and `RESET_STREAM` while it is still
     ///   open. Either frame on its own leaves one direction of the exchange alive, so neither is treated as the end
     ///   of it; a `STOP_SENDING` that arrives after the request has been fully received is the exception, because
     ///   nothing remains open in either direction and the stream closes.
