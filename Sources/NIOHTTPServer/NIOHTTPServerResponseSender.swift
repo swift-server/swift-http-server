@@ -67,7 +67,11 @@ extension NIOHTTPServer {
             #endif
         }
 
-        public func sendAndFinish<Buffer>(_ response: HTTPResponse, buffer: inout Buffer, trailer: HTTPFields?) async throws where Buffer : RangeReplaceableContainer, Buffer.Element == UInt8, Buffer : ~Copyable {
+        public func sendAndFinish<Buffer>(
+            _ response: HTTPResponse,
+            buffer: inout Buffer,
+            trailer: HTTPFields?
+        ) async throws where Buffer: RangeReplaceableContainer, Buffer.Element == UInt8, Buffer: ~Copyable {
             precondition(response.status.kind != .informational)
             if buffer.isEmpty {
                 try await self.writer.write(contentsOf: [.head(response), .end(trailer)])
