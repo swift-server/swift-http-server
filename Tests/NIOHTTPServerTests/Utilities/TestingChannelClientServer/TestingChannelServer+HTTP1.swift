@@ -84,7 +84,6 @@ struct TestingChannelHTTP1Server {
         // Set up the required channel handlers on `serverTestConnectionChannel`
         let serverAsyncConnectionChannel = try await self.server.setupHTTP1_1Connection(
             channel: serverTestConnectionChannel,
-            asyncChannelConfiguration: .init(),
             isSecure: false
         ).get()
 

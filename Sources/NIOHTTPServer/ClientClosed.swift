@@ -15,7 +15,6 @@
 import NIOConcurrencyHelpers
 import NIOCore
 
-
 /// This channel handler detects a client going away and yields into a continuation that results in the request handler being
 /// cancelled. This allows the request handler to be prevented from doing unnecessary work after the peer has gone away.
 final class ClientClosedMonitor: ChannelInboundHandler, RemovableChannelHandler, Sendable {
@@ -36,7 +35,6 @@ final class ClientClosedMonitor: ChannelInboundHandler, RemovableChannelHandler,
         context.fireChannelInactive()
     }
 }
-
 
 /// Runs `operation` and cancels it if the client stops waiting for the response first.
 ///

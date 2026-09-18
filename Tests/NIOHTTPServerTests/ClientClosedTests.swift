@@ -35,7 +35,7 @@ struct ClientClosedTests {
 
     /// How long a handler polls for cancellation.
     static let observationWindow = Duration.seconds(1)
-    
+
     static let tlsShutdownWindow = Duration.seconds(8)
 
     /// How long we wait for the server pipeline to observe a client close before concluding it
@@ -103,10 +103,7 @@ struct ClientClosedTests {
         ) { _, connection in
             let requestChannel = try await connection.makeRequestChannel(expectedHTTPVersion: httpVersion)
 
-            // Teardown races are expected here — we are deliberately killing the connection from
-            // under the request stream — so tolerate errors from the stream's own close.
             try? await requestChannel.executeThenClose { _, outbound in
-                // Send a *complete* request so the handler is not blocked reading a body.
                 try await outbound.write(.testHead(method: .get, for: httpVersion))
                 try await outbound.write(.end(nil))
 

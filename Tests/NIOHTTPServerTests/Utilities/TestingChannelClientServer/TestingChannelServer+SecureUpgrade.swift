@@ -85,10 +85,12 @@ struct TestingChannelSecureUpgradeServer {
 
         // Set up the required channel handlers on `serverTestConnectionChannel`
         let negotiatedServerConnectionFuture = try await serverTestConnectionChannel.eventLoop.flatSubmit {
-            self.server.setupSecureUpgradeConnectionChildChannel(
+            self.server.setupSecureUpgradeConnection(
                 channel: serverTestConnectionChannel,
-                http2Configuration: self.server.configuration.supportedHTTPVersions.http2ConfigIfSupported,
-                sslContext: sslContext
+                configuration: .init(
+                    sslContext: sslContext,
+                    http2Configuration: self.server.configuration.supportedHTTPVersions.http2ConfigIfSupported
+                )
             )
         }.get()
 
