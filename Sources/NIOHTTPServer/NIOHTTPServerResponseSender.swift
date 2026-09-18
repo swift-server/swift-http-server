@@ -66,6 +66,17 @@ extension NIOHTTPServer {
             return Writer(writer: self.writer, writerState: self.writerState)
             #endif
         }
+
+        public func sendAndFinish<Buffer>(_ response: HTTPResponse, buffer: inout Buffer, trailer: HTTPFields?) async throws where Buffer : RangeReplaceableContainer, Buffer.Element == UInt8, Buffer : ~Copyable {
+            precondition(response.status.kind != .informational)
+            if buffer.isEmpty {
+                try await self.writer.write(contentsOf: [.head(response), .end(trailer)])
+            } else {
+                let body = ByteBuffer(draining: &buffer)
+                try await self.writer.write(contentsOf: [.head(response), .body(body), .end(trailer)])
+            }
+            self.writerState.wrapped.withLock { $0.finishedWriting = true }
+        }
     }
 }
 
