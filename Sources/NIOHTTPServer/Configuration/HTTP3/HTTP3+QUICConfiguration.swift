@@ -159,6 +159,17 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// debugging and analysis.
         public var qLogConfiguration: QLogConfiguration?
 
+        /// Builds the datagram socket group for each HTTP/3 bind target, or `nil` to bind a single socket per
+        /// bind target.
+        ///
+        /// The server consults this once per bind target, passing the number of available event loops. Returning
+        /// `nil` binds a single socket with the default connection ID generator; throwing fails server start.
+        ///
+        /// - Note: A closure has no representation in a configuration file, so a configuration built from a
+        ///   `ConfigProvider` always leaves this `nil`.
+        @_spi(QUICDatagramSockets)
+        public var datagramSocketGroupFactory: QUICDatagramSocketGroupFactory? = nil
+
         /// The default QUIC transport configuration.
         ///
         /// Uses the following default values:

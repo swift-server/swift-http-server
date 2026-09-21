@@ -134,6 +134,83 @@ extension NIOHTTPServer {
         }
     }
 
+    /// Binds QUIC listeners to `address` as sibling child tasks of `group`, and returns the address they share.
+    ///
+    /// Each socket yields its address to `addressContinuation` once bound, and this consumes all of them, so the
+    /// caller never publishes an address the group is still binding to.
+    func addHTTP3Listeners<Handler: NIOHTTPServerConnectionHandler>(
+        to group: inout ThrowingDiscardingTaskGroup<any Error>,
+        address: NIOCore.SocketAddress,
+        configuration: ListenerConfiguration.HTTP3,
+        addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
+        addressStreamIterator: inout sending AsyncThrowingStream<NIOCore.SocketAddress, any Error>.AsyncIterator,
+        connectionHandler: Handler
+    ) async throws -> NIOCore.SocketAddress {
+        let (eventLoops, socketGroup) = try self.resolveHTTP3Listeners(
+            using: configuration.http3Configuration.quicConfiguration.datagramSocketGroupFactory
+        )
+        let sharesPort = eventLoops.count > 1
+
+        // We need the resolved address of the first socket to use with the remaining binds.
+        self.addHTTP3Listener(
+            to: &group,
+            address: address,
+            eventLoop: eventLoops[0],
+            socket: HTTP3ListenerSocket(index: 0, socketGroup: socketGroup, sharesPort: sharesPort),
+            configuration: configuration,
+            addressContinuation: addressContinuation,
+            connectionHandler: connectionHandler
+        )
+        let resolvedAddress = try await self.nextBoundAddress(from: &addressStreamIterator)
+
+        for (offset, eventLoop) in eventLoops.dropFirst().enumerated() {
+            self.addHTTP3Listener(
+                to: &group,
+                address: resolvedAddress,
+                eventLoop: eventLoop,
+                socket: HTTP3ListenerSocket(index: offset + 1, socketGroup: socketGroup, sharesPort: sharesPort),
+                configuration: configuration,
+                addressContinuation: addressContinuation,
+                connectionHandler: connectionHandler
+            )
+        }
+
+        // Await and discard the remaining addresses so that all sockets are bound when we return from this function.
+        for _ in eventLoops.dropFirst() {
+            _ = try await self.nextBoundAddress(from: &addressStreamIterator)
+        }
+
+        return resolvedAddress
+    }
+
+    /// Asks the socket group factory how many datagram sockets to bind, and returns the event loops to bind
+    /// them on.
+    ///
+    /// With no factory, or one that declines, we fall back to a single socket, on the next available event loop.
+    func resolveHTTP3Listeners(
+        using factory: QUICDatagramSocketGroupFactory?
+    ) throws -> (eventLoops: [any EventLoop], socketGroup: (any QUICDatagramSocketGroup)?) {
+        let eventLoops = Array(self.eventLoopGroup.makeIterator())
+
+        guard let factory,
+            let socketGroup = try factory.makeSocketGroup(
+                availableEventLoops: eventLoops.count,
+                logger: self.logger
+            )
+        else {
+            return ([self.eventLoopGroup.next()], nil)
+        }
+
+        let socketCount = socketGroup.socketCount
+        guard socketCount > 0, socketCount <= eventLoops.count else {
+            throw NIOHTTPServerConfigurationError.datagramSocketGroupCountOutOfRange(
+                requested: socketCount,
+                available: eventLoops.count
+            )
+        }
+        return (Array(eventLoops.prefix(socketCount)), socketGroup)
+    }
+
     /// Adds a child task to `group` that binds a QUIC listener at `address` on `eventLoop` and serves HTTP/3
     /// connections on it until the task is cancelled or the server shuts down gracefully.
     ///
@@ -143,6 +220,7 @@ extension NIOHTTPServer {
         to group: inout ThrowingDiscardingTaskGroup<any Error>,
         address: NIOCore.SocketAddress,
         eventLoop: any EventLoop,
+        socket: HTTP3ListenerSocket,
         configuration: ListenerConfiguration.HTTP3,
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
@@ -151,6 +229,7 @@ extension NIOHTTPServer {
             try await self.withHTTP3Channel(
                 address: address,
                 eventLoop: eventLoop,
+                socket: socket,
                 configuration: configuration,
                 addressContinuation: addressContinuation
             ) { _, multiplexer in
@@ -167,13 +246,18 @@ extension NIOHTTPServer {
     func withHTTP3Channel(
         address: NIOCore.SocketAddress,
         eventLoop: any EventLoop,
+        socket: HTTP3ListenerSocket,
         configuration: ListenerConfiguration.HTTP3,
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         _ body: (any Channel, HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>) async throws ->
             Void
     ) async throws {
-        let bootstrap = DatagramBootstrap(group: eventLoop)
+        var bootstrap = DatagramBootstrap(group: eventLoop)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+
+        if socket.sharesPort {
+            bootstrap = bootstrap.channelOption(ChannelOptions.socketOption(.so_reuseport), value: 1)
+        }
 
         let quicChannel: any Channel
         let multiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>
@@ -181,7 +265,11 @@ extension NIOHTTPServer {
         do {
             (quicChannel, multiplexer) = try await bootstrap.bind(to: address) { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    let multiplexer = try self.setupQUICChannel(channel: channel, configuration: configuration)
+                    let multiplexer = try self.setupQUICChannel(
+                        channel: channel,
+                        configuration: configuration,
+                        socket: socket
+                    )
                     return (channel, multiplexer)
                 }
             }
@@ -201,6 +289,25 @@ extension NIOHTTPServer {
                 guard let localAddress = quicChannel.localAddress else {
                     addressContinuation.finish(throwing: ListeningAddressError.addressOrPortNotAvailable)
                     throw ListeningAddressError.addressOrPortNotAvailable
+                }
+
+                // A socket does not join its real reuseport group until it is bound, so this comes after the bind.
+                if let socketGroup = socket.socketGroup {
+                    do {
+                        try await quicChannel.eventLoop.submit {
+                            let adopted: Void? = try quicChannel.pipeline.syncOperations
+                                .withUnsafeTransportIfAvailable(of: NIOBSDSocket.Handle.self) { socketFD in
+                                    try socketGroup.socketBound(socketFD, socketIndex: socket.index)
+                                }
+                            guard adopted != nil else {
+                                preconditionFailure("The channel does not expose its underlying socket handle.")
+                            }
+                        }.get()
+                    } catch {
+                        addressContinuation.finish(throwing: error)
+                        try? await quicChannel.close()
+                        throw error
+                    }
                 }
 
                 addressContinuation.yield(localAddress)
@@ -225,9 +332,13 @@ extension NIOHTTPServer {
 
     /// Installs the QUIC handler on a bound datagram channel and returns the channel alongside the connection
     /// multiplexer.
+    ///
+    /// The QUIC connection channels `QUICHandler` creates are children of this datagram channel and run on its
+    /// event loop, so a connection's whole lifetime stays on one loop.
     func setupQUICChannel(
         channel: any Channel,
-        configuration: ListenerConfiguration.HTTP3
+        configuration: ListenerConfiguration.HTTP3,
+        socket: HTTP3ListenerSocket
     ) throws -> HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
         let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>()
 
@@ -243,6 +354,13 @@ extension NIOHTTPServer {
             authenticationConfiguration: configuration.authenticationConfiguration
         )
         #endif
+
+        let connectionIDGenerator =
+            if let group = socket.socketGroup {
+                group.makeConnectionIDGenerator(socketIndex: socket.index)
+            } else {
+                QUICConnectionID.RandomGenerator()
+            }
 
         let quicHandler = QUICHandler(
             channel: channel,
@@ -269,7 +387,8 @@ extension NIOHTTPServer {
             },
             noMoreConnections: {
                 connectionMultiplexer.finish()
-            }
+            },
+            connectionIDGenerator: connectionIDGenerator
         )
 
         try channel.pipeline.syncOperations.addHandler(quicHandler)
@@ -397,4 +516,18 @@ extension NIOHTTPServer {
         )
     }
 }
+
+/// Identifies one of the datagram sockets bound for a bind target, and the group it belongs to.
+@available(anyAppleOS 26.0, *)
+struct HTTP3ListenerSocket: Sendable {
+    /// The index of this socket within its associated group (will be zero if there is no group).
+    var index: Int
+
+    /// The associated socket group for this bind target, if any.
+    var socketGroup: (any QUICDatagramSocketGroup)?
+
+    /// Whether this socket is sharing a port.
+    var sharesPort: Bool
+}
+
 #endif  // HTTP3
