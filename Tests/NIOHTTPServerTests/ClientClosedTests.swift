@@ -12,16 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import BasicContainers
 import Logging
 import NIOConcurrencyHelpers
 import NIOCore
-import NIOHTTP1
-import NIOHTTPTypes
+import NIOHTTPServer
 import NIOPosix
 import Testing
-
-@testable import NIOHTTPServer
 
 #if HTTP3
 import NIOQUICHelpers
@@ -188,9 +184,7 @@ struct ClientClosedTests {
     }
 
     /// `STOP_SENDING` *after* the request end does cancel: with the client's FIN already received, the
-    /// exchange is finished in both directions, so the QUIC layer closes the stream — the `hasReceivedFin`
-    /// branch of `QUICChannelStreamHandler.receiveStopSending`, the one case where opting into half-closure
-    /// still closes.
+    /// exchange is finished in both directions, so the QUIC layer closes the stream.
     @available(anyAppleOS 26.0, *)
     @Test("HTTP/3 STOP_SENDING after the request end cancels the handler")
     func http3StopSendingAfterRequestEndCancels() async throws {
