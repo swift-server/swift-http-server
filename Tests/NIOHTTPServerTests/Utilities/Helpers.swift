@@ -192,7 +192,14 @@ struct TestHelpers {
                 try await server.serve(handler: serverHandler)
             }
 
-            let listeningAddresses = try await server.listeningAddresses
+            let listeningAddresses: [NIOHTTPServer.SocketAddress]
+            do {
+                listeningAddresses = try await server.listeningAddresses
+            } catch {
+                // Rethrow the error from `serve()`, which the listening address promise does not carry.
+                try await group.waitForAll()
+                throw error
+            }
 
             try await body(listeningAddresses)
 
@@ -212,7 +219,14 @@ struct TestHelpers {
                 try await server.serve(connectionHandler: connectionHandler)
             }
 
-            let listeningAddresses = try await server.listeningAddresses
+            let listeningAddresses: [NIOHTTPServer.SocketAddress]
+            do {
+                listeningAddresses = try await server.listeningAddresses
+            } catch {
+                // Rethrow the error from `serve()`, which the listening address promise does not carry.
+                try await group.waitForAll()
+                throw error
+            }
 
             try await body(listeningAddresses)
 

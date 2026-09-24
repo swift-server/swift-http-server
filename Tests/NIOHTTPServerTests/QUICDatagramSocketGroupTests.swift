@@ -225,29 +225,11 @@ struct QUICDatagramSocketGroupTests {
         )
         let server = NIOHTTPServer(logger: self.serverLogger, configuration: configuration)
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                try await server.serve(
-                    connectionHandler: NIOHTTPServerDefaultConnectionHandler(
-                        handler: HTTPServerClosureRequestHandler { _, _, _, _ in }
-                    )
-                )
-            }
-
-            let addresses: [NIOHTTPServer.SocketAddress]
-            do {
-                addresses = try await server.listeningAddresses
-            } catch {
-                // The server failed before it bound. `serve()` carries why; the listening address only reports
-                // that there is nothing to report.
-                try await group.waitForAll()
-                throw error
-            }
-
-            try await body(addresses)
-
-            group.cancelAll()
-        }
+        try await TestHelpers.withServer(
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, _, _ in },
+            body: body
+        )
     }
 }
 

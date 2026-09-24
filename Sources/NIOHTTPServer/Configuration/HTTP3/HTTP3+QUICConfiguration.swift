@@ -162,11 +162,10 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// Builds the datagram socket group for each HTTP/3 bind target, or `nil` to bind a single socket per
         /// bind target.
         ///
-        /// The server consults this once per bind target, passing the number of available event loops. Returning
-        /// `nil` binds a single socket with the default connection ID generator; throwing fails server start.
+        /// The server consults this once per bind target, passing the number of available event loops.
         ///
-        /// - Note: A closure has no representation in a configuration file, so a configuration built from a
-        ///   `ConfigProvider` always leaves this `nil`.
+        /// - Note: A closure has no representation in a configuration file. Build the configuration from a
+        ///   `ConfigProvider` and then set this property on it.
         @_spi(QUICDatagramSockets)
         public var datagramSocketGroupFactory: QUICDatagramSocketGroupFactory? = nil
 
