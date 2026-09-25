@@ -526,8 +526,18 @@ struct HTTP3ListenerSocket: Sendable {
     /// The associated socket group for this bind target, if any.
     var socketGroup: (any QUICDatagramSocketGroup)?
 
-    /// Whether this socket is sharing a port.
+    /// Whether this socket is is part of a reuseport group with more than one socket.
+    ///
+    /// Although `QUICDatagramSocketGroup.socketCount` exists, we store the server-derived value here so constructing a
+    /// consistent reuseport group is not dependent on a well-behaved protocol conformance.
     var sharesPort: Bool
+
+    init(index: Int, socketGroup: (any QUICDatagramSocketGroup)?, sharesPort: Bool) {
+        if sharesPort { precondition(socketGroup != nil) }
+        self.index = index
+        self.socketGroup = socketGroup
+        self.sharesPort = sharesPort
+    }
 }
 
 #endif  // HTTP3
