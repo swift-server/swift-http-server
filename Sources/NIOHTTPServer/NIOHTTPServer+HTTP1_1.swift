@@ -34,7 +34,7 @@ extension NIOHTTPServer {
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveInsecureHTTP1_1<Handler: NIOHTTPServerConnectionHandler>(
-        connectionStream: NIOAsyncChannelInboundStream<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
+        connectionStream: NIOAsyncChannelInboundStream<HTTPRequestChannelAndCancellationSignal>,
         connectionHandler: Handler
     ) async throws {
         // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
@@ -43,10 +43,11 @@ extension NIOHTTPServer {
         // `inbound`) must be caught and handled directly.
         let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
             do {
-                for try await requestChannel in connectionStream {
+                for try await connectionChannel in connectionStream {
                     group.addTask {
                         await self.dispatchPlaintextHTTP1_1Connection(
-                            requestChannel: requestChannel,
+                            requestChannel: connectionChannel.channel,
+                            clientClosed: connectionChannel.clientClosed,
                             connectionHandler: connectionHandler
                         )
                     }
@@ -73,6 +74,7 @@ extension NIOHTTPServer {
     /// handler called ``Connection/handleRequests(handler:)``.
     private func dispatchPlaintextHTTP1_1Connection<Handler: NIOHTTPServerConnectionHandler>(
         requestChannel: sending NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
+        clientClosed: AsyncStream<Void>,
         connectionHandler: Handler
     ) async {
         do {
@@ -89,7 +91,8 @@ extension NIOHTTPServer {
                     httpProtocol: .http1_1(
                         channel: requestChannel.channel,
                         inbound: inbound,
-                        outbound: outbound
+                        outbound: outbound,
+                        clientClosed: clientClosed
                     )
                 )
                 do {
@@ -137,8 +140,9 @@ extension NIOHTTPServer {
     func setupHTTP1_1Connection(
         channel: any Channel,
         isSecure: Bool
-    ) -> EventLoopFuture<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>> {
+    ) -> EventLoopFuture<HTTPRequestChannelAndCancellationSignal> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: isSecure))
             try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
             try channel.pipeline.syncOperations.addTimeoutHandlers(
@@ -146,12 +150,23 @@ extension NIOHTTPServer {
                 expectMultipleRequests: true
             )
 
-            return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                wrappingChannelSynchronously: channel,
-                configuration: .init(
-                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                    isOutboundHalfClosureEnabled: true
-                )
+            // Reports this connection going inactive, so an in-flight request handler can be cancelled. The
+            // paired stream is returned alongside the channel, for the request loop to race against. Covers the
+            // TLS path too: that reaches here on the same channel after ALPN negotiation.
+            let (clientClosed, clientClosedContinuation) = AsyncStream<Void>.makeStream()
+            try channel.pipeline.syncOperations.addHandler(
+                ClientClosedMonitor(clientClosed: clientClosedContinuation)
+            )
+
+            return HTTPRequestChannelAndCancellationSignal(
+                channel: try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                    wrappingChannelSynchronously: channel,
+                    configuration: .init(
+                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                        isOutboundHalfClosureEnabled: true
+                    )
+                ),
+                clientClosed: clientClosed
             )
         }
     }
@@ -171,14 +186,15 @@ extension NIOHTTPServer {
         inbound: NIOAsyncChannelInboundStream<HTTPRequestPart>,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
         handler: Handler,
-        context: ConnectionContext
+        context: ConnectionContext,
+        signalledBy clientClosed: AsyncStream<Void>
     ) async
     where
         Handler.RequestContext == RequestContext,
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        do {
+        @Sendable func runLoop() async throws {
             var iterator = inbound.makeAsyncIterator()
 
             requestLoop: while !Task.isCancelled {
@@ -204,6 +220,10 @@ extension NIOHTTPServer {
 
                 iterator = recoveredIterator
             }
+        }
+
+        do {
+            try await withCancellationWhenClientCloses(signalledBy: clientClosed, operation: runLoop)
         } catch {
             self.logger.debug(
                 "Error thrown while handling HTTP/1.1 connection",
