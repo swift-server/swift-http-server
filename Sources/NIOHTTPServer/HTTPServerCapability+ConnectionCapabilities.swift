@@ -31,6 +31,16 @@ extension HTTPServerCapability {
         var localAddress: NIOHTTPServer.SocketAddress? { get }
     }
 
+    /// A request-context capability exposing the negotiated application protocol.
+    ///
+    /// Servers whose request context conforms to this capability surface the
+    /// application-level HTTP version negotiated for the connection carrying
+    /// the request.
+    public protocol NegotiatedHTTPVersion: RequestContext {
+        /// The application-level HTTP version negotiated for the connection.
+        var httpVersion: NIOHTTPServer.HTTPVersion { get }
+    }
+
     /// A request-context capability exposing the validated peer certificate chain.
     ///
     /// Servers whose request context conforms to this capability surface the
