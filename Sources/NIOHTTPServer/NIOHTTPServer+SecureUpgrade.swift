@@ -31,10 +31,10 @@ import X509
 extension NIOHTTPServer {
     struct NegotiationResult {
         enum NegotiatedChannel {
-            case http1_1(NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>)
+            case http1_1(HTTPRequestChannelAndCancellationSignal)
             case http2(
                 any Channel,
-                NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
+                NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>
             )
         }
 
@@ -102,20 +102,21 @@ extension NIOHTTPServer {
             // `NIOAsyncWriter` is finished cleanly whether or not the
             // connection handler called `handleRequests`.
             do {
-                try await requestChannel.executeThenClose { inbound, outbound in
+                try await requestChannel.channel.executeThenClose { inbound, outbound in
                     let context = ConnectionContext(
                         httpVersion: .http1_1,
-                        remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
-                        localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
+                        remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.channel.remoteAddress),
+                        localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.channel.localAddress),
                         validatedPeerCertificateChain: result.validatedPeerCertificateChain
                     )
                     let connection = Connection(
                         server: self,
                         context: context,
                         httpProtocol: .http1_1(
-                            channel: requestChannel.channel,
+                            channel: requestChannel.channel.channel,
                             inbound: inbound,
-                            outbound: outbound
+                            outbound: outbound,
+                            clientClosed: requestChannel.clientClosed
                         )
                     )
                     do {
@@ -180,7 +181,7 @@ extension NIOHTTPServer {
     /// - Note: Stream iteration errors are logged but do not propagate to the caller.
     func handleHTTP2Connection<Handler: HTTPServerRequestHandler>(
         connectionChannel: any Channel,
-        multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>,
+        multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>,
         handler: Handler,
         context: ConnectionContext
     ) async
@@ -191,9 +192,10 @@ extension NIOHTTPServer {
     {
         await withDiscardingTaskGroup { streamGroup in
             do {
-                for try await streamChannel in multiplexer.inbound {
+                for try await stream in multiplexer.inbound {
                     streamGroup.addTask {
-                        await streamChannel.withRequest(
+                        await stream.channel.withRequest(
+                            clientClosed: stream.clientClosed,
                             logger: self.logger,
                             context: context
                         ) { request, requestContext, inboundIterator, outbound in
@@ -260,10 +262,7 @@ extension NIOHTTPServer {
         channel: any Channel,
         configuration: NIOHTTPServerConfiguration.HTTP2
     ) -> EventLoopFuture<
-        (
-            any Channel,
-            NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
-        )
+        (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>)
     > {
         channel.eventLoop.makeCompletedFuture {
             try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
@@ -289,12 +288,24 @@ extension NIOHTTPServer {
                             expectMultipleRequests: false
                         )
 
-                        return try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                            wrappingChannelSynchronously: http2StreamChannel,
-                            configuration: .init(
-                                backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                                isOutboundHalfClosureEnabled: true
-                            )
+                        // Reports this stream going inactive, so an in-flight request handler can be
+                        // cancelled. Scoped to the stream rather than the connection: NIO closes the stream
+                        // channel both for a client RST_STREAM and when the connection beneath it dies, so
+                        // the stream sees everything the connection would.
+                        let (clientClosed, clientClosedContinuation) = AsyncStream<Void>.makeStream()
+                        try http2StreamChannel.pipeline.syncOperations.addHandler(
+                            ClientClosedMonitor(clientClosed: clientClosedContinuation)
+                        )
+
+                        return HTTPRequestChannelAndCancellationSignal(
+                            channel: try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                                wrappingChannelSynchronously: http2StreamChannel,
+                                configuration: .init(
+                                    backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                                    isOutboundHalfClosureEnabled: true
+                                )
+                            ),
+                            clientClosed: clientClosed
                         )
                     }
                 }
@@ -332,10 +343,11 @@ extension NIOHTTPServer {
                 return self.setupHTTP1_1Connection(
                     channel: channel,
                     isSecure: true
-                ).map { channel in
+                ).map { requestChannel in
                     NegotiationResult(
-                        channel: .http1_1(channel),
-                        validatedPeerCertificateChain: channel.channel.extractPeerCertificateChain(logger: self.logger)
+                        channel: .http1_1(requestChannel),
+                        validatedPeerCertificateChain: requestChannel.channel.channel
+                            .extractPeerCertificateChain(logger: self.logger)
                     )
                 }
 
@@ -360,39 +372,56 @@ extension NIOHTTPServer {
 
 @available(anyAppleOS 26.0, *)
 extension NIOAsyncChannel where Inbound == HTTPRequestPart, Outbound == HTTPResponsePart {
+    /// - Parameter clientClosed: Yields when the client stops waiting for a response, at which point `body`
+    ///   is cancelled. Paired with the continuation held by this stream's `ClientClosedMonitor`.
     func withRequest(
+        clientClosed: AsyncStream<Void>,
         logger: Logger,
         context: NIOHTTPServer.ConnectionContext,
-        body: (
-            _ request: HTTPRequest,
-            _ requestContext: NIOHTTPServer.RequestContext,
-            _ inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
-            _ outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
-        ) async -> Void
+        body:
+            @escaping @Sendable (
+                _ request: HTTPRequest,
+                _ requestContext: NIOHTTPServer.RequestContext,
+                _ inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
+                _ outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
+            ) async -> Void
     ) async {
         do {
             try await self.executeThenClose { inbound, outbound in
-                var iterator = inbound.makeAsyncIterator()
+                // Racing the whole request against the client going away is what cancels `body` if the
+                // client abandons the exchange. Built inside this closure because the iterator is
+                // non-`Sendable` and cannot cross into a child task. See `ClientClosed.swift`.
+                @Sendable func handleRequest() async throws {
+                    var iterator = inbound.makeAsyncIterator()
 
-                guard let httpRequest = try await iterator.nextRequestHead(logger: logger) else {
+                    guard let httpRequest = try await iterator.nextRequestHead(logger: logger) else {
+                        outbound.finish()
+                        return
+                    }
+
+                    let requestContext = NIOHTTPServer.RequestContext(
+                        connectionContext: context,
+                        channel: self.channel
+                    )
+
+                    await body(httpRequest, requestContext, iterator, outbound)
+
+                    // TODO: handle the remaining state scenarios for a handler that returned without throwing.
+                    // For example, if we didn't finish reading but we wrote back a response, we should send a
+                    // RST_STREAM with NO_ERROR set. If we finished reading but we didn't write back a response,
+                    // then RST_STREAM is also likely appropriate but unclear about the error. (A handler that
+                    // throws already resets the stream; see `invokeHandler`.)
+
+                    // Finish the outbound and wait on the close future to make sure all pending writes are
+                    // actually written.
                     outbound.finish()
-                    return
+                    try await self.channel.closeFuture.get()
                 }
 
-                let requestContext = NIOHTTPServer.RequestContext(connectionContext: context, channel: self.channel)
-
-                await body(httpRequest, requestContext, iterator, outbound)
-
-                // TODO: handle the remaining state scenarios for a handler that returned without throwing. For
-                // example, if we didn't finish reading but we wrote back a response, we should send a RST_STREAM with
-                // NO_ERROR set. If we finished reading but we didn't write back a response, then RST_STREAM is also
-                // likely appropriate but unclear about the error. (A handler that throws already resets the stream;
-                // see `invokeHandler`.)
-
-                // Finish the outbound and wait on the close future to make sure all pending writes are actually
-                // written.
-                outbound.finish()
-                try await self.channel.closeFuture.get()
+                try await withCancellationWhenClientCloses(
+                    signalledBy: clientClosed,
+                    operation: handleRequest
+                )
             }
         } catch {
             logger.debug(

@@ -42,12 +42,13 @@ extension NIOHTTPServer {
             case http1_1(
                 channel: any Channel,
                 inbound: NIOAsyncChannelInboundStream<HTTPRequestPart>,
-                outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
+                outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
+                clientClosed: AsyncStream<Void>
             )
 
             case http2(
                 connectionChannel: any Channel,
-                multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>>
+                multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>
             )
 
             #if HTTP3
@@ -87,13 +88,14 @@ extension NIOHTTPServer {
             let server = self.server
             let context = self.context
             switch self.httpProtocol {
-            case .http1_1(let channel, let inbound, let outbound):
+            case .http1_1(let channel, let inbound, let outbound, let clientClosed):
                 await server.handleHTTP1RequestLoop(
                     channel: channel,
                     inbound: inbound,
                     outbound: outbound,
                     handler: handler,
-                    context: context
+                    context: context,
+                    signalledBy: clientClosed
                 )
 
             case .http2(let connectionChannel, let multiplexer):

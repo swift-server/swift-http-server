@@ -128,6 +128,32 @@ struct TestClientConnection {
         #endif
         }
     }
+
+    #if HTTP3
+    /// Closes an HTTP/3 connection the way a peer that is going away politely does: with a QUIC
+    /// `CONNECTION_CLOSE` frame.
+    ///
+    /// ``close()`` deliberately does not do this — it shuts the client's socket, so the peer simply
+    /// vanishes and no packet reaches the server. This announces the departure instead, which is what
+    /// lets the server tear the connection's streams down rather than waiting for the QUIC idle timeout.
+    func closeAnnouncingDeparture() async throws {
+        guard case .http3(_, let connectionChannel, _) = self.connectionProtocol else {
+            preconditionFailure("Only HTTP/3 connections announce their departure with CONNECTION_CLOSE")
+        }
+
+        // H3_NO_ERROR (RFC 9114 § 8.1): the client is done, and nothing went wrong.
+        let noError = QUICApplicationErrorCode(0x0100)!
+
+        // The connection channel, not the QUIC listener channel: CONNECTION_CLOSE belongs to this
+        // connection.
+        try await connectionChannel.eventLoop.submit {
+            connectionChannel.pipeline.syncOperations.triggerUserOutboundEvent(
+                QUICCloseConnectionEvent(code: noError, reasonPhrase: "client going away"),
+                promise: nil
+            )
+        }.get()
+    }
+    #endif
 }
 
 @available(anyAppleOS 26.0, *)
