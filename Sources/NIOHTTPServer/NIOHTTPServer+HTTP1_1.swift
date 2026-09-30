@@ -195,9 +195,12 @@ extension NIOHTTPServer {
         Handler.ResponseSender == ResponseSender
     {
         @Sendable func runLoop() async throws {
-            var iterator = inbound.makeAsyncIterator()
+            // Keep the iterator disconnected between requests so each iteration can
+            // transfer it to the handler and recover it for the next request.
+            var iteratorStorage = Disconnected(value: inbound.makeAsyncIterator())
 
             requestLoop: while !Task.isCancelled {
+                var iterator = iteratorStorage.take()
                 guard let httpRequest = try await iterator.nextRequestHead(logger: self.logger) else {
                     break requestLoop
                 }
@@ -218,7 +221,7 @@ extension NIOHTTPServer {
                     break requestLoop
                 }
 
-                iterator = recoveredIterator
+                iteratorStorage = Disconnected(value: recoveredIterator)
             }
         }
 

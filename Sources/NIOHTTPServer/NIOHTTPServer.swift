@@ -238,16 +238,14 @@ public struct NIOHTTPServer: HTTPServer {
 
                 #if HTTP3
                 case .http3(let configuration):
-                    self.addHTTP3Listener(
+                    resolvedAddress = try await self.addHTTP3Listeners(
                         to: &group,
                         address: try NIOCore.SocketAddress(bindTarget: bindTarget),
-                        eventLoop: self.eventLoopGroup.next(),
                         configuration: configuration,
                         addressContinuation: addressContinuation,
+                        addressStreamIterator: &addressStreamIterator,
                         connectionHandler: connectionHandler
                     )
-
-                    resolvedAddress = try await self.nextBoundAddress(from: &addressStreamIterator)
 
                 case .secureUpgradeAndHTTP3(let secureUpgradeConfiguration, let http3Configuration):
                     self.addSecureUpgradeListener(
@@ -258,19 +256,17 @@ public struct NIOHTTPServer: HTTPServer {
                         connectionHandler: connectionHandler
                     )
 
-                    // Wait for the address the TCP channel bound to, and use the same address to bind the UDP channel.
+                    // Wait for the address the TCP channel bound to, and use the same address to bind the UDP channels.
                     resolvedAddress = try await self.nextBoundAddress(from: &addressStreamIterator)
 
-                    self.addHTTP3Listener(
+                    _ = try await self.addHTTP3Listeners(
                         to: &group,
                         address: resolvedAddress,
-                        eventLoop: self.eventLoopGroup.next(),
                         configuration: http3Configuration,
                         addressContinuation: addressContinuation,
+                        addressStreamIterator: &addressStreamIterator,
                         connectionHandler: connectionHandler
                     )
-
-                    _ = try await self.nextBoundAddress(from: &addressStreamIterator)
                 #endif  // HTTP3
                 }
 
