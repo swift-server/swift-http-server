@@ -18,7 +18,7 @@ import Testing
 
 @Suite
 struct ListenerConfigurationTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("transport: plaintext, versions: {HTTP/1.1} -> plaintext")
     func plaintextHTTP1_1() throws {
         let configuration = try NIOHTTPServerConfiguration(
@@ -35,7 +35,7 @@ struct ListenerConfigurationTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "transport: TLS, versions: {HTTP/1.1 and/or HTTP/2} -> secure upgrade",
         arguments: [
@@ -66,7 +66,7 @@ struct ListenerConfigurationTests {
     }
 
     #if HTTP3
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("transport: TLS, versions: {HTTP/3} -> HTTP/3")
     func http3Only() throws {
         let chain = try TestCA.makeSelfSignedChain()
@@ -88,7 +88,7 @@ struct ListenerConfigurationTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "transport: TLS, versions: {HTTP/1.1 and/or HTTP/2} + {HTTP/3} -> HTTP/3 and secure upgrade",
         arguments: [

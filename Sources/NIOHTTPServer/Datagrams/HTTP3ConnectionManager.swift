@@ -19,7 +19,7 @@ import NIOHTTP3
 import NIOQUICHelpers
 
 /// Routes inbound HTTP/3 datagrams to registered ``HTTP3DatagramStream`` instances.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 final class HTTP3ConnectionManager: ChannelInboundHandler {
     typealias InboundIn = HTTP3Datagram
 

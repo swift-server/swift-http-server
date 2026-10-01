@@ -20,7 +20,7 @@ import NIOCore
 import NIOHTTPTypes
 import NetworkTypes
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 func connectUDPExample(
     request: HTTPRequest,
     context: NIOHTTPServer.ConnectionContext,
@@ -124,7 +124,7 @@ final class RefBox<Value: ~Copyable> {
 }
 extension RefBox: Sendable where Value: Sendable & ~Copyable {}
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 enum ConnectUDPHelper {
     /// Validate that `request` corresponds to a valid CONNECT-UDP request.
     static func isValidConnectUDPRequest(_ request: HTTPRequest, version: NIOHTTPServer.HTTPVersion) -> Bool {

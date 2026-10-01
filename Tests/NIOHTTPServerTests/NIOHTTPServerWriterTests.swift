@@ -33,7 +33,7 @@ struct NIOHTTPServerWriterTests {
     let trailerSampleTwo: HTTPFields = [.serverTiming: "test", .cookie: "cookie"]
 
     @Test("Write single body element")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testSingleWriteAndConclude() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
@@ -52,7 +52,7 @@ struct NIOHTTPServerWriterTests {
     }
 
     @Test("Write multiple body elements")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testProduceMultipleElementsAndSingleTrailer() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         var responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
@@ -75,7 +75,7 @@ struct NIOHTTPServerWriterTests {
     }
 
     @Test("No body, just trailers")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testNoBodyJustTrailers() async throws {
         let (writer, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let responseWriter = NIOHTTPServer.ResponseSender.Writer(writer: writer, writerState: .init())
@@ -89,7 +89,7 @@ struct NIOHTTPServerWriterTests {
 
     #if HTTP3 && UnstableHTTPDatagrams
     @Test("takeDatagramWriter vends no datagram writer when not available")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func takeDatagramWriterVendsNilWhenNotAvailable() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let sender = NIOHTTPServer.ResponseSender(
@@ -120,7 +120,7 @@ struct NIOHTTPServerWriterTests {
     }
 
     @Test("takeDatagramWriter vends a response body and datagram writer")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func takeDatagramWriterVendsResponseAndDatagramWriter() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let connectionChannel = EmbeddedChannel()

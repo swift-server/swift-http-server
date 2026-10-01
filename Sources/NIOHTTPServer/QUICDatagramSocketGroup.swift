@@ -18,7 +18,7 @@ public import NIOCore
 public import NIOQUIC
 
 /// Used to bootstrap multiple datagram sockets sharing a single port for multithreaded QUIC.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 @_spi(QUICDatagramSockets)
 public protocol QUICDatagramSocketGroup: Sendable {
     /// How many sockets to bind for this bind target.
@@ -47,7 +47,7 @@ public protocol QUICDatagramSocketGroup: Sendable {
     func makeConnectionIDGenerator(socketIndex: Int) -> any QUICConnectionID.Generator
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 @_spi(QUICDatagramSockets)
 extension QUICDatagramSocketGroup {
     /// Default implementation: returns the default, random connection ID generator.
@@ -57,7 +57,7 @@ extension QUICDatagramSocketGroup {
 }
 
 /// Provides a socket group used to bootstrap a bind target, or `nil` to fall back to single socket behavior.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 @_spi(QUICDatagramSockets)
 public struct QUICDatagramSocketGroupFactory: Sendable, Hashable {
     /// Because this type is just a wrapper around a closure, we need something to use for `Hashable` conformance.

@@ -24,7 +24,7 @@ import NIOHTTPTypesHTTP1
 import NIOPosix
 import NIOQUIC
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     let quicHandler: QUICHandler<QUICStreamChannels>
     let connectionInitializer: @Sendable (any Channel, NIOQUIC.QUICStreamCreator) -> EventLoopFuture<any Channel>
@@ -62,7 +62,7 @@ struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension Channel {
     func makeConnectionCreator(
         logger: Logger,
@@ -112,7 +112,7 @@ extension Channel {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension DatagramBootstrap {
     /// Sets up a test HTTP/3 client and returns the QUIC connection channel and the connection multiplexer.
     func setupTestHTTP3Client(
@@ -144,7 +144,7 @@ extension DatagramBootstrap {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension HTTP3ClientConnection {
     /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`. The stream is closed by the
     /// caller using `executeThenClose`.

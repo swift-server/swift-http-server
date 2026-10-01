@@ -21,7 +21,7 @@ import Testing
 @Suite
 struct HTTP3ConfigurationTests {
     @Test("HTTP/3 default configuration uses the defaults of the sub-components")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func http3DefaultConfiguration() {
         let config = NIOHTTPServerConfiguration.HTTP3.defaults
         #expect(config.quicConfiguration == .defaults)
@@ -29,7 +29,7 @@ struct HTTP3ConfigurationTests {
     }
 
     @Test("HTTP/3 configuration with custom values")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func http3ConfigurationCustomValues() {
         var connectionSettings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings.defaults
         connectionSettings.qpackMaximumTableCapacity = 4096
@@ -57,7 +57,7 @@ struct HTTP3ConfigurationTests {
     @Suite
     struct AuthenticationConfigurationTests {
         @Test("In-memory TLS credentials are rejected")
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         func inMemoryCredentialsRejected() throws {
             let chain = try TestCA.makeSelfSignedChain()
             #expect(throws: NIOHTTPServerConfigurationError.onlyPEMFileX509CredentialsCurrentlySupportedOverHTTP3) {
@@ -68,7 +68,7 @@ struct HTTP3ConfigurationTests {
         }
 
         @Test("PEM-file TLS credentials are accepted")
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         func pemFileCredentialsAccepted() {
             #expect(throws: Never.self) {
                 _ = try NIOQUIC.AuthenticationConfiguration(

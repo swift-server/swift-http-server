@@ -15,7 +15,7 @@
 #if HTTP3
 import HTTP3
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3 {
     /// HTTP/3 connection settings sent to the peer during connection establishment.
     public struct ConnectionSettings: Sendable, Hashable {
@@ -53,7 +53,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension HTTP3.HTTP3Settings {
     init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings) {
         self.init(

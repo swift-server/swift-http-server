@@ -20,7 +20,7 @@ public import HTTPAPIs
 /// This is the default connection handler used by ``NIOHTTPServer/serve(handler:)``.
 /// User code may also instantiate it directly when it wants to pass a request
 /// handler through a connection-handler API without doing per-connection work.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 public struct NIOHTTPServerDefaultConnectionHandler<Handler: HTTPServerRequestHandler>:
     NIOHTTPServerConnectionHandler
 where

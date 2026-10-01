@@ -27,7 +27,7 @@
 /// ``NIOHTTPServer/serve(connectionHandler:)-((Connection,ConnectionContext)->Void)`` (the closure-based form). If only
 /// request-level handling is needed, prefer ``NIOHTTPServer/NIOHTTPServer/serve(handler:)``, which uses a built-in
 /// default connection handler (see ``NIOHTTPServer/NIOHTTPServerDefaultConnectionHandler``)
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 public protocol NIOHTTPServerConnectionHandler: Sendable {
     /// Handle a single connection.
     ///

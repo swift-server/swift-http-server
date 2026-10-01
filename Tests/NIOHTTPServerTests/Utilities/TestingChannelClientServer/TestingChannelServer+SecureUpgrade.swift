@@ -23,7 +23,7 @@ import X509
 @testable import NIOHTTPServer
 
 /// Like ``TestingChannelHTTP1Server``, but for Secure Upgrade.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestingChannelSecureUpgradeServer {
     let server: NIOHTTPServer
     let serverTestChannel: NIOAsyncTestingChannel

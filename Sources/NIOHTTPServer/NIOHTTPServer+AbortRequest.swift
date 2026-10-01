@@ -22,7 +22,7 @@ import HTTP3
 import NIOQUICHelpers
 #endif
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// Aborts the exchange carrying a request on the wire, after that request's handler threw `error`.
     ///

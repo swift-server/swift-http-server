@@ -16,7 +16,7 @@ import NIOCertificateReloading
 import NIOSSL
 import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOSSLContext {
     /// Creates a `NIOSSL.NIOSSLContext` from the server's transport security configuration.
     static func makeServerContext(
@@ -67,7 +67,7 @@ extension NIOSSLContext {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension TLSConfiguration {
     /// Creates a server `TLSConfiguration` from the provided X.509 credentials.
     fileprivate static func makeServerConfiguration(
@@ -89,7 +89,7 @@ extension TLSConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension [NIOSSLCertificateSource] {
     fileprivate init(
         _ serialized: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.SerializedCredentials
@@ -110,7 +110,7 @@ extension [NIOSSLCertificateSource] {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOSSLPrivateKeySource {
     fileprivate init(
         _ serialized: NIOHTTPServerConfiguration.TransportSecurity.X509Credentials.SerializedCredentials
@@ -125,7 +125,7 @@ extension NIOSSLPrivateKeySource {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOSSLTrustRoots {
     fileprivate init(
         _ serialized: NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration.SerializedTrustRoots
@@ -146,7 +146,7 @@ extension NIOSSLTrustRoots {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOSSLSerializationFormats {
     fileprivate init(_ format: NIOHTTPServerConfiguration.TransportSecurity.Encoding) {
         switch format {

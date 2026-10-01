@@ -18,7 +18,7 @@ import Testing
 
 @Suite("Connection Backpressure Configuration")
 struct ConnectionBackpressureConfigurationTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("maxConnections nil is the default")
     func maxConnectionsNilIsDefault() throws {
         let config = try NIOHTTPServerConfiguration(
@@ -29,7 +29,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(config.maxConnections == nil)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("ConnectionTimeouts defaults has expected values")
     func connectionTimeoutsDefaults() {
         let timeouts = NIOHTTPServerConfiguration.ConnectionTimeouts.defaults
@@ -38,7 +38,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(timeouts.readBody == .seconds(60))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("Valid maxConnections is accepted")
     func validMaxConnectionsAccepted() throws {
         var config = try NIOHTTPServerConfiguration(
@@ -50,7 +50,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(config.maxConnections == 100)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("Custom ConnectionTimeouts are preserved")
     func customConnectionTimeouts() throws {
         var config = try NIOHTTPServerConfiguration(
@@ -70,7 +70,7 @@ import Configuration
 
 @Suite("Connection Backpressure SwiftConfiguration")
 struct ConnectionBackpressureSwiftConfigurationTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("SwiftConfiguration parses maxConnections")
     func parsesMaxConnections() throws {
         let provider = InMemoryProvider(values: [
@@ -86,7 +86,7 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         #expect(serverConfig.maxConnections == 500)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("SwiftConfiguration parses connectionTimeouts")
     func parsesConnectionTimeouts() throws {
         let provider = InMemoryProvider(values: [
@@ -106,7 +106,7 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         #expect(serverConfig.connectionTimeouts.readBody == .seconds(45))
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("SwiftConfiguration uses defaults for absent fields")
     func usesDefaultsForAbsentFields() throws {
         let provider = InMemoryProvider(values: [

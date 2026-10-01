@@ -21,7 +21,7 @@ import NIOHTTPTypesHTTP1
 import NIOPosix
 import NIOSSL
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// Serves incoming plaintext HTTP/1.1 connections.
     ///

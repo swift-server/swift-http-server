@@ -17,7 +17,7 @@ import NIOCore
 import NIOHTTPTypes
 import Synchronization
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     public struct Reader: AsyncReader, ~Copyable {
         final class ReaderState: Sendable {
@@ -137,7 +137,7 @@ extension NIOHTTPServer {
 extension NIOHTTPServer.Reader: Sendable {}
 
 #if HTTP3 && UnstableHTTPDatagrams
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.Reader {
     /// Returns the unreliable datagram reader for this stream, if both the server and the client have advertised
     /// support for receiving datagrams.

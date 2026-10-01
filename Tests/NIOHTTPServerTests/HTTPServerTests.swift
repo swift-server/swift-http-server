@@ -20,7 +20,7 @@ import Testing
 @Suite
 struct HTTPServerTests {
     @Test
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testConsumingServe() async throws {
         let server = NIOHTTPServer(
             configuration: try .init(

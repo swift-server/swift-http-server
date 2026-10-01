@@ -20,7 +20,7 @@ import NIOHTTP2
 import SwiftASN1
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
     /// Initialize the server configuration from a config reader.
     ///
@@ -124,7 +124,7 @@ extension NIOHTTPServerConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.BindTarget {
     /// Initialize a bind target configuration from a config reader.
     ///
@@ -143,7 +143,7 @@ extension NIOHTTPServerConfiguration.BindTarget {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     /// Initialize a supported HTTP versions configuration from a config reader.
     ///
@@ -189,7 +189,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Initialize a transport security configuration from a config reader.
     ///
@@ -264,7 +264,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     /// Initialize TLS credentials (certificate chain and private key) from a config reader.
     ///
@@ -324,7 +324,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     /// Initialize an mTLS trust configuration from a config reader.
     ///
@@ -398,7 +398,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.BackPressureStrategy {
     /// Initialize the backpressure strategy configuration from a config reader.
     ///
@@ -425,7 +425,7 @@ extension NIOHTTPServerConfiguration.BackPressureStrategy {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     fileprivate enum HTTPVersionKind: String {
         case http1_1
@@ -436,7 +436,7 @@ extension Set where Element == NIOHTTPServerConfiguration.HTTPVersion {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     fileprivate enum TransportSecurityMode: String {
         case plaintext
@@ -453,7 +453,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     /// The supported sources for trust roots.
     fileprivate enum TrustRootsSource: String {
@@ -470,7 +470,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension CertificateVerificationMode {
     fileprivate init(_ mode: NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration.VerificationMode) {
         switch mode {
@@ -482,7 +482,7 @@ extension CertificateVerificationMode {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     /// Initialize connection timeouts configuration from a config reader.
     ///
@@ -503,7 +503,7 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.GracefulShutdownConfiguration {
     /// Initialize a graceful shutdown configuration from a config reader.
     ///

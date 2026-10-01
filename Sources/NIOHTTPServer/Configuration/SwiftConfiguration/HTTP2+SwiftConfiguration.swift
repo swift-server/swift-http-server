@@ -15,7 +15,7 @@
 #if Configuration
 public import Configuration
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP2 {
     /// Initialize an HTTP/2 configuration from a config reader.
     ///

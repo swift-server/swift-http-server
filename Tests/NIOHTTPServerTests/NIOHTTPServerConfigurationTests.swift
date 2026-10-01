@@ -24,7 +24,7 @@ import X509
 struct NIOHTTPServerConfigurationTests {
     @Suite
     struct BindTarget {
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("Empty bindTargets throws error")
         func emptyBindTargetsThrows() throws {
             #expect(throws: NIOHTTPServerConfigurationError.noBindTargetsSpecified) {
@@ -39,7 +39,7 @@ struct NIOHTTPServerConfigurationTests {
 
     @Suite
     struct SupportedHTTPVersions {
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("Empty supportedHTTPVersions throws error")
         func emptySupportedHTTPVersionsThrows() {
             #expect(throws: NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified) {
@@ -51,7 +51,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("transport: plaintext, versions: {HTTP/1.1} -> valid")
         func plaintextTransportAndHTTP1_1IsValid() {
             #expect(throws: Never.self) {
@@ -64,7 +64,7 @@ struct NIOHTTPServerConfigurationTests {
         }
 
         #if HTTP3
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test(
             "transport: plaintext, versions: HTTP/2 and/or HTTP/3 -> invalid",
             arguments: [
@@ -91,7 +91,7 @@ struct NIOHTTPServerConfigurationTests {
 
     @Suite
     struct TransportSecurity {
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test(
             "All X.509 credential sources produce a valid configuration",
             arguments: TestX509CredentialSource.allCases
@@ -109,7 +109,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("All mTLS trust root sources produce a valid configuration", arguments: MTLSTrustSource.allCases)
         func mTLSTrustRootSourceProducesValidConfiguration(source: MTLSTrustSource) throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -127,7 +127,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test(
             "A non-existent X.509 certificate file path is rejected",
             arguments: [
@@ -150,7 +150,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test(
             "Malformed X.509 credential bytes are rejected",
             arguments: [
@@ -174,7 +174,7 @@ struct NIOHTTPServerConfigurationTests {
         }
 
         #if HTTP3
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("PEM-file X.509 credentials over HTTP/3 produces a valid configuration")
         func pemFileX509ProducesValidHTTP3Configuration() throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -191,7 +191,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test(
             "Non-PEM-file X.509 credentials are rejected over HTTP/3",
             arguments: [TestX509CredentialSource.inMemory, .reloading, .pemBytes, .derFile, .derBytes]
@@ -209,7 +209,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("DER-file RPK credentials produces a valid TLS configuration")
         func derFileRPKProducesValidConfiguration() throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -223,7 +223,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("Raw public key credentials are rejected over HTTP/1.1 and HTTP/2")
         func rawPublicKeyRejectedOverHTTP1AndHTTP2() throws {
             #expect(
@@ -239,7 +239,7 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
 
-        @available(anyAppleOS 26.0, *)
+        @available(anyAppleOS 27.0, *)
         @Test("mTLS is rejected over HTTP/3")
         func mTLSRejectedOverHTTP3() throws {
             let chain = try TestCA.makeSelfSignedChain()
@@ -260,7 +260,7 @@ struct NIOHTTPServerConfigurationTests {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 enum TestX509CredentialSource: Sendable, CaseIterable {
     case inMemory
     case reloading
@@ -314,7 +314,7 @@ enum TestX509CredentialSource: Sendable, CaseIterable {
 }
 
 #if HTTP3
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.RawPublicKeyCredentials {
     /// Builds ``RawPublicKeyCredentials`` from `chain`.
     static func makeTestCredentials(
@@ -335,7 +335,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity.RawPublicKeyCredentials {
 }
 #endif  // HTTP3
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 enum MTLSTrustSource: Sendable, CaseIterable {
     case systemDefaults
     case inMemory

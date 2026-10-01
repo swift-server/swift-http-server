@@ -20,7 +20,7 @@ import NIOSSL
 
 @testable import NIOHTTPServer
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 /// Provides a HTTP client with ALPN negotiation.
 extension Channel {
     /// Adds a ``NIOSSLClientHandler`` configured with the provided `TLSConfiguration` to the pipeline.
@@ -52,7 +52,7 @@ extension Channel {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension ClientBootstrap {
     /// Connects the client to the specified address using the provided TLS configuration.
     func connectToTestSecureUpgradeHTTPServer(

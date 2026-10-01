@@ -24,7 +24,7 @@ import Testing
 /// State observed by the connection handlers used in this test suite. The state lives
 /// in a class so it survives `consuming` calls to `handleConnection` and can be
 /// inspected from the test body.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 final class ConnectionLifecycleTestState: Sendable {
     let connectionInvocations = NIOLockedValueBox(0)
     let requestInvocations = NIOLockedValueBox(0)
@@ -35,7 +35,7 @@ final class ConnectionLifecycleTestState: Sendable {
 
 /// A connection handler that counts invocations and runs a single request handler
 /// for every request on the connection.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct CountingConnectionHandler<Handler: HTTPServerRequestHandler>: NIOHTTPServerConnectionHandler
 where
     Handler.RequestContext == NIOHTTPServer.RequestContext,
@@ -66,7 +66,7 @@ where
 }
 
 /// A request handler that increments two counters before delegating to the wrapped handler.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct ConnectionScopedRequestHandler<Wrapped: HTTPServerRequestHandler>: HTTPServerRequestHandler
 where
     Wrapped.RequestContext == NIOHTTPServer.RequestContext,
@@ -107,7 +107,7 @@ struct ConnectionLifecycleTests {
     /// drains the request body, which is required for the per-channel loop
     /// to recover the iterator and keep the HTTP/1.1 connection alive across
     /// requests.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     static func echoHandler() -> HTTPServerClosureRequestHandler<
         NIOHTTPServer.RequestContext,
         NIOHTTPServer.Reader,
@@ -120,7 +120,7 @@ struct ConnectionLifecycleTests {
 
     /// Connecting twice results in two `handleConnection` invocations, each with non-nil `remoteAddress` and
     /// `localAddress`.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Per-connection invocation count",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
@@ -161,7 +161,7 @@ struct ConnectionLifecycleTests {
 
     /// HTTP/1.1 keep-alive: two requests on the same connection result in a single `handleConnection` invocation that
     /// runs the request handler twice.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "HTTP/1.1 keep-alive: single connection-handler invocation, multiple requests",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
@@ -203,7 +203,7 @@ struct ConnectionLifecycleTests {
     /// HTTP/2: three concurrent streams on one connection result in one `handleConnection` call and three
     /// request-handler calls. A user counter held by the connection handler observes three after `handleRequests`
     /// returns.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/2: single connection-handler invocation, concurrent streams")
     func testHTTP2SingleInvocationConcurrentStreams() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -276,7 +276,7 @@ struct ConnectionLifecycleTests {
     /// A throwing connection handler is logged at debug level by the server but
     /// doesn't bring it down: a subsequent connection on the same server is
     /// served normally.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Throwing connection handler doesn't bring down the server",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
@@ -332,7 +332,7 @@ struct ConnectionLifecycleTests {
 
     /// A connection handler that returns without calling `handleRequests` effectively drops the connection: the channel
     /// closes immediately and the client sees EOF without any response.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Connection handler returning without handleRequests drops the connection",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
@@ -373,7 +373,7 @@ struct ConnectionLifecycleTests {
     }
 
     /// `ConnectionContext.httpVersion` reflects the protocol negotiated for the connection.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("ConnectionContext.httpVersion is correct", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testHTTPVersion(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -409,7 +409,7 @@ struct ConnectionLifecycleTests {
     /// Multiple HTTP/1.1 keep-alive connections in parallel each receive their own `handleConnection` invocation and
     /// connection-scoped state isn't shared between them. Each connection's per-request counter only reflects its own
     /// requests.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "State isolation across keep-alive HTTP/1.1 connections",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
@@ -462,7 +462,7 @@ struct ConnectionLifecycleTests {
     /// Smoke test for the closure-overload of
     /// ``NIOHTTPServer/Connection/handleRequests(handler:)-((@Sendable)``: a single request is served end-to-end
     /// without constructing an explicit ``HTTPServerClosureRequestHandler``.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("connection.handleRequests closure overload", .timeLimit(.minutes(1)))
     func testHandleRequestsClosureOverload() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -495,7 +495,7 @@ struct ConnectionLifecycleTests {
 
 /// Connection handler that throws on the first invocation and runs normally thereafter, so the test can verify a thrown
 /// error doesn't bring down the server.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct ThrowingFirstConnectionHandler: NIOHTTPServerConnectionHandler {
     let connectionInvocations: NIOLockedValueBox<Int>
 
@@ -518,7 +518,7 @@ struct ThrowingFirstConnectionHandler: NIOHTTPServerConnectionHandler {
 
 /// Connection handler that records the invocation count and returns without
 /// calling `handleRequests`, dropping the connection.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct NoOpConnectionHandler: NIOHTTPServerConnectionHandler {
     let connectionInvocations: NIOLockedValueBox<Int>
 
@@ -534,7 +534,7 @@ struct NoOpConnectionHandler: NIOHTTPServerConnectionHandler {
 
 /// Connection handler that records the negotiated HTTP version on its first
 /// invocation and forwards every request to a wrapped handler.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct HTTPVersionRecordingConnectionHandler<Wrapped: HTTPServerRequestHandler>:
     NIOHTTPServerConnectionHandler
 where
@@ -558,7 +558,7 @@ where
 
 /// Connection handler that counts requests on its own connection and appends
 /// the final count to a shared array when the connection ends.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct PerConnectionCounterHandler<Wrapped: HTTPServerRequestHandler>: NIOHTTPServerConnectionHandler
 where
     Wrapped.RequestContext == NIOHTTPServer.RequestContext,
@@ -586,7 +586,7 @@ where
 
 /// Connection handler that uses the closure-overload of
 /// ``NIOHTTPServer/Connection/handleRequests(handler:)-((@Sendable)``.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct ClosureRequestHandlerConnectionHandler: NIOHTTPServerConnectionHandler {
     func handleConnection(
         connection: consuming sending NIOHTTPServer.Connection,
