@@ -21,10 +21,11 @@ import NIOPosix
 
 @available(anyAppleOS 26.0, *)
 extension Channel {
-    /// Adds HTTP/1.1 client handlers to the pipeline.
+    /// Adds HTTP/1.1 client handlers to the pipeline, then calls `additionalConnectionChannelInitializer` if provided.
     func configureTestHTTP1ClientPipeline(
         responseLeftOverBytesStrategy: RemoveAfterUpgradeStrategy = .dropBytes,
-        informationalResponseStrategy: NIOInformationalResponseStrategy = .forward
+        informationalResponseStrategy: NIOInformationalResponseStrategy = .forward,
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) -> EventLoopFuture<NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>> {
         self.eventLoop.makeCompletedFuture {
             let handlers: [ChannelHandler] = [
@@ -39,6 +40,7 @@ extension Channel {
                 HTTP1ToHTTPClientCodec(),
             ]
             try self.pipeline.syncOperations.addHandlers(handlers)
+            try additionalConnectionChannelInitializer?(self)
 
             return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
                 wrappingChannelSynchronously: self,
@@ -55,14 +57,17 @@ extension ClientBootstrap {
     /// `NIOAsyncChannel` for writing `HTTPRequestPart`s to the server and observing `HTTPResponsePart`s from its
     /// inbound stream.
     func connectToTestHTTP1Server(
-        at serverAddress: NIOHTTPServer.SocketAddress
+        at serverAddress: NIOHTTPServer.SocketAddress,
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) async throws -> TestClientConnection {
         .init(
             connectionProtocol: .http1(
                 connectionChannel: try await self.connect(
                     to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
                 ) { channel in
-                    channel.configureTestHTTP1ClientPipeline()
+                    channel.configureTestHTTP1ClientPipeline(
+                        additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
+                    )
                 }
             )
         )

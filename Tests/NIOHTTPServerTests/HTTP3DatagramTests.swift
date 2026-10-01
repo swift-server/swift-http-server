@@ -220,13 +220,15 @@ struct HTTP3DatagramTests {
     @Test("Read and write datagrams")
     @available(anyAppleOS 26.2, *)
     func readAndWriteDatagrams() async throws {
-        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+        var (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http3,
             clientLogger: Self.clientLogger,
             serverLogger: Self.serverLogger
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        let datagramsSupportedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        clientConfiguration.addDatagramSettingsHandler(promise: datagramsSupportedPromise)
 
         try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
@@ -255,8 +257,9 @@ struct HTTP3DatagramTests {
                     // Start the request.
                     try await streamOutbound.write(.testHead(method: .post, for: .http3))
 
-                    // Wait for the stream to be opened.
-                    try await streamOpenedPromise.futureResult.get()
+                    // Wait for the stream to be opened, and until the server has sent their SETTINGS frame that
+                    // confirms they also support receiving datagrams.
+                    _ = try await streamOpenedPromise.futureResult.and(datagramsSupportedPromise.futureResult).get()
 
                     // Now write a datagram.
                     try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
@@ -296,6 +299,8 @@ struct HTTP3DatagramTests {
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        let datagramsSupportedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        clientConfiguration.addDatagramSettingsHandler(promise: datagramsSupportedPromise)
 
         try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
@@ -336,8 +341,9 @@ struct HTTP3DatagramTests {
                     // Start the request.
                     try await streamOutbound.write(.testHead(method: .get, for: .http3))
 
-                    // Wait for the stream to be opened.
-                    try await streamOpenedPromise.futureResult.get()
+                    // Wait for the stream to be opened, and until the server has sent their SETTINGS frame that
+                    // confirms they also support receiving datagrams.
+                    _ = try await streamOpenedPromise.futureResult.and(datagramsSupportedPromise.futureResult).get()
 
                     // Write a datagram.
                     try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))

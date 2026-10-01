@@ -69,7 +69,8 @@ extension Channel {
         settings: HTTP3Settings,
         configuration: HTTP3ClientConfiguration,
         quicConfiguration: QUICConfiguration,
-        asyncVerifier: NIOQUIC.AsyncVerifier
+        asyncVerifier: NIOQUIC.AsyncVerifier,
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) throws -> TestHTTP3SingleConnectionCreator {
         let quicHandler = QUICHandler(
             channel: self,
@@ -96,6 +97,7 @@ extension Channel {
                         inboundPushStreamInitializer: { _ in fatalError() }
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
+                    try additionalConnectionChannelInitializer?(connectionChannel)
                     return connectionChannel
                 }
             },
@@ -120,7 +122,8 @@ extension DatagramBootstrap {
         trustRootsPath: String,
         quicConfiguration: QUICConfiguration,
         http3ClientConfiguration: HTTP3ClientConfiguration = .defaults,
-        http3ConnectionSettings: HTTP3Settings = .init()
+        http3ConnectionSettings: HTTP3Settings = .init(),
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) async throws -> (any Channel, NIOLoopBound<TestHTTP3SingleConnectionCreator>) {
         try await self.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
@@ -134,7 +137,8 @@ extension DatagramBootstrap {
                             trustRootsPath: trustRootsPath,
                             certificateVerification: .noHostnameVerification,
                             eventLoop: channel.eventLoop
-                        )
+                        ),
+                        additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
                     )
                     let loopBoundConnectionCreator = NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop)
 

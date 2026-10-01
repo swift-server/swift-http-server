@@ -26,6 +26,7 @@ import Testing
 
 #if HTTP3
 import HTTP3
+import NIOExtras
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOQUIC
 import NIOQUICHelpers
@@ -189,6 +190,10 @@ extension TestClientConnection {
         var trustRootsPEMPath: String?
         var chain: ChainPrivateKeyPair? = nil
 
+        /// An additional initializer called on the client's connection channel after the protocol-specific handlers
+        /// have been added.
+        var additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
+
         #if HTTP3
         /// The client's QUIC configuration. Only applies when ``httpVersion`` is `.http3`.
         var quicConfiguration: QUICConfiguration? = nil
@@ -210,7 +215,10 @@ extension TestClientConnection {
         switch (configuration.httpVersion, configuration.trustRootsPEMPath) {
         case (.plaintextHTTP1_1, .none):
             connection = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .connectToTestHTTP1Server(at: serverAddress)
+                .connectToTestHTTP1Server(
+                    at: serverAddress,
+                    additionalConnectionChannelInitializer: configuration.additionalConnectionChannelInitializer
+                )
 
         case (.http1_1, .some(let trustRootsPEMPath)), (.http2, .some(let trustRootsPEMPath)):
             let tlsConfiguration =
@@ -228,7 +236,11 @@ extension TestClientConnection {
                 }
 
             connection = try await ClientBootstrap(group: .singletonMultiThreadedEventLoopGroup)
-                .connectToTestSecureUpgradeHTTPServer(at: serverAddress, tlsConfig: tlsConfiguration)
+                .connectToTestSecureUpgradeHTTPServer(
+                    at: serverAddress,
+                    tlsConfig: tlsConfiguration,
+                    additionalConnectionChannelInitializer: configuration.additionalConnectionChannelInitializer
+                )
 
         #if HTTP3
         case (.http3, .some(let trustRootsPEMPath)):
@@ -238,7 +250,8 @@ extension TestClientConnection {
                     trustRootsPath: trustRootsPEMPath,
                     quicConfiguration: configuration.quicConfiguration
                         ?? .makeClientQUICConfig(caPath: trustRootsPEMPath),
-                    http3ConnectionSettings: configuration.http3ConnectionSettings
+                    http3ConnectionSettings: configuration.http3ConnectionSettings,
+                    additionalConnectionChannelInitializer: configuration.additionalConnectionChannelInitializer
                 )
 
             let multiplexer = HTTP3ClientConnectionMultiplexer<
@@ -366,3 +379,36 @@ extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {
         }
     }
 }
+
+#if HTTP3 && UnstableHTTPDatagrams
+@available(anyAppleOS 26.0, *)
+extension TestClientConnection.Configuration {
+    /// Sets up ``additionalConnectionChannelInitializer`` to add a handler that observes the SETTINGS frame received
+    /// from the server, and succeeds `promise` once the server has confirmed it supports receiving datagrams.
+    mutating func addDatagramSettingsHandler(promise datagramsSupportedPromise: EventLoopPromise<Void>) {
+        let existingInitializer = self.additionalConnectionChannelInitializer
+
+        self.additionalConnectionChannelInitializer = { connectionChannel in
+            try existingInitializer?(connectionChannel)
+
+            let settingsObserver = DebugInboundEventsHandler { event, _ in
+                switch event {
+                case .userInboundEventTriggered(let event as ReceivedSettings):
+                    if event.datagramsSupported {
+                        datagramsSupportedPromise.succeed()
+                    } else {
+                        datagramsSupportedPromise.fail(TestError.datagramsNotSupported)
+                    }
+
+                case .inactive:
+                    datagramsSupportedPromise.fail(TestError.connectionClosedBeforeSettingsReceived)
+
+                default:
+                    ()
+                }
+            }
+            try connectionChannel.pipeline.syncOperations.addHandler(settingsObserver)
+        }
+    }
+}
+#endif  // HTTP3 && UnstableHTTPDatagrams

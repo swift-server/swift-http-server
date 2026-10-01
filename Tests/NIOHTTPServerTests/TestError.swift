@@ -19,4 +19,10 @@ enum TestError: Error {
 
     /// Thrown when the client configuration is invalid for the configured HTTP version.
     case invalidClientConfiguration
+
+    /// Datagrams are not supported.
+    case datagramsNotSupported
+
+    /// The connection closed before the peer's SETTINGS frame was received.
+    case connectionClosedBeforeSettingsReceived
 }

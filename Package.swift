@@ -49,7 +49,7 @@ var traits: Set<Trait> = [
     ),
 ]
 
-let defaultTraits: Set<String> = ["Configuration"]
+let defaultTraits: Set<String> = ["Configuration", "HTTP3", "UnstableHTTPDatagrams"]
 
 // Workaround to ensure that all traits are included in documentation. Swift Package Index adds SPI_GENERATE_DOCS
 // (https://github.com/SwiftPackageIndex/SwiftPackageIndex-Server/issues/2336) when building documentation, so only
