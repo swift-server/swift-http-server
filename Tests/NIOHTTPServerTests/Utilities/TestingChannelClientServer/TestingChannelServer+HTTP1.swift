@@ -31,7 +31,7 @@ import NIOHTTPTypes
 /// This provider vends a HTTP client channel (also backed by a `NIOAsyncTestingChannel`) that can be used to send
 /// requests and observe responses in terms of HTTP types (`HTTPRequestPart` and `HTTPResponsePart`) to the server
 /// connection channel.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestingChannelHTTP1Server {
     let server: NIOHTTPServer
     let serverTestChannel: NIOAsyncTestingChannel

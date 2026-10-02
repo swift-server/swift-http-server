@@ -19,7 +19,7 @@ import NIOQUIC
 #endif
 
 /// The listeners to bind, derived from the server configuration.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 enum ListenerConfiguration: Sendable {
     struct SecureUpgrade: Sendable {
         let sslContext: NIOSSLContext
@@ -42,7 +42,7 @@ enum ListenerConfiguration: Sendable {
     #endif
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
     func makeListenerConfiguration() -> ListenerConfiguration {
         let secureUpgrade = self.sslContext.map {

@@ -15,7 +15,7 @@
 public import HTTPAPIs
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension HTTPServerCapability {
     /// A request-context capability exposing connection-scoped peer and local addresses.
     ///

@@ -20,7 +20,7 @@ import NIOCore
 import NIOHTTPTypes
 import Synchronization
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// A reader for the unreliable datagram stream.
     public struct DatagramReader: AsyncReader, ~Copyable {

@@ -18,7 +18,7 @@ import NIOSSL
 import NIOQUIC
 #endif
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
     /// Validates the compatibility of the `supportedHTTPVersions` and `transportSecurity` configurations, and stores
     /// the TLS resources required to set up the server channels.

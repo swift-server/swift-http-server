@@ -21,7 +21,7 @@ import NIOHTTPTypes
 import NIOQUIC
 #endif
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// An active HTTP server connection.
     ///

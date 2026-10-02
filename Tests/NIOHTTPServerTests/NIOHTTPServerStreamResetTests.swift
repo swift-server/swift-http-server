@@ -52,7 +52,7 @@ struct NIOHTTPServerStreamResetTests {
     // MARK: - HTTP/1.1
 
     @Test("Aborting while the response head is still buffered flushes it with Connection: close and no response end")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP1AbortWhileResponseHeadIsBuffered() throws {
         let channel = EmbeddedChannel()
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
@@ -96,7 +96,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     @Test("Aborting after the response head reached the wire sends no second head and no response end")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP1AbortWhileStreaming() throws {
         let channel = EmbeddedChannel()
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
@@ -137,7 +137,7 @@ struct NIOHTTPServerStreamResetTests {
         "HTTP/1.1: throwing before the response head sends 500 with Connection: close",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP1ThrowingBeforeResponseHeadSendsInternalServerError(
         http1Variant: NIOHTTPServer.HTTPVersion
     ) async throws {
@@ -174,7 +174,7 @@ struct NIOHTTPServerStreamResetTests {
     // MARK: - HTTP/2
 
     @Test("HTTP/2: throwing a conforming error resets the stream with that error's code")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP2ThrowingConformingErrorResetsStream() async throws {
         try await self.assertHTTP2Reset(
             throwing: StreamResetTestError.connectFailed,
@@ -183,7 +183,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     @Test("HTTP/2: throwing a non-conforming error resets the stream with INTERNAL_ERROR")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP2ThrowingNonConformingErrorResetsStreamWithInternalError() async throws {
         try await self.assertHTTP2Reset(
             throwing: TestError.intentional,
@@ -192,7 +192,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     /// Runs a handler that throws `error` over HTTP/2 and asserts the client observes `RST_STREAM(expectedCode)`.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     private func assertHTTP2Reset(
         throwing error: any Error,
         expectedCode: NIOHTTP2.HTTP2ErrorCode,
@@ -239,7 +239,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     @Test("HTTP/2: throwing after the response head still resets the stream")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP2ThrowingAfterResponseHeadResetsStream() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http2,
@@ -296,7 +296,7 @@ struct NIOHTTPServerStreamResetTests {
     // MARK: - HTTP/3
 
     @Test("Aborting an HTTP/3 stream emits RESET_STREAM and STOP_SENDING carrying the resolved codes")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP3AbortEmitsResetStreamAndStopSending() throws {
         let channel = EmbeddedChannel()
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
@@ -323,7 +323,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     @Test("Aborting an HTTP/3 stream with an error describing no codes uses H3_INTERNAL_ERROR")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP3AbortWithNonConformingErrorUsesInternalError() throws {
         let channel = EmbeddedChannel()
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
@@ -344,7 +344,7 @@ struct NIOHTTPServerStreamResetTests {
     }
 
     @Test("HTTP/3: throwing from the handler resets the stream, failing the client's read")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP3ThrowingResetsStream() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http3,
@@ -372,7 +372,7 @@ struct NIOHTTPServerStreamResetTests {
         #expect(httpError.h3ErrorCode == .connectError)
     }
     @Test("HTTP/3: throwing after the response head still resets the stream")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testHTTP3ThrowingAfterResponseHeadResetsStream() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http3,
@@ -409,7 +409,7 @@ struct NIOHTTPServerStreamResetTests {
         "Throwing after the response is concluded still delivers the full response",
         arguments: NIOHTTPServer.HTTPVersion.allCases
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testThrowingAfterConcludedResponseDeliversFullResponse(
         httpVersion: NIOHTTPServer.HTTPVersion
     ) async throws {

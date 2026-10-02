@@ -16,7 +16,7 @@ public import HTTPAPIs
 import NIOCore
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// The request context provided to handlers by ``NIOHTTPServer``.
     ///
@@ -42,7 +42,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionInfo {
     /// The peer's address, when known.
     ///
@@ -60,7 +60,7 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionInfo {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.RequestContext: HTTPServerCapability.PeerCertificate {
     /// The peer's mTLS-validated certificate chain, when available.
     ///

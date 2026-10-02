@@ -16,7 +16,7 @@ import NIOCore
 import NIOSSL
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Configures how the server verifies client certificates during mTLS.
     public struct MTLSTrustConfiguration: Sendable {
@@ -45,7 +45,7 @@ extension NIOHTTPServerConfiguration.TransportSecurity {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.MTLSTrustConfiguration {
     public struct TrustSource: Sendable {
         enum Backing {

@@ -37,7 +37,7 @@ extension Trait where Self == ConditionTrait {
 struct QUICDatagramSocketGroupTests {
     let serverLogger = Logger(label: "QUICDatagramSocketGroupTests.server")
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Every socket in the group is bound once, with indices from zero, each on its own event loop",
         .requiresSeveralEventLoops
@@ -61,7 +61,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("Multiple HTTP/3 sockets per bind target report one address each", .requiresSeveralEventLoops)
     func testMultipleHTTP3SocketsPerBindTargetReportOneAddressEach() async throws {
         let factory = QUICDatagramSocketGroupFactory { _, _ in RecordingSocketGroup(socketCount: 2) }
@@ -75,7 +75,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A group of one socket is still told it bound and still vends its generator")
     func testGroupOfOneSocketIsToldItBoundAndVendsItsGenerator() async throws {
         let socketGroup = RecordingSocketGroup(socketCount: 1)
@@ -95,7 +95,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("Each bind target gets its own socket group", .requiresSeveralEventLoops)
     func testEachBindTargetGetsItsOwnSocketGroup() async throws {
         let socketGroups = Mutex<[RecordingSocketGroup]>([])
@@ -114,7 +114,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A group need implement only the bound-socket hook", .requiresSeveralEventLoops)
     func testGroupNeedImplementOnlyTheBoundSocketHook() async throws {
         let factory = QUICDatagramSocketGroupFactory { _, _ in MinimalSocketGroup() }
@@ -124,7 +124,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("Bind targets without a socket group spread across event loops", .requiresSeveralEventLoops)
     func testBindTargetsWithoutASocketGroupSpreadAcrossEventLoops() throws {
         let (configuration, _) = try TestHelpers.makeTLSServerConfiguration(
@@ -143,7 +143,7 @@ struct QUICDatagramSocketGroupTests {
         #expect(first.eventLoops[0] !== second.eventLoops[0])
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A socket count outside the available event loops fails server bootstrap")
     func testSocketCountOutsideAvailableEventLoopsFailsServerStart() throws {
         let (configuration, _) = try TestHelpers.makeTLSServerConfiguration(
@@ -166,7 +166,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A factory that declines binds a single socket")
     func testDecliningFactoryBindsASingleSocket() async throws {
         let availableEventLoops = Mutex(0)
@@ -182,7 +182,7 @@ struct QUICDatagramSocketGroupTests {
         #expect(availableEventLoops.withLock { $0 } == NIOSingletons.groupLoopCountSuggestion)
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A factory that throws fails server bootstrap")
     func testThrowingFactoryFailsServerStart() async throws {
         let factory = QUICDatagramSocketGroupFactory { _, _ in throw SocketGroupTestError() }
@@ -192,7 +192,7 @@ struct QUICDatagramSocketGroupTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "A socket group that throws in bind callback fails server bootstrap",
         .requiresSeveralEventLoops,
@@ -210,7 +210,7 @@ struct QUICDatagramSocketGroupTests {
 
     /// Serves HTTP/3 on `bindTargetCount` ephemeral ports with `socketGroupFactory`, runs `body` with the
     /// listening addresses, then cancels the server.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     private func withHTTP3Server(
         bindTargetCount: Int = 1,
         socketGroupFactory: QUICDatagramSocketGroupFactory,
@@ -236,7 +236,7 @@ struct QUICDatagramSocketGroupTests {
 struct SocketGroupTestError: Error {}
 
 /// A group implementing only the protocol's requirements, using the default implementations of other methods.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 final class MinimalSocketGroup: QUICDatagramSocketGroup {
     let socketCount = 2
 
@@ -244,7 +244,7 @@ final class MinimalSocketGroup: QUICDatagramSocketGroup {
 }
 
 /// A socket group that records what the server asked it to do.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 final class RecordingSocketGroup: QUICDatagramSocketGroup {
     let socketCount: Int
 

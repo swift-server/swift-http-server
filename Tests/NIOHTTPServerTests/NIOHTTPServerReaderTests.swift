@@ -29,7 +29,7 @@ import NIOHTTP3
 @Suite
 struct NIOHTTPServerReaderTests {
     @Test("Head request not allowed")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testWriteHeadRequestPartFatalError() async throws {
         // The request body reader should fatal error if it receives a head part
         await #expect(processExitsWith: .failure) {
@@ -48,7 +48,7 @@ struct NIOHTTPServerReaderTests {
     }
 
     @Test("Stream cannot be finished before writing request end part")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testNotWritingRequestEndPartFatalError() async throws {
         await #expect(processExitsWith: .failure) {
             let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -75,7 +75,7 @@ struct NIOHTTPServerReaderTests {
             HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")]),
         ]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testRequestWithConcludingElement(body: ByteBuffer, trailers: HTTPFields) async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -108,7 +108,7 @@ struct NIOHTTPServerReaderTests {
             HTTPFields([.init(name: .cookie, value: "first_cookie"), .init(name: .cookie, value: "second_cookie")]),
         ]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testStreamedRequestBody(bodyChunks: [ByteBuffer], trailers: HTTPFields) async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -144,7 +144,7 @@ struct NIOHTTPServerReaderTests {
     }
 
     @Test("Throw while reading request")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testThrowingWhileReadingRequest() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 
@@ -171,7 +171,7 @@ struct NIOHTTPServerReaderTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("More bytes available than consumption limit")
     func testCollectMoreBytesThanAvailable() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
@@ -212,7 +212,7 @@ struct NIOHTTPServerReaderTests {
 
     #if HTTP3 && UnstableHTTPDatagrams
     @Test("takeDatagramReader vends no datagram reader when not available")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func takeDatagramReaderVendsNilWhenNotAvailable() async throws {
         let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
         source.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
@@ -237,7 +237,7 @@ struct NIOHTTPServerReaderTests {
     }
 
     @Test("takeDatagramReader vends a request body and datagram reader")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func takeDatagramReaderVendsRequestAndDatagramReader() async throws {
         let (reliableStream, reliableSource) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
         reliableSource.yield(.body(ByteBuffer(bytes: [1, 2, 3])))
@@ -294,7 +294,7 @@ struct NIOHTTPServerReaderTests {
     }
 
     @Test("Inbound datagrams are buffered up to a limit", arguments: [10, 20, 100])
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func datagramsAreBufferedUpToLimit(maxBufferedDatagrams: Int) async throws {
         let (reliableStream, _) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
 

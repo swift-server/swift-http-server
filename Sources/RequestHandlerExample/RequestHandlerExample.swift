@@ -22,7 +22,7 @@ import NIOHTTPServer
 import X509
 
 @main
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct RequestHandlerExample {
     static func main() async throws {
         try await serve()

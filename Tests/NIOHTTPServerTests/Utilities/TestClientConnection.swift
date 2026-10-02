@@ -34,7 +34,7 @@ import NIOQUICHelpers
 
 /// A testing utility that wraps an established HTTP/1.1, HTTP/2, or HTTP/3 client connection and provides an opaque
 /// interface for creating request streams.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestClientConnection {
     enum ConnectionProtocol {
         case http1(connectionChannel: NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>)
@@ -157,7 +157,7 @@ struct TestClientConnection {
     #endif
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension TestClientConnection {
     init(
         alpnNegotiationResult: NIONegotiatedHTTPVersion<
@@ -181,7 +181,7 @@ extension TestClientConnection {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension TestClientConnection {
     /// The information needed to establish a test client connection to a ``NIOHTTPServer``.
     struct Configuration {

@@ -43,7 +43,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Active connection completes when graceful shutdown triggered",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionCanCompleteWhenGracefullyShutdown(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -126,7 +126,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Server closes active connection upon forceful shutdown",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testServerClosesActiveConnectionOnForcefulShutdown(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -200,7 +200,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Active connection forcefully shutdown when server task cancelled",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionForcefullyShutdownWhenServerTaskCancelled(httpVersion: NIOHTTPServer.HTTPVersion) async throws
     {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -280,7 +280,7 @@ struct NIOHTTPServiceLifecycleTests {
     }
 
     @Test("Active HTTP/2 connection is forcefully shut down upon graceful shutdown timeout")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testActiveHTTP2ConnectionIsShutDownAfterGraceTimeout() async throws {
         let (leafPath, caPath, keyPath) = try TestCA.makeSelfSignedChain().writeToDisk()
 
@@ -368,7 +368,7 @@ struct NIOHTTPServiceLifecycleTests {
             (.http2, .http2),
         ]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionsAcrossDifferentListenersCanCompleteWhenGracefullyShutdown(
         firstClientHTTPVersion: NIOHTTPServer.HTTPVersion,
         secondClientHTTPVersion: NIOHTTPServer.HTTPVersion

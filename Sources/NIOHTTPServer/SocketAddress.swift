@@ -14,7 +14,7 @@
 
 import NIOCore
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// Represents an IPv4 address.
     public struct IPv4: Hashable, Sendable {
@@ -113,7 +113,7 @@ extension NIOHTTPServer {
 }
 
 extension NIOCore.SocketAddress {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     init(bindTarget: NIOHTTPServerConfiguration.BindTarget) throws {
         switch bindTarget.backing {
         case .hostAndPort(let host, let port):

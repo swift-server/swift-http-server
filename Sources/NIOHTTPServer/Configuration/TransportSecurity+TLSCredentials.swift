@@ -15,7 +15,7 @@
 public import NIOCertificateReloading
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity {
     /// Represents the credentials the server uses to prove its identity during the TLS handshake.
     ///

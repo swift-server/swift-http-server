@@ -16,7 +16,7 @@
 import NIOCore
 import NIOHTTP3
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
     /// Configuration for HTTP/3.
     public struct HTTP3: Sendable, Hashable {
@@ -105,7 +105,7 @@ extension NIOHTTPServerConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTP3.HTTP3ServerConfiguration {
     init(_ configuration: NIOHTTPServerConfiguration.HTTP3) {
         self = .defaults

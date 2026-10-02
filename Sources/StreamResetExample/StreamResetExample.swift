@@ -54,7 +54,7 @@ extension TunnelFailure: HTTPServerHTTP3StreamResetErrorConvertible {
 struct UnexpectedFailure: Error {}
 
 @main
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct StreamResetExample {
     static func main() async throws {
         try await serve()
@@ -95,7 +95,7 @@ struct StreamResetExample {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.TransportSecurity.TLSCredentials {
     /// A throwaway self-signed certificate, so the example needs no files on disk.
     fileprivate static func selfSigned() throws -> Self {

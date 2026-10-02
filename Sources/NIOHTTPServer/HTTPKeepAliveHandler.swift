@@ -36,7 +36,7 @@ import NIOHTTPTypes
 ///
 /// Informational (1xx) responses pass through unchanged and do not affect buffering
 /// state.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     typealias InboundIn = HTTPRequestPart
     typealias InboundOut = HTTPRequestPart

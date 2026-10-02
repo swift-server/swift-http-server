@@ -19,7 +19,7 @@ import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOPosix
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension Channel {
     /// Adds HTTP/1.1 client handlers to the pipeline, then calls `additionalConnectionChannelInitializer` if provided.
     func configureTestHTTP1ClientPipeline(
@@ -50,7 +50,7 @@ extension Channel {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension ClientBootstrap {
     /// Connects to the provided `serverAddress` over plaintext HTTP/1.1 and returns a ``TestClientConnection``
     /// wrapping the established connection. Use ``TestClientConnection/makeRequestChannel()`` to obtain a
