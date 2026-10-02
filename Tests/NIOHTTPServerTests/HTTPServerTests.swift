@@ -13,8 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 import BasicContainers
+import Foundation
 import Logging
+import NIOCore
 import NIOHTTPServer
+import NIOPosix
+import SystemPackage
 import Testing
 
 @Suite
@@ -58,5 +62,82 @@ struct HTTPServerTests {
 
             group.cancelAll()
         }
+    }
+
+    @Test("Unix domain socket file is removed on shutdown")
+    @available(anyAppleOS 27.0, *)
+    func testUnixDomainSocketFileRemovedOnShutdown() async throws {
+        // Keep the path short so it stays under the platform's `sun_path` limit (104 on Darwin, 108 on Linux),
+        // even on CI where the system temporary directory can be deep.
+        let socketPath = "/tmp/nio-http-server-uds-\(UUID().uuidString).sock"
+        // Guard against a leftover file from a previously crashed run, and clean up if this test fails early.
+        try? FileManager.default.removeItem(atPath: socketPath)
+        defer { try? FileManager.default.removeItem(atPath: socketPath) }
+        let filePath = FilePath(socketPath)
+
+        let server = NIOHTTPServer(
+            logger: Logger(label: "Test"),
+            configuration: try .init(
+                bindTarget: .unixDomainSocket(path: filePath),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        try await withThrowingTaskGroup { group in
+            group.addTask {
+                try await server.serve { request, context, reader, responseSender in
+                    let responseWriter = try await responseSender.send(HTTPResponse(status: .ok))
+                    var buffer = UniqueArray<UInt8>()
+                    try await responseWriter.finish(buffer: &buffer, finalElement: nil)
+                }
+            }
+
+            // Wait until the server is bound; the socket file must exist while it is listening.
+            _ = try await server.listeningAddresses
+            #expect(FileManager.default.fileExists(atPath: socketPath))
+
+            // Shutting the server down should release the socket by removing its file.
+            group.cancelAll()
+        }
+
+        // The task group only returns once `serve` has fully unwound, so every listening socket has been closed.
+        // Closing a bound unix domain socket is what removes the socket file: NIO's `ServerSocket` unlinks the path
+        // on close, so the server does not have to unlink it itself.
+        #expect(!FileManager.default.fileExists(atPath: socketPath))
+    }
+
+    @Test("Bind fails when the unix domain socket path is already occupied", .timeLimit(.minutes(1)))
+    @available(anyAppleOS 27.0, *)
+    func testUnixDomainSocketBindFailsWhenPathExists() async throws {
+        let socketPath = "/tmp/nio-http-server-uds-\(UUID().uuidString).sock"
+        defer { try? FileManager.default.removeItem(atPath: socketPath) }
+
+        // Occupy the path with a live unix domain socket listener. A socket, unlike a regular file, is what a cleanup
+        // of existing socket files would remove, so this also guards against the bind ever taking the path over.
+        let occupyingChannel = try await ServerBootstrap(group: .singletonMultiThreadedEventLoopGroup)
+            .bind(unixDomainSocketPath: socketPath)
+            .get()
+
+        let server = NIOHTTPServer(
+            logger: Logger(label: "Test"),
+            configuration: try .init(
+                bindTarget: .unixDomainSocket(path: FilePath(socketPath)),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+
+        // Binding to an occupied path must fail with EADDRINUSE rather than reusing or removing the socket.
+        let error = await #expect(throws: IOError.self) {
+            try await server.serve { _, _, _, _ in }
+        }
+        #expect(error?.errnoCode == EADDRINUSE)
+
+        // The occupying socket must be left untouched: the bind never succeeded, so there is no socket of ours to
+        // close, and nothing removes a path this server did not bind.
+        #expect(FileManager.default.fileExists(atPath: socketPath))
+
+        try await occupyingChannel.close()
     }
 }

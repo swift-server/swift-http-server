@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import BasicContainers
+import Foundation
 import Logging
 import NIOCore
 import NIOEmbedded
@@ -25,6 +26,7 @@ import NIOPosix
 import NIOSSL
 import SwiftASN1
 import Synchronization
+import SystemPackage
 import Testing
 import X509
 
@@ -116,6 +118,69 @@ struct NIOHTTPServerTests {
                 responseReceived()
             }
         }
+    }
+
+    /// HTTP/3 is absent from the arguments on purpose: it runs over QUIC/UDP, so a unix domain socket bind target is
+    /// rejected when the configuration is created (see `HTTP3ConfigurationTests`).
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        "Request-response over a unix domain socket",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
+    )
+    func testRequestResponseOverUnixDomainSocket(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        // Keep the path short so it stays under the platform's `sun_path` limit (104 on Darwin, 108 on Linux),
+        // even on CI where the system temporary directory can be deep.
+        let socketPath = "/tmp/nio-http-server-uds-\(UUID().uuidString).sock"
+        defer { try? FileManager.default.removeItem(atPath: socketPath) }
+
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: httpVersion,
+            clientLogger: self.clientLogger,
+            serverLogger: self.serverLogger,
+            bindTargetsOverride: [.unixDomainSocket(path: FilePath(socketPath))]
+        )
+
+        try await confirmation { responseReceived in
+            try await TestHelpers.withClientServerRequestChannel(
+                clientConfiguration: clientConfiguration,
+                server: server,
+                serverHandler: HTTPServerClosureRequestHandler { request, requestContext, reader, responseWriter in
+                    #expect(request == .makeRequest(method: .post, for: httpVersion))
+
+                    // The connection is carried by a socket with no host or port, so the addresses report a path
+                    // instead: the local one is the socket we bound, the peer's is unnamed.
+                    let localAddress = try #require(requestContext.connectionContext.localAddress)
+                    #expect(localAddress.unixDomainSocketPath == socketPath)
+                    #expect(localAddress.host == nil)
+                    #expect(localAddress.port == nil)
+
+                    try await TestHelpers.echoResponse(
+                        readUpTo: ByteBuffer.testData.readableBytes,
+                        reader: reader,
+                        sender: responseWriter
+                    )
+                }
+            ) { serverAddress, inbound, outbound in
+                #expect(serverAddress.unixDomainSocketPath == socketPath)
+
+                try await outbound.write(.testHead(method: .post, for: httpVersion))
+                try await outbound.write(.testBody)
+                try await outbound.write(.testEnd)
+
+                try await TestHelpers.validateResponse(
+                    inbound,
+                    expectedHead: [.makeResponse(status: .ok, for: httpVersion)],
+                    expectedBody: [.testData],
+                    expectedTrailers: .testTrailer,
+                    expectStreamEnd: httpVersion != .plaintextHTTP1_1 && httpVersion != .http1_1
+                )
+
+                responseReceived()
+            }
+        }
+
+        // The listener has gone away with the server task, so the socket file must not be left behind.
+        #expect(!FileManager.default.fileExists(atPath: socketPath))
     }
 
     @available(anyAppleOS 27.0, *)
@@ -589,7 +654,9 @@ struct NIOHTTPServerTests {
             serverHandler: HTTPServerClosureRequestHandler { _, _, _, _ in },
             body: { addresses in
                 #expect(addresses.count == 2)
-                #expect(addresses[0].port != addresses[1].port)
+                let firstPort = try #require(addresses[0].port)
+                let secondPort = try #require(addresses[1].port)
+                #expect(firstPort != secondPort)
             }
         )
     }

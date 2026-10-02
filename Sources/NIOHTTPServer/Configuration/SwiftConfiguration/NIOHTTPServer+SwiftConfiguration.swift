@@ -19,6 +19,7 @@ import NIOCertificateReloading
 import NIOHTTP2
 import SwiftASN1
 public import X509
+import SystemPackage
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
@@ -29,12 +30,12 @@ extension NIOHTTPServerConfiguration {
     /// ``NIOHTTPServerConfiguration`` is comprised of four types. Provide configuration for each type under the
     /// specified key:
     ///
-    /// - **`"bindTarget"`**: A single address and port to bind to (see ``BindTarget/init(config:)``). Use this when
-    ///   binding to exactly one address.
+    /// - **`"bindTarget"`**: A single host and port, or a single unix domain socket path, to bind to (see
+    ///   ``BindTarget/init(config:)``). Use this when binding to exactly one address.
     ///
     /// - **`"bindTargets"`**: Multiple addresses to bind to, provided as parallel string and int arrays under
-    ///   `bindTargets.hosts` and `bindTargets.ports`. Exactly one of `"bindTarget"` or `"bindTargets"` must be
-    ///   provided.
+    ///   `bindTargets.hosts` and `bindTargets.ports`. Unix domain sockets are not supported here; use `"bindTarget"`
+    ///   for a socket path. Exactly one of `"bindTarget"` or `"bindTargets"` must be provided.
     ///
     /// - **`"http"`**: Supported HTTP versions and per-version settings:
     ///   - `"versions"` (required string array): the HTTP versions to support (permitted values: `"http1_1"`,
@@ -70,6 +71,8 @@ extension NIOHTTPServerConfiguration {
     ///       `"bindTarget"` and `"bindTargets"` are provided.
     ///     - Throws `NIOHTTPServerSwiftConfigurationError/bindTargetsHostsAndPortsLengthMismatch` if
     ///       `bindTargets.hosts` and `bindTargets.ports` have different lengths.
+    ///     - Throws `NIOHTTPServerSwiftConfigurationError/hostPortAndSocketPathProvided` if `bindTarget.socketPath`
+    ///       is provided together with `bindTarget.host` or `bindTarget.port`.
     public init(
         config: ConfigReader,
         customCertificateVerificationCallback: (
@@ -105,7 +108,8 @@ extension NIOHTTPServerConfiguration {
         let bindTargetScope = snapshot.scoped(to: "bindTarget")
         let singularHost = bindTargetScope.string(forKey: "host")
         let singularPort = bindTargetScope.int(forKey: "port")
-        let hasSingular = singularHost != nil || singularPort != nil
+        let singularSocketPath = bindTargetScope.string(forKey: "socketPath")
+        let hasSingular = singularHost != nil || singularPort != nil || singularSocketPath != nil
 
         if hasSingular && hasPlural {
             throw NIOHTTPServerSwiftConfigurationError.singularAndPluralBindTargetsProvided
@@ -129,17 +133,37 @@ extension NIOHTTPServerConfiguration.BindTarget {
     /// Initialize a bind target configuration from a config reader.
     ///
     /// ## Configuration keys:
-    /// - `host` (string, required): The hostname or IP address the server will bind to (e.g., "localhost", "0.0.0.0").
-    /// - `port` (int, required): The port number the server will listen on (e.g., 8080, 443).
+    /// - `host` (string): The hostname or IP address to bind to. Required unless `socketPath` is given.
+    /// - `port` (int): The port to listen on. Required unless `socketPath` is given.
+    /// - `socketPath` (string): A unix domain socket path to bind to. Mutually exclusive with `host`/`port`.
     ///
     /// - Parameter config: The configuration reader.
+    /// - Throws: `NIOHTTPServerSwiftConfigurationError/hostPortAndSocketPathProvided` if `socketPath` is provided
+    ///   together with `host` or `port`, even when that `host` or `port` is not a valid value.
     public init(config: ConfigSnapshotReader) throws {
-        self.init(
-            backing: .hostAndPort(
+        let socketPath = config.string(forKey: "socketPath")
+
+        let backing: Backing
+        if let socketPath {
+            // `int(forKey:)` reads a port that is not a valid integer (e.g. `"http"`) as absent, so also read it as a
+            // string: a malformed host or port still conflicts with `socketPath` instead of being silently ignored.
+            let hasHostOrPort =
+                config.string(forKey: "host") != nil
+                || config.int(forKey: "port") != nil
+                || config.string(forKey: "port") != nil
+            guard !hasHostOrPort else {
+                throw NIOHTTPServerSwiftConfigurationError.hostPortAndSocketPathProvided
+            }
+            let filePath = FilePath(socketPath)
+            backing = .unixDomainSocket(path: filePath)
+        } else {
+            backing = .hostAndPort(
                 host: try config.requiredString(forKey: "host"),
                 port: try config.requiredInt(forKey: "port")
             )
-        )
+        }
+
+        self.init(backing: backing)
     }
 }
 

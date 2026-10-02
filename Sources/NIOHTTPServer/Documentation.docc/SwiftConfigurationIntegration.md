@@ -33,7 +33,8 @@ let serverConfiguration = try NIOHTTPServerConfiguration(config: config)
 its respective key prefix.
 
 > Important: Exactly one of `bindTarget` (singular, for a single address) or `bindTargets` (plural, for multiple
-> addresses) must be provided. Providing both results in an error.
+> addresses) must be provided. Providing both results in an error. A unix domain socket can only be configured
+> through `bindTarget.socketPath`, and is not supported over HTTP/3.
 
 > Important: HTTP/2 and HTTP/3 cannot be served over plaintext. If `"http2"` or `"http3"` is included in
 > `http.versions`, the transport security must be set to `"tls"` or `"mTLS"`. Additionally, HTTP/3 requires PEM file
@@ -42,8 +43,9 @@ its respective key prefix.
 
 | Prefix                              | Configuration Key                         | Type              | Required/Optional                                                                                                             | Default        |
 |-------------------------------------|-------------------------------------------|-------------------|-------------------------------------------------------------------------------------------------------------------------------|----------------|
-| `bindTarget`                        | `host`                                    | `string`          | Required when binding to a single address (mutually exclusive with `bindTargets`)                                             | -              |
-|                                     | `port`                                    | `int`             | Required when binding to a single address (mutually exclusive with `bindTargets`)                                             | -              |
+| `bindTarget`                        | `host`                                    | `string`          | Required when binding to a single host and port (mutually exclusive with `bindTargets` and `socketPath`)                      | -              |
+|                                     | `port`                                    | `int`             | Required when binding to a single host and port (mutually exclusive with `bindTargets` and `socketPath`)                      | -              |
+|                                     | `socketPath`                              | `string`          | Required when binding to a unix domain socket (mutually exclusive with `host`/`port` and `bindTargets`)                       | -              |
 | `bindTargets`                       | `hosts`                                   | `string array`    | Required when binding to multiple addresses (mutually exclusive with `bindTarget`); must match length of `ports`              | -              |
 |                                     | `ports`                                   | `int array`       | Required when binding to multiple addresses (mutually exclusive with `bindTarget`); must match length of `hosts`              | -              |
 | `http`                              | `versions`                                | `string array`    | Required (permitted values: `"http1_1"`, `"http2"`, `"http3"`)                                                                | -              |
@@ -175,6 +177,17 @@ of the same length:
     "bindTargets": {
         "hosts": ["0.0.0.0", "::"],
         "ports": [443, 443]
+    },
+    // ...rest of the configuration
+}
+```
+
+To bind to a unix domain socket, give `bindTarget` a `socketPath` instead of a `host` and `port`:
+
+```json
+{
+    "bindTarget": {
+        "socketPath": "/run/server.sock"
     },
     // ...rest of the configuration
 }

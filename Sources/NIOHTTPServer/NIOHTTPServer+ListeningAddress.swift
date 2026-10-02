@@ -18,15 +18,15 @@ import NIOPosix
 
 enum ListeningAddressError: CustomStringConvertible, Error {
     case addressOrPortNotAvailable
-    case unsupportedAddressType
+    case pathnameNotAvailable
     case serverClosed
 
     var description: String {
         switch self {
         case .addressOrPortNotAvailable:
             return "Unable to retrieve the bound address or port from the underlying socket"
-        case .unsupportedAddressType:
-            return "Unsupported address type: only IPv4 and IPv6 are supported"
+        case .pathnameNotAvailable:
+            return "Unable to retrieve the unix domain socket path from the underlying socket"
         case .serverClosed:
             return """
                 There is no listening address bound for this server: there may have been an error which caused the server to close, or it may have shut down.
@@ -134,39 +134,21 @@ extension NIOHTTPServer {
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.SocketAddress {
     init(_ address: NIOCore.SocketAddress?) throws(ListeningAddressError) {
-        guard let address, let port = address.port else {
-            throw ListeningAddressError.addressOrPortNotAvailable
-        }
-
         switch address {
         case .v4(let ipv4Address):
+            guard let port = address?.port else { throw .addressOrPortNotAvailable }
             self.init(base: .ipv4(.init(host: ipv4Address.host, port: port)))
 
         case .v6(let ipv6Address):
+            guard let port = address?.port else { throw .addressOrPortNotAvailable }
             self.init(base: .ipv6(.init(host: ipv6Address.host, port: port)))
 
         case .unixDomainSocket:
-            throw ListeningAddressError.unsupportedAddressType
-        }
-    }
-}
+            guard let pathname = address?.pathname else { throw .pathnameNotAvailable }
+            self.init(base: .unixDomainSocket(path: pathname))
 
-@available(anyAppleOS 27.0, *)
-extension NIOHTTPServerConfiguration.BindTarget {
-    init(_ address: NIOCore.SocketAddress?) throws(ListeningAddressError) {
-        guard let address, let port = address.port else {
-            throw ListeningAddressError.addressOrPortNotAvailable
-        }
-
-        switch address {
-        case .v4(let ipv4Address):
-            self.init(backing: .hostAndPort(host: ipv4Address.host, port: port))
-
-        case .v6(let ipv6Address):
-            self.init(backing: .hostAndPort(host: ipv6Address.host, port: port))
-
-        case .unixDomainSocket:
-            throw ListeningAddressError.unsupportedAddressType
+        case nil:
+            throw .addressOrPortNotAvailable
         }
     }
 }

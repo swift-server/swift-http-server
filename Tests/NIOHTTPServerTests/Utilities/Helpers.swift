@@ -414,13 +414,16 @@ struct TestHelpers {
 extension TestHelpers {
     static func makeTLSServerConfiguration(
         supportedHTTPVersions: Set<NIOHTTPServerConfiguration.HTTPVersion> = [.http1_1, .http2],
-        concurrentListeners: Int = 1
+        concurrentListeners: Int = 1,
+        bindTargetsOverride: [NIOHTTPServerConfiguration.BindTarget]? = nil
     ) throws -> (NIOHTTPServerConfiguration, String) {
         let (leafPath, caPath, privateKeyPath) = try TestCA.makeSelfSignedChainWithSAN().writeToDisk()
 
-        let bindTargets = (0..<concurrentListeners).map { _ in
-            NIOHTTPServerConfiguration.BindTarget.hostAndPort(host: "127.0.0.1", port: 0)
-        }
+        let bindTargets =
+            bindTargetsOverride
+            ?? (0..<concurrentListeners).map { _ in
+                NIOHTTPServerConfiguration.BindTarget.hostAndPort(host: "127.0.0.1", port: 0)
+            }
 
         let configuration = try NIOHTTPServerConfiguration(
             bindTargets: bindTargets,
@@ -433,16 +436,21 @@ extension TestHelpers {
         return (configuration, caPath)
     }
 
+    /// - Parameter bindTargetsOverride: The bind targets to serve on. Defaults to `concurrentListeners` ephemeral
+    ///   loopback ports; pass this to serve on a different kind of target, such as a unix domain socket.
     static func makeServerAndClientConfiguration(
         for version: NIOHTTPServer.HTTPVersion,
         clientLogger: Logger,
         serverLogger: Logger,
         concurrentListeners: Int = 1,
+        bindTargetsOverride: [NIOHTTPServerConfiguration.BindTarget]? = nil,
         serverConfigurationOverride: ((inout NIOHTTPServerConfiguration) -> Void)? = nil
     ) throws -> (NIOHTTPServer, TestClientConnection.Configuration) {
-        let bindTargets = (0..<concurrentListeners).map { _ in
-            NIOHTTPServerConfiguration.BindTarget.hostAndPort(host: "127.0.0.1", port: 0)
-        }
+        let bindTargets =
+            bindTargetsOverride
+            ?? (0..<concurrentListeners).map { _ in
+                NIOHTTPServerConfiguration.BindTarget.hostAndPort(host: "127.0.0.1", port: 0)
+            }
 
         var serverConfiguration: NIOHTTPServerConfiguration
         let trustRootsPEMPath: String?
@@ -459,7 +467,8 @@ extension TestHelpers {
         } else {
             (serverConfiguration, trustRootsPEMPath) = try self.makeTLSServerConfiguration(
                 supportedHTTPVersions: [.init(version)],
-                concurrentListeners: concurrentListeners
+                concurrentListeners: concurrentListeners,
+                bindTargetsOverride: bindTargetsOverride
             )
             serverConfigurationOverride?(&serverConfiguration)
         }
