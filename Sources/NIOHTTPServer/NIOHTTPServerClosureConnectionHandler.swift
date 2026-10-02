@@ -16,7 +16,7 @@
 ///
 /// Used internally by ``NIOHTTPServer/NIOHTTPServer/serve(connectionHandler:)-((NIOHTTPServer.Connection,NIOHTTPServer.ConnectionContext)->Void)``
 /// to bridge a closure to the protocol-based connection-handler API.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct NIOHTTPServerClosureConnectionHandler: NIOHTTPServerConnectionHandler {
     let body:
         @Sendable (

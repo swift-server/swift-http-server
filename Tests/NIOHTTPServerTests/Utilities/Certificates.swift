@@ -19,7 +19,7 @@ import X509
 
 @testable import NIOHTTPServer
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct ChainPrivateKeyPair {
     let leaf: Certificate
     let ca: Certificate
@@ -60,7 +60,7 @@ struct ChainPrivateKeyPair {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestCA {
     static func makeSelfSignedChain(leafExtensions: Certificate.Extensions = .init()) throws -> ChainPrivateKeyPair {
         let caKey = P384.Signing.PrivateKey()

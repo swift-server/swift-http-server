@@ -38,7 +38,7 @@ struct ClientClosedTests {
     /// never will.
     static let detectionWindow = TimeAmount.seconds(2)
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Client disconnect cancels a busy handler",
         arguments: NIOHTTPServer.HTTPVersion.allCases
@@ -131,7 +131,7 @@ struct ClientClosedTests {
 
     /// HTTP/2: a client cancelling a single stream must cancel that request's handler, while leaving
     /// the connection and any other requests on it alive.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/2 stream reset by the client cancels that request's handler")
     func http2StreamResetCancelsBusyHandler() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -173,7 +173,7 @@ struct ClientClosedTests {
     }
 
     #if HTTP3
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/3 STOP_SENDING alone does not cancel the handler")
     func http3StopSendingAloneDoesNotCancel() async throws {
         let sawCancellation = try await Self.runHTTP3Handler(clientSends: [.stopSending], completeRequest: false)
@@ -185,7 +185,7 @@ struct ClientClosedTests {
 
     /// `STOP_SENDING` *after* the request end does cancel: with the client's FIN already received, the
     /// exchange is finished in both directions, so the QUIC layer closes the stream.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/3 STOP_SENDING after the request end cancels the handler")
     func http3StopSendingAfterRequestEndCancels() async throws {
         let sawCancellation = try await Self.runHTTP3Handler(clientSends: [.stopSending], completeRequest: true)
@@ -198,7 +198,7 @@ struct ClientClosedTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/3 RESET_STREAM alone does not cancel the handler")
     func http3ResetStreamAloneDoesNotCancel() async throws {
         let sawCancellation = try await Self.runHTTP3Handler(clientSends: [.resetStream], completeRequest: false)
@@ -208,7 +208,7 @@ struct ClientClosedTests {
         )
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/3 RESET_STREAM followed by STOP_SENDING cancels the handler")
     func http3BothFramesCancel() async throws {
         let sawCancellation = try await Self.runHTTP3Handler(
@@ -243,7 +243,7 @@ struct ClientClosedTests {
     /// - Parameter completeRequest: whether the client finishes its request body. This matters: once the
     ///   request is fully received QUIC may ignore a `RESET_STREAM` (RFC 9000 § 3.2), so leaving it
     ///   incomplete is the only way the server can observe that frame.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     private static func runHTTP3Handler(
         clientSends frames: [H3CancelFrame],
         completeRequest: Bool
@@ -327,7 +327,7 @@ struct ClientClosedTests {
     /// Cancellation is not scoped to the client going away: a close the *server* decided on cancels the
     /// handler too. For example, a timeout closing the connection has already concluded that nobody is getting a
     /// response.
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("A timeout closing the connection cancels the handler")
     func serverInitiatedCloseCancelsBusyHandler() async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(

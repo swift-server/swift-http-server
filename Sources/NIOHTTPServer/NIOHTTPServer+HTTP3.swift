@@ -27,7 +27,7 @@ import NIOSSL
 import ServiceLifecycle
 import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// An inbound HTTP/3 request stream.
     struct HTTP3Stream: Sendable {
@@ -545,7 +545,7 @@ extension NIOHTTPServer {
 }
 
 /// Identifies one of the datagram sockets bound for a bind target, and the group it belongs to.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct HTTP3ListenerSocket: Sendable {
     /// The index of this socket within its associated group (will be zero if there is no group).
     var index: Int

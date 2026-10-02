@@ -18,7 +18,7 @@ import NIOCore
 import NIOHTTP3
 import NIOQUICHelpers
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct HTTP3UnreliableDatagramStream: Sendable {
     // The QUIC stream ID.
     let streamID: QUICStreamID

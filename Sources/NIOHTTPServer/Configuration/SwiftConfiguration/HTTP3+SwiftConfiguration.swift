@@ -15,7 +15,7 @@
 #if HTTP3 && Configuration
 public import Configuration
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3 {
     /// Initialize an HTTP/3 configuration from a config reader.
     ///
@@ -53,7 +53,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     /// Initialize a QUIC transport configuration from a config reader.
     ///
@@ -126,7 +126,7 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.QLogConfiguration {
     /// Initialize an optional qlog configuration from a config reader.
     ///
@@ -166,7 +166,7 @@ private enum KeyExchangeGroupKind: String {
     case x25519MLKEM768
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.KeyExchangeGroup {
     fileprivate init(_ kind: KeyExchangeGroupKind) {
         switch kind {
@@ -182,7 +182,7 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.KeyExchangeGroup {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
     /// Initialize HTTP/3 connection settings from a config reader.
     ///
@@ -212,7 +212,7 @@ extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
 }
 
 #if UnstableHTTPDatagrams
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3.DatagramConfiguration {
     /// Initialize HTTP/3 connection settings from a config reader.
     ///

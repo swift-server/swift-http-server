@@ -26,7 +26,7 @@ struct ConnectionBackpressureEndToEndTests {
     let serverLogger = Logger(label: "ConnectionBackpressureE2ETests.server")
     let clientLogger = Logger(label: "ConnectionBackpressureE2ETests.client")
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "Requests succeed under connection limit",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
@@ -80,7 +80,7 @@ struct ConnectionBackpressureEndToEndTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "More connections than maxConnections all eventually complete",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
@@ -135,7 +135,7 @@ struct ConnectionBackpressureEndToEndTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test(
         "No connection limit by default",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]

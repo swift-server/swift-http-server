@@ -21,7 +21,7 @@ import Testing
 
 @Suite
 struct NIOHTTPServerEndToEndTests {
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/1.1 request and response")
     func testHTTP1_1() async throws {
         try await TestingChannelHTTP1Server.serve(
@@ -48,7 +48,7 @@ struct NIOHTTPServerEndToEndTests {
         }
     }
 
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     @Test("HTTP/2 negotiation")
     func testHTTP2Negotiation() async throws {
         let serverChain = try TestCA.makeSelfSignedChain()

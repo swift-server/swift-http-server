@@ -43,7 +43,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Active connection completes when graceful shutdown triggered",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionCanCompleteWhenGracefullyShutdown(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -126,7 +126,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Server closes active connection upon forceful shutdown",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testServerClosesActiveConnectionOnForcefulShutdown(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
@@ -200,7 +200,7 @@ struct NIOHTTPServiceLifecycleTests {
         "Active connection forcefully shutdown when server task cancelled",
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionForcefullyShutdownWhenServerTaskCancelled(httpVersion: NIOHTTPServer.HTTPVersion) async throws
     {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -280,23 +280,19 @@ struct NIOHTTPServiceLifecycleTests {
     }
 
     @Test("Active HTTP/2 connection is forcefully shut down upon graceful shutdown timeout")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testActiveHTTP2ConnectionIsShutDownAfterGraceTimeout() async throws {
         let (leafPath, caPath, keyPath) = try TestCA.makeSelfSignedChain().writeToDisk()
 
-        let server = NIOHTTPServer(
-            logger: self.serverLogger,
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [
-                    .http1_1,
-                    .http2(config: .init(gracefulShutdown: .init(maximumGracefulShutdownDuration: .milliseconds(500)))),
-                ],
-                transportSecurity: .tls(
-                    credentials: .x509(.pemFile(certificateChainPath: leafPath, privateKeyPath: keyPath))
-                )
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1, .http2],
+            transportSecurity: .tls(
+                credentials: .x509(.pemFile(certificateChainPath: leafPath, privateKeyPath: keyPath))
             )
         )
+        configuration.gracefulShutdown = .init(maximumGracefulShutdownDuration: .milliseconds(500))
+        let server = NIOHTTPServer(logger: self.serverLogger, configuration: configuration)
 
         // This promise will be fulfilled when the server receives the first part of the request body. Once this
         // happens, we can initiate the graceful shutdown.
@@ -372,7 +368,7 @@ struct NIOHTTPServiceLifecycleTests {
             (.http2, .http2),
         ]
     )
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func activeConnectionsAcrossDifferentListenersCanCompleteWhenGracefullyShutdown(
         firstClientHTTPVersion: NIOHTTPServer.HTTPVersion,
         secondClientHTTPVersion: NIOHTTPServer.HTTPVersion

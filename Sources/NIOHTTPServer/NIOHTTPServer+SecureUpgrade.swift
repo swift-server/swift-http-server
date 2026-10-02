@@ -27,7 +27,7 @@ import NIOSSL
 import NIOTLS
 import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     struct NegotiationResult {
         enum NegotiatedChannel {
@@ -270,7 +270,7 @@ extension NIOHTTPServer {
                 connectionManagerConfiguration: .init(
                     maxIdleTime: self.configuration.connectionTimeouts.idle.map { TimeAmount($0) },
                     maxAge: nil,
-                    maxGraceTime: configuration.gracefulShutdown.maximumGracefulShutdownDuration
+                    maxGraceTime: self.configuration.gracefulShutdown.maximumGracefulShutdownDuration
                         .map { TimeAmount($0) },
                     keepalive: nil
                 ),
@@ -370,7 +370,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOAsyncChannel where Inbound == HTTPRequestPart, Outbound == HTTPResponsePart {
     /// - Parameter clientClosed: Yields when the client stops waiting for a response, at which point `body`
     ///   is cancelled. Paired with the continuation held by this stream's `ClientClosedMonitor`.
@@ -433,7 +433,7 @@ extension NIOAsyncChannel where Inbound == HTTPRequestPart, Outbound == HTTPResp
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     func makeSSLServerHandler(
         _ sslContext: NIOSSLContext,

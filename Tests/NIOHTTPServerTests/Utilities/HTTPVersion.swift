@@ -14,7 +14,7 @@
 
 import NIOHTTPServer
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.HTTPVersion {
     /// The ALPN protocol identifier.
     ///
@@ -38,7 +38,7 @@ extension NIOHTTPServer.HTTPVersion {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTPVersion {
     init(_ version: NIOHTTPServer.HTTPVersion) {
         switch version {

@@ -50,7 +50,6 @@ its respective key prefix.
 | `http.http2`                        | `maxFrameSize`                            | `int` (bytes)     | Optional                                                                                                                      | 2^14           |
 |                                     | `targetWindowSize`                        | `int` (bytes)     | Optional                                                                                                                      | 2^16-1         |
 |                                     | `maxConcurrentStreams`                    | `int`             | Optional                                                                                                                      | 100            |
-| `http.http2.gracefulShutdown`       | `maximumDuration`                         | `int` (seconds)   | Optional                                                                                                                      | nil            |
 | `http.http3`                        | `preferHuffmanEncoding`                   | `bool`            | Optional                                                                                                                      | true           |
 | `http.http3.connectionSettings`     | `qpackMaximumTableCapacity`               | `int`             | Optional                                                                                                                      | 0              |
 |                                     | `qpackBlockedStreams`                     | `int`             | Optional                                                                                                                      | 0              |
@@ -92,6 +91,7 @@ its respective key prefix.
 | `connectionTimeouts`                | `idle`                                    | `int`             | Optional                                                                                                                      | nil            |
 |                                     | `readHeader`                              | `int`             | Optional                                                                                                                      | nil            |
 |                                     | `readBody`                                | `int`             | Optional                                                                                                                      | nil            |
+| `gracefulShutdown`                  | `maximumDuration`                         | `int` (seconds)   | Optional                                                                                                                      | nil            |
 
 #### (m)TLS credentials
 
@@ -139,10 +139,7 @@ key were omitted.
         "http2": {
             "maxFrameSize": 16384,          // default: 2^14 (16384)
             "targetWindowSize": 65535,      // default: 2^16 - 1 (65535)
-            "maxConcurrentStreams": 100,    // default: 100
-            "gracefulShutdown": {
-                "maximumDuration": 30       // default: nil (no time limit)
-            }
+            "maxConcurrentStreams": 100     // default: 100
         }
     },
     "transportSecurity": {
@@ -163,6 +160,9 @@ key were omitted.
         "idle": 60,                         // default: nil (no timeout)
         "readHeader": 30,                   // default: nil (no timeout)
         "readBody": 60                      // default: nil (no timeout)
+    },
+    "gracefulShutdown": {
+        "maximumDuration": 30               // default: nil (no time limit)
     }
 }
 ```

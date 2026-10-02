@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #if HTTP3 && UnstableHTTPDatagrams
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.HTTP3 {
     public struct DatagramConfiguration: Sendable, Hashable {
         /// The maximum datagram frame size in bytes.

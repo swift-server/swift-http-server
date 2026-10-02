@@ -31,7 +31,7 @@ struct HTTP3DatagramTests {
     static let clientLogger = Logger(label: "HTTP3DatagramTests.client")
 
     @Test("Datagrams are routed to the request stream they belong to")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func datagramsAreRoutedByStreamID() async throws {
         let channel = EmbeddedChannel()
         let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
@@ -62,7 +62,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Datagrams delivered after deregistering are dropped")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func datagramsAfterDeregisteringAreDropped() async throws {
         let channel = EmbeddedChannel()
         let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
@@ -86,7 +86,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Closing the connection ends every registered datagram stream")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func closingTheConnectionEndsEveryDatagramStream() async throws {
         let channel = EmbeddedChannel()
         let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
@@ -114,7 +114,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("The oldest datagram is dropped once the buffer is full")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func oldestDatagramIsDroppedOnceTheBufferIsFull() async throws {
         let channel = EmbeddedChannel()
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 2)
@@ -130,7 +130,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Each write is sent as one datagram containing the stream's ID")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func eachWriteIsSentAsOneDatagram() async throws {
         let channel = EmbeddedChannel()
 
@@ -169,7 +169,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Finishing flushes any remaining bytes as a final datagram")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func finishingWritesRemainingBytes() async throws {
         let channel = EmbeddedChannel()
         let writer = NIOHTTPServer.DatagramWriter(
@@ -185,7 +185,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Finishing with an empty buffer writes no datagram")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func finishingWithAnEmptyBufferWritesNoDatagram() async throws {
         let channel = EmbeddedChannel()
         let writer = NIOHTTPServer.DatagramWriter(
@@ -199,7 +199,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Reading and writing datagrams are independent of each other")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func readingAndWritingAreIndependent() async throws {
         let channel = EmbeddedChannel()
         let stream = HTTP3UnreliableDatagramStream(streamID: 4, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -218,15 +218,17 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Read and write datagrams")
-    @available(anyAppleOS 26.2, *)
+    @available(anyAppleOS 27.0, *)
     func readAndWriteDatagrams() async throws {
-        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+        var (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http3,
             clientLogger: Self.clientLogger,
             serverLogger: Self.serverLogger
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        let datagramsSupportedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        clientConfiguration.addDatagramSettingsHandler(promise: datagramsSupportedPromise)
 
         try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
@@ -255,8 +257,9 @@ struct HTTP3DatagramTests {
                     // Start the request.
                     try await streamOutbound.write(.testHead(method: .post, for: .http3))
 
-                    // Wait for the stream to be opened.
-                    try await streamOpenedPromise.futureResult.get()
+                    // Wait for the stream to be opened, and until the server has sent their SETTINGS frame that
+                    // confirms they also support receiving datagrams.
+                    _ = try await streamOpenedPromise.futureResult.and(datagramsSupportedPromise.futureResult).get()
 
                     // Now write a datagram.
                     try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
@@ -281,7 +284,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Writing a datagram larger than the max_datagram_frame_size fails")
-    @available(anyAppleOS 26.2, *)
+    @available(anyAppleOS 27.0, *)
     func writingDatagramLargerThanMaxFrameSizeFails() async throws {
         let clientMaxDatagramFrameSize = 150
 
@@ -296,6 +299,8 @@ struct HTTP3DatagramTests {
         )
 
         let streamOpenedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        let datagramsSupportedPromise = server.eventLoopGroup.any().makePromise(of: Void.self)
+        clientConfiguration.addDatagramSettingsHandler(promise: datagramsSupportedPromise)
 
         try await TestHelpers.withHTTP3ClientServerConnectionAndRequestChannel(
             clientConfiguration: clientConfiguration,
@@ -336,8 +341,9 @@ struct HTTP3DatagramTests {
                     // Start the request.
                     try await streamOutbound.write(.testHead(method: .get, for: .http3))
 
-                    // Wait for the stream to be opened.
-                    try await streamOpenedPromise.futureResult.get()
+                    // Wait for the stream to be opened, and until the server has sent their SETTINGS frame that
+                    // confirms they also support receiving datagrams.
+                    _ = try await streamOpenedPromise.futureResult.and(datagramsSupportedPromise.futureResult).get()
 
                     // Write a datagram.
                     try await connectionOutbound.write(HTTP3Datagram(streamID: streamID, payload: .testData))
@@ -363,7 +369,7 @@ struct HTTP3DatagramTests {
     }
 
     @Test("Datagram reader and writer not vended when client does not support datagrams")
-    @available(anyAppleOS 26.2, *)
+    @available(anyAppleOS 27.0, *)
     func datagramReaderAndWriterNotVendedWhenNotSupportedByClient() async throws {
         var (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: .http3,

@@ -22,7 +22,7 @@ import Testing
 @Suite
 struct NIOHTTPServerResponseSenderTests {
     @Test("Informational header without informational status code")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testInformationalResponseStatusCodePrecondition() async throws {
         // Sending an informational header with a non-1xx status code shouldn't be allowed
         try await #require(processExitsWith: .failure) {
@@ -34,7 +34,7 @@ struct NIOHTTPServerResponseSenderTests {
     }
 
     @Test("Multiple informational responses before final response")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testSendMultipleInformationalResponses() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())

@@ -16,7 +16,7 @@ import NIOCore
 import NIOHTTPTypes
 import Synchronization
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     public struct ResponseSender: HTTPResponseSender, ~Copyable {
         let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
@@ -84,7 +84,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.ResponseSender {
     final class WriterState: Sendable {
         struct Wrapped: ~Copyable {
@@ -178,6 +178,7 @@ extension NIOHTTPServer.ResponseSender: Sendable {}
 @available(*, unavailable)
 extension NIOHTTPServer.ResponseSender.Writer: Sendable {}
 
+@available(anyAppleOS 27.0, *)
 extension ByteBuffer {
     /// Drains `buffer` into a newly allocated `ByteBuffer`.
     init<Buffer: RangeReplaceableContainer<UInt8> & ~Copyable>(

@@ -68,7 +68,7 @@ import NIOQUIC
 ///
 /// A request handler reports failure by throwing, which aborts that request's exchange on the wire rather than
 /// propagating an error to the caller. See ``serve(handler:)`` and ``HTTPServerHTTP2StreamResetErrorConvertible``.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 public struct NIOHTTPServer: HTTPServer {
     let logger: Logger
     let configuration: NIOHTTPServerConfiguration
@@ -440,7 +440,7 @@ public struct NIOHTTPServer: HTTPServer {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension ChannelPipeline.SynchronousOperations {
     /// Adds timeout handlers (idle, read header, read body) to the channel pipeline.
     ///
@@ -493,7 +493,7 @@ extension ChannelPipeline.SynchronousOperations {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTP2Handler.Configuration {
     init(httpServerHTTP2Configuration http2Config: NIOHTTPServerConfiguration.HTTP2) {
         let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)
@@ -564,13 +564,13 @@ extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
 /// ``ClientClosedMonitor`` while its pipeline is built, so this is what carries the stream out to the code
 /// that races against it. HTTP/3 streams carry theirs in ``NIOHTTPServer/HTTP3Stream`` instead, which
 /// already bundles per-stream state.
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct HTTPRequestChannelAndCancellationSignal: Sendable {
     var channel: NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>
     var clientClosed: AsyncStream<Void>
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension ServerBootstrap {
     /// Makes a `ServerBootstrap` alongside the `ServerQuiescingHelper` used to later shut that listener down gracefully.
     ///
@@ -601,7 +601,7 @@ extension ServerBootstrap {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// Awaits the next address from `iterator`.
     func nextBoundAddress(

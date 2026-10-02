@@ -20,7 +20,7 @@ import NIOSSL
 
 @testable import NIOHTTPServer
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 /// Provides a HTTP client with ALPN negotiation.
 extension Channel {
     /// Adds a ``NIOSSLClientHandler`` configured with the provided `TLSConfiguration` to the pipeline.
@@ -32,8 +32,12 @@ extension Channel {
         }
     }
 
-    /// Adds an ALPN handler (configured with both HTTP/1.1 and HTTP/2 channel initializers) to the pipeline.
-    func configureTestSecureUpgradeClientPipeline() -> EventLoopFuture<
+    /// Adds an ALPN handler (configured with both HTTP/1.1 and HTTP/2 channel initializers) to the pipeline. Once a
+    /// protocol is negotiated, `additionalConnectionChannelInitializer` is optionally called after the protocol's
+    /// handlers are added.
+    func configureTestSecureUpgradeClientPipeline(
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
+    ) -> EventLoopFuture<
         EventLoopFuture<
             NIONegotiatedHTTPVersion<
                 NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>,
@@ -43,27 +47,36 @@ extension Channel {
     > {
         self.configureHTTP2AsyncSecureUpgrade(
             http1ConnectionInitializer: { channel in
-                channel.configureTestHTTP1ClientPipeline()
+                channel.configureTestHTTP1ClientPipeline(
+                    additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
+                )
             },
             http2ConnectionInitializer: { channel in
                 channel.configureAsyncHTTP2Pipeline(mode: .client) { $0.eventLoop.makeSucceededFuture($0) }
+                    .flatMapThrowing { multiplexer in
+                        try additionalConnectionChannelInitializer?(channel)
+                        return multiplexer
+                    }
             }
         )
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension ClientBootstrap {
     /// Connects the client to the specified address using the provided TLS configuration.
     func connectToTestSecureUpgradeHTTPServer(
         at serverAddress: NIOHTTPServer.SocketAddress,
-        tlsConfig: TLSConfiguration
+        tlsConfig: TLSConfiguration,
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) async throws -> TestClientConnection {
         let (connectionChannel, alpnResultFuture) = try await self.connect(
             to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
         ) { channel in
             channel.configureTestClientSSLPipeline(tlsConfig: tlsConfig).flatMap {
-                channel.configureTestSecureUpgradeClientPipeline().map { alpnResultFuture in
+                channel.configureTestSecureUpgradeClientPipeline(
+                    additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
+                ).map { alpnResultFuture in
                     (channel, alpnResultFuture)
                 }
             }

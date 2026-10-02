@@ -16,7 +16,7 @@ import NIOCore
 import NIOSSL
 public import X509
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// The application-level HTTP version negotiated for a connection.
     @nonexhaustive
@@ -30,7 +30,7 @@ extension NIOHTTPServer {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension NIOHTTPServer {
     /// Connection-scoped state.
     ///

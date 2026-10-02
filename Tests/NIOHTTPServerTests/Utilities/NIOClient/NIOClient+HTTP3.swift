@@ -24,7 +24,7 @@ import NIOHTTPTypesHTTP1
 import NIOPosix
 import NIOQUIC
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     let quicHandler: QUICHandler<QUICStreamChannels>
     let connectionInitializer: @Sendable (any Channel, NIOQUIC.QUICStreamCreator) -> EventLoopFuture<any Channel>
@@ -62,14 +62,15 @@ struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension Channel {
     func makeConnectionCreator(
         logger: Logger,
         settings: HTTP3Settings,
         configuration: HTTP3ClientConfiguration,
         quicConfiguration: QUICConfiguration,
-        asyncVerifier: NIOQUIC.AsyncVerifier
+        asyncVerifier: NIOQUIC.AsyncVerifier,
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) throws -> TestHTTP3SingleConnectionCreator {
         let quicHandler = QUICHandler(
             channel: self,
@@ -96,6 +97,7 @@ extension Channel {
                         inboundPushStreamInitializer: { _ in fatalError() }
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
+                    try additionalConnectionChannelInitializer?(connectionChannel)
                     return connectionChannel
                 }
             },
@@ -112,7 +114,7 @@ extension Channel {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension DatagramBootstrap {
     /// Sets up a test HTTP/3 client and returns the QUIC connection channel and the connection multiplexer.
     func setupTestHTTP3Client(
@@ -120,7 +122,8 @@ extension DatagramBootstrap {
         trustRootsPath: String,
         quicConfiguration: QUICConfiguration,
         http3ClientConfiguration: HTTP3ClientConfiguration = .defaults,
-        http3ConnectionSettings: HTTP3Settings = .init()
+        http3ConnectionSettings: HTTP3Settings = .init(),
+        additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) async throws -> (any Channel, NIOLoopBound<TestHTTP3SingleConnectionCreator>) {
         try await self.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(host: "127.0.0.1", port: 0) { channel in
@@ -134,7 +137,8 @@ extension DatagramBootstrap {
                             trustRootsPath: trustRootsPath,
                             certificateVerification: .noHostnameVerification,
                             eventLoop: channel.eventLoop
-                        )
+                        ),
+                        additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
                     )
                     let loopBoundConnectionCreator = NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop)
 
@@ -144,7 +148,7 @@ extension DatagramBootstrap {
     }
 }
 
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension HTTP3ClientConnection {
     /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`. The stream is closed by the
     /// caller using `executeThenClose`.
