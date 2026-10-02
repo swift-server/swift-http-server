@@ -68,7 +68,7 @@ struct NIOHTTPServerResponseSenderTests {
     }
 
     @Test("Buffered response drains its input and concludes the writer", arguments: [0, 2, 65536], [false, true])
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testBufferedResponse(byteCount: Int, includeTrailers: Bool) async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
         let state = NIOHTTPServer.ResponseSender.WriterState()
@@ -92,7 +92,7 @@ struct NIOHTTPServerResponseSenderTests {
     }
 
     @Test("Buffered response through the protocol requirement")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testBufferedResponseThroughProtocol() async throws {
         func send<Sender: HTTPResponseSender & ~Copyable>(_ sender: consuming Sender) async throws
         where Sender.Writer: ~Copyable {
@@ -112,7 +112,7 @@ struct NIOHTTPServerResponseSenderTests {
     }
 
     @Test("Buffered response rejects informational status")
-    @available(anyAppleOS 26.0, *)
+    @available(anyAppleOS 27.0, *)
     func testBufferedResponseStatusPrecondition() async throws {
         await #expect(processExitsWith: .failure) {
             let (writer, _) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
