@@ -381,7 +381,7 @@ extension NIOHTTP2Handler.AsyncStreamMultiplexer<Channel> {
 }
 
 #if HTTP3 && UnstableHTTPDatagrams
-@available(anyAppleOS 26.0, *)
+@available(anyAppleOS 27.0, *)
 extension TestClientConnection.Configuration {
     /// Sets up ``additionalConnectionChannelInitializer`` to add a handler that observes the SETTINGS frame received
     /// from the server, and succeeds `promise` once the server has confirmed it supports receiving datagrams.
