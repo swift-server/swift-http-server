@@ -67,7 +67,7 @@ extension NIOHTTPServer {
             #endif
         }
 
-        public func sendAndFinish<Buffer>(
+        public consuming func sendAndFinish<Buffer>(
             _ response: HTTPResponse,
             buffer: inout Buffer,
             trailer: HTTPFields?
