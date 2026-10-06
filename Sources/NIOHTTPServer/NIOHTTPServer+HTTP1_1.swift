@@ -44,7 +44,8 @@ extension NIOHTTPServer {
         let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
             do {
                 for try await connectionChannel in connectionStream {
-                    group.addTask {
+                    let executor = connectionChannel.channel.channel.eventLoop as? any TaskExecutor
+                    group.addTask(executorPreference: executor) {
                         await self.dispatchPlaintextHTTP1_1Connection(
                             requestChannel: connectionChannel.channel,
                             clientClosed: connectionChannel.clientClosed,
@@ -123,10 +124,15 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "Plaintext HTTP/1.1 over \(address)") {
+        let listeningSocketEventLoop = self.eventLoopGroup.any()
+        let listeningSocketExecutor = listeningSocketEventLoop as? any TaskExecutor
+
+        group.addTask(name: "Plaintext HTTP/1.1 over \(address)", executorPreference: listeningSocketExecutor) {
             try await self.withTCPChannel(
                 address: address,
                 addressContinuation: addressContinuation,
+                listeningSocketGroup: listeningSocketEventLoop,
+                acceptedConnectionsGroup: self.eventLoopGroup,
                 childChannelInitializer: { channel in
                     self.setupHTTP1_1Connection(channel: channel, isSecure: false)
                 }
@@ -195,24 +201,23 @@ extension NIOHTTPServer {
         Handler.ResponseSender == ResponseSender
     {
         @Sendable func runLoop() async throws {
-            // Keep the iterator disconnected between requests so each iteration can
-            // transfer it to the handler and recover it for the next request.
-            var iteratorStorage = Disconnected(value: inbound.makeAsyncIterator())
+            var reuseCoordinator = HTTP1ConnectionReuseCoordinator(
+                requestIterator: inbound.makeAsyncIterator(),
+                responseWriter: outbound
+            )
 
             requestLoop: while !Task.isCancelled {
-                var iterator = iteratorStorage.take()
-                guard let httpRequest = try await iterator.nextRequestHead(logger: self.logger) else {
+                guard let httpRequest = try await reuseCoordinator.nextRequestHead(logger: self.logger) else {
                     break requestLoop
                 }
 
                 let requestContext = RequestContext(connectionContext: context, channel: channel)
 
                 guard
-                    let recoveredIterator = await self.invokeHandler(
+                    await self.invokeHTTP1Handler(
                         request: httpRequest,
                         requestContext: requestContext,
-                        inboundIterator: iterator,
-                        outbound: outbound,
+                        reuseCoordinator: &reuseCoordinator,
                         handler: handler
                     )
                 else {
@@ -220,8 +225,6 @@ extension NIOHTTPServer {
                     // connection.
                     break requestLoop
                 }
-
-                iteratorStorage = Disconnected(value: recoveredIterator)
             }
         }
 

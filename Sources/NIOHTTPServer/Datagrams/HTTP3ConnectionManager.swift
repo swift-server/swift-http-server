@@ -61,32 +61,16 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         }
 
         mutating func finish() {
-            // The connection is going away, so datagrams will never be negotiated if they haven't been already.
-            self.completeNegotiation(datagramsSupported: false)
-
             for datagramStream in self.datagramStreams.values {
                 datagramStream.finish()
             }
             self.datagramStreams.removeAll()
         }
 
-        mutating func receivedSettings(datagramsSupported: Bool) {
-            self.completeNegotiation(datagramsSupported: datagramsSupported)
-        }
-
-        /// Completes the negotiation promise, if it has not been completed already.
-        private mutating func completeNegotiation(datagramsSupported: Bool) {
-            guard let promise = self.datagramsNegotiatedPromise else {
-                // We fulfilled the promise earlier.
-                return
-            }
-            self.datagramsNegotiatedPromise = nil
-
-            if datagramsSupported {
-                promise.succeed()
-            } else {
-                promise.fail(DatagramsNotSupported())
-            }
+        /// Returns the negotiation promise if it has not been taken already.
+        mutating func takeNegotiationPromise() -> EventLoopPromise<Void>? {
+            defer { self.datagramsNegotiatedPromise = nil }
+            return self.datagramsNegotiatedPromise
         }
     }
 
@@ -120,6 +104,20 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         self.eventLoop.preconditionInEventLoop()
         self.datagramContext?.deregister(streamID: streamID)
     }
+
+    /// Completes the negotiation promise, if it has not been completed already.
+    private func completeNegotiation(datagramsSupported: Bool) {
+        guard let promise = self.datagramContext?.takeNegotiationPromise() else {
+            // We fulfilled the promise earlier.
+            return
+        }
+
+        if datagramsSupported {
+            promise.succeed()
+        } else {
+            promise.fail(DatagramsNotSupported())
+        }
+    }
     #endif  // UnstableHTTPDatagrams
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -135,7 +133,7 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
         switch event {
         case let event as ReceivedSettings:
             #if UnstableHTTPDatagrams
-            self.datagramContext?.receivedSettings(datagramsSupported: event.datagramsSupported)
+            self.completeNegotiation(datagramsSupported: event.datagramsSupported)
             #endif
             context.fireUserInboundEventTriggered(event)
 
@@ -151,6 +149,8 @@ final class HTTP3ConnectionManager: ChannelInboundHandler {
 
     func channelInactive(context: ChannelHandlerContext) {
         #if UnstableHTTPDatagrams
+        // The connection is going away, so datagrams will never be negotiated if they haven't been already.
+        self.completeNegotiation(datagramsSupported: false)
         self.datagramContext?.finish()
         self.datagramContext = nil
         #endif

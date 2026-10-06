@@ -64,7 +64,8 @@ extension NIOHTTPServer {
         let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
             do {
                 for try await upgradeResult in connectionStream {
-                    connectionGroup.addTask {
+                    let executor = upgradeResult.eventLoop as? any TaskExecutor
+                    connectionGroup.addTask(executorPreference: executor) {
                         await self.dispatchSecureConnection(
                             upgradeResult: upgradeResult,
                             connectionHandler: connectionHandler
@@ -199,7 +200,7 @@ extension NIOHTTPServer {
                             logger: self.logger,
                             context: context
                         ) { request, requestContext, inboundIterator, outbound in
-                            _ = await self.invokeHandler(
+                            await self.invokeHandler(
                                 request: request,
                                 requestContext: requestContext,
                                 inboundIterator: inboundIterator,
@@ -245,10 +246,15 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "Secure Upgrade over \(address)") {
+        let listeningSocketEventLoop = self.eventLoopGroup.any()
+        let listeningSocketExecutor = listeningSocketEventLoop as? any TaskExecutor
+
+        group.addTask(name: "Secure Upgrade over \(address)", executorPreference: listeningSocketExecutor) {
             try await self.withTCPChannel(
                 address: address,
                 addressContinuation: addressContinuation,
+                listeningSocketGroup: listeningSocketEventLoop,
+                acceptedConnectionsGroup: self.eventLoopGroup,
                 childChannelInitializer: { channel in
                     self.setupSecureUpgradeConnection(channel: channel, configuration: configuration)
                 }

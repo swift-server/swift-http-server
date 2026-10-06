@@ -40,6 +40,7 @@ extension NIOHTTPServer {
     ///
     /// User code accesses this state via the corresponding ``RequestContext``
     /// capabilities (``HTTPServerCapability/ConnectionInfo``,
+    /// ``HTTPServerCapability/HTTPVersion``,
     /// ``HTTPServerCapability/PeerCertificate``) when handling individual
     /// requests, and directly when implementing an
     /// ``NIOHTTPServerConnectionHandler``.
