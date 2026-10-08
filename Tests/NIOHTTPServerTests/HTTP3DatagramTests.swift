@@ -113,6 +113,63 @@ struct HTTP3DatagramTests {
         #expect(try await TestHelpers.readDatagram(&secondReader) == nil)
     }
 
+    @Test("A stream opened before SETTINGS can register once datagrams are negotiated")
+    @available(anyAppleOS 27.0, *)
+    func streamOpenedBeforeSettingsRegistersOnNegotiation() async throws {
+        let channel = EmbeddedChannel()
+        let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
+        let manager = HTTP3ConnectionManager(
+            eventLoop: channel.eventLoop,
+            logger: Self.serverLogger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try channel.pipeline.syncOperations.addHandler(manager)
+        let loopBoundManager = NIOLoopBound(manager, eventLoop: channel.eventLoop)
+
+        // Register from the negotiation callback.
+        let datagramStreamFuture = datagramsNegotiatedPromise.futureResult.map {
+            let stream = HTTP3UnreliableDatagramStream(
+                streamID: 0,
+                connectionChannel: channel,
+                maxBufferedDatagrams: 16
+            )
+            loopBoundManager.value.register(datagramStream: stream)
+            return stream
+        }
+
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
+
+        let stream = try await datagramStreamFuture.get()
+        var reader = NIOHTTPServer.DatagramReader(iterator: stream.inbound.makeAsyncIterator())
+        try channel.writeInbound(HTTP3Datagram(streamID: 0, payload: ByteBuffer([1])))
+
+        #expect(try await TestHelpers.readDatagram(&reader) == [1])
+    }
+
+    @Test("A stream opened before SETTINGS can deregister when the connection closes")
+    @available(anyAppleOS 27.0, *)
+    func streamOpenedBeforeSettingsDeregistersOnClose() throws {
+        let channel = EmbeddedChannel()
+        let datagramsNegotiatedPromise = channel.eventLoop.makePromise(of: Void.self)
+        let manager = HTTP3ConnectionManager(
+            eventLoop: channel.eventLoop,
+            logger: Self.serverLogger,
+            datagramsNegotiatedPromise: datagramsNegotiatedPromise
+        )
+        try channel.pipeline.syncOperations.addHandler(manager)
+        let loopBoundManager = NIOLoopBound(manager, eventLoop: channel.eventLoop)
+
+        // Deregister from the negotiation callback.
+        datagramsNegotiatedPromise.futureResult.whenComplete { _ in
+            loopBoundManager.value.deregister(streamID: 0)
+        }
+
+        #expect(try channel.finish().isClean)
+        #expect(throws: HTTP3ConnectionManager.DatagramsNotSupported.self) {
+            try datagramsNegotiatedPromise.futureResult.wait()
+        }
+    }
+
     @Test("The oldest datagram is dropped once the buffer is full")
     @available(anyAppleOS 27.0, *)
     func oldestDatagramIsDroppedOnceTheBufferIsFull() async throws {
