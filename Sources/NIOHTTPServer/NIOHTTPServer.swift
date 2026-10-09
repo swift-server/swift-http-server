@@ -570,6 +570,17 @@ struct HTTPRequestChannelAndCancellationSignal: Sendable {
     var clientClosed: AsyncStream<Void>
 }
 
+/// An HTTP/1.1 connection, whose channel is also the channel carrying its requests, and the context built for it when
+/// its pipeline was set up.
+///
+/// The context travels with the channel because the channel's ``ConnectionEventsHandler`` keeps that same context
+/// current.
+@available(anyAppleOS 27.0, *)
+struct HTTP1ConnectionChannel: Sendable {
+    var requestChannel: HTTPRequestChannelAndCancellationSignal
+    var context: NIOHTTPServer.ConnectionContext
+}
+
 @available(anyAppleOS 27.0, *)
 extension ServerBootstrap {
     /// Makes a `ServerBootstrap` alongside the `ServerQuiescingHelper` used to later shut that listener down gracefully.

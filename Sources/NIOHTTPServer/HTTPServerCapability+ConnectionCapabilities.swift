@@ -25,6 +25,9 @@ extension HTTPServerCapability {
     /// underlying transport cannot report an address.
     public protocol ConnectionInfo: RequestContext {
         /// The peer's address, when known.
+        ///
+        /// This can change during the connection's lifetime: for example, when a client migrates an HTTP/3 connection
+        /// to a new network path.
         var remoteAddress: NIOHTTPServer.SocketAddress? { get }
 
         /// The local address the connection is bound to, when known.
@@ -40,5 +43,18 @@ extension HTTPServerCapability {
     public protocol PeerCertificate: RequestContext {
         /// The peer's validated certificate chain, when available.
         var validatedPeerCertificateChain: X509.ValidatedCertificateChain? { get }
+    }
+
+    /// A request-context capability exposing the events that happen on the connection carrying the request.
+    ///
+    /// Servers whose request context conforms to this capability let request
+    /// handlers react to changes in the connection beneath them, such as the
+    /// peer's address changing when a client migrates an HTTP/3 connection to
+    /// a new network path.
+    public protocol ConnectionEvents: RequestContext {
+        /// The events that happen on the connection carrying the request.
+        ///
+        /// The sequence finishes once the connection closes.
+        var connectionEvents: NIOHTTPServer.ConnectionEvents { get }
     }
 }

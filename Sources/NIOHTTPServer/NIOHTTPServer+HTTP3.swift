@@ -44,8 +44,17 @@ extension NIOHTTPServer {
         #endif
     }
 
+    /// An inbound HTTP/3 connection, and the context built for it when its pipeline was set up.
+    ///
+    /// The context travels with the connection because the connection channel's ``ConnectionEventsHandler`` keeps
+    /// that same context current.
+    struct HTTP3InboundConnection: Sendable {
+        var connection: HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator>
+        var context: ConnectionContext
+    }
+
     func serveHTTP3<Handler: NIOHTTPServerConnectionHandler>(
-        connectionMultiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>,
+        inboundConnections: AsyncStream<HTTP3InboundConnection>,
         connectionHandler: Handler
     ) async {
         // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child task
@@ -53,31 +62,26 @@ extension NIOHTTPServer {
         // instead use a non-throwing discarding task group so that errors in the body must be caught and handled
         // directly.
         await withDiscardingTaskGroup { connectionGroup in
-            for await connection in connectionMultiplexer.inboundConnections {
+            for await inboundConnection in inboundConnections {
                 connectionGroup.addTask {
-                    await self.dispatchHTTP3Connection(connection, handler: connectionHandler)
+                    await self.dispatchHTTP3Connection(inboundConnection, handler: connectionHandler)
                 }
             }
         }
     }
 
-    /// Builds the per-connection ``Connection`` and ``ConnectionContext`` for a HTTP/3 connection channel and
-    /// dispatches the connection to the connection handler. Errors from the connection handler are logged.
+    /// Builds the per-connection ``Connection`` for a HTTP/3 connection and dispatches it, alongside its
+    /// ``ConnectionContext``, to the connection handler. Errors from the connection handler are logged.
     func dispatchHTTP3Connection<Handler: NIOHTTPServerConnectionHandler>(
-        _ http3Connection: HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator>,
+        _ inboundConnection: HTTP3InboundConnection,
         handler: Handler
     ) async {
-        let context = ConnectionContext(
-            httpVersion: .http3,
-            remoteAddress: nil,
-            localAddress: nil,
-            validatedPeerCertificateChain: nil
-        )
+        let context = inboundConnection.context
 
         let connection = Connection(
             server: self,
             context: context,
-            httpProtocol: .http3(connection: http3Connection)
+            httpProtocol: .http3(connection: inboundConnection.connection)
         )
 
         do {
@@ -237,16 +241,16 @@ extension NIOHTTPServer {
                 socket: socket,
                 configuration: configuration,
                 addressContinuation: addressContinuation
-            ) { _, multiplexer in
+            ) { _, inboundConnections in
                 await self.serveHTTP3(
-                    connectionMultiplexer: multiplexer,
+                    inboundConnections: inboundConnections,
                     connectionHandler: connectionHandler
                 )
             }
         }
     }
 
-    /// Provides a configured HTTP/3 channel and the associated connection multiplexer. The underlying socket is closed
+    /// Provides a configured HTTP/3 channel and the stream of connections it accepts. The underlying socket is closed
     /// when either returning or throwing from the `body` closure.
     func withHTTP3Channel(
         address: NIOCore.SocketAddress,
@@ -254,8 +258,7 @@ extension NIOHTTPServer {
         socket: HTTP3ListenerSocket,
         configuration: ListenerConfiguration.HTTP3,
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
-        _ body: (any Channel, HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>) async throws ->
-            Void
+        _ body: (any Channel, AsyncStream<HTTP3InboundConnection>) async throws -> Void
     ) async throws {
         var bootstrap = DatagramBootstrap(group: eventLoop)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -265,17 +268,17 @@ extension NIOHTTPServer {
         }
 
         let quicChannel: any Channel
-        let multiplexer: HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>
+        let inboundConnections: AsyncStream<HTTP3InboundConnection>
 
         do {
-            (quicChannel, multiplexer) = try await bootstrap.bind(to: address) { channel in
+            (quicChannel, inboundConnections) = try await bootstrap.bind(to: address) { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    let multiplexer = try self.setupQUICChannel(
+                    let inboundConnections = try self.setupQUICChannel(
                         channel: channel,
                         configuration: configuration,
                         socket: socket
                     )
-                    return (channel, multiplexer)
+                    return (channel, inboundConnections)
                 }
             }
         } catch {
@@ -318,7 +321,7 @@ extension NIOHTTPServer {
                 addressContinuation.yield(localAddress)
 
                 do {
-                    try await body(quicChannel, multiplexer)
+                    try await body(quicChannel, inboundConnections)
                 } catch {
                     try? await quicChannel.close()
                     throw error
@@ -335,8 +338,7 @@ extension NIOHTTPServer {
         }
     }
 
-    /// Installs the QUIC handler on a bound datagram channel and returns the channel alongside the connection
-    /// multiplexer.
+    /// Installs the QUIC handler on a bound datagram channel and returns the stream of connections it accepts.
     ///
     /// The QUIC connection channels `QUICHandler` creates are children of this datagram channel and run on its
     /// event loop, so a connection's whole lifetime stays on one loop.
@@ -344,8 +346,13 @@ extension NIOHTTPServer {
         channel: any Channel,
         configuration: ListenerConfiguration.HTTP3,
         socket: HTTP3ListenerSocket
-    ) throws -> HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
-        let connectionMultiplexer = HTTP3ServerConnectionMultiplexer<HTTP3Stream, NIOQUIC.QUICStreamCreator>()
+    ) throws -> AsyncStream<HTTP3InboundConnection> {
+        // TODO: Go back to an `HTTP3ServerConnectionMultiplexer` once NIOHTTP3 lets each `HTTP3ServerConnection` carry
+        // per-connection state. Its multiplexer can carry only the connection, which doesn't expose its channel, so this stream
+        // carries the two together instead.
+        let (inboundConnections, inboundConnectionsContinuation) = AsyncStream.makeStream(
+            of: HTTP3InboundConnection.self
+        )
 
         #if UnstableHTTPDatagrams
         let quicConfiguration = QUICConfiguration(
@@ -376,12 +383,12 @@ extension NIOHTTPServer {
             logger: self.logger,
             inboundConnectionInitializer: { connectionChannel, streamCreator in
                 connectionChannel.eventLoop.makeCompletedFuture {
-                    let connection = try self.setupHTTP3Connection(
+                    let inboundConnection = try self.setupHTTP3Connection(
                         http3Configuration: configuration.http3Configuration,
                         connectionChannel: connectionChannel,
                         streamCreator: streamCreator
                     )
-                    connectionMultiplexer.yield(connection: connection)
+                    inboundConnectionsContinuation.yield(inboundConnection)
                 }
             },
             inboundStreamInitializer: { streamChannel in
@@ -391,22 +398,34 @@ extension NIOHTTPServer {
                     }
             },
             noMoreConnections: {
-                connectionMultiplexer.finish()
+                inboundConnectionsContinuation.finish()
             },
             connectionIDGenerator: connectionIDGenerator
         )
 
         try channel.pipeline.syncOperations.addHandler(quicHandler)
 
-        return connectionMultiplexer
+        return inboundConnections
     }
 
-    /// Sets up an `HTTP3ConnectionHandler` and adds it to the connection channel pipeline.
+    /// Sets up an `HTTP3ConnectionHandler` and adds it to the connection channel pipeline, and builds the
+    /// connection's ``ConnectionContext``.
     func setupHTTP3Connection(
         http3Configuration: NIOHTTPServerConfiguration.HTTP3,
         connectionChannel: any Channel,
         streamCreator: NIOQUIC.QUICStreamCreator,
-    ) throws -> HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
+    ) throws -> HTTP3InboundConnection {
+        let context = ConnectionContext(
+            httpVersion: .http3,
+            remoteAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.remoteAddress),
+            localAddress: try? NIOHTTPServer.SocketAddress(connectionChannel.localAddress),
+            validatedPeerCertificateChain: nil
+        )
+
+        // First in the pipeline, so that it sees the events the QUIC stack fires into the connection channel before
+        // any other handler can consume them.
+        try connectionChannel.pipeline.syncOperations.addHandler(ConnectionEventsHandler(connectionContext: context))
+
         let connectionEventLoop = connectionChannel.eventLoop
         let loopBoundHandler =
             NIOLoopBoundBox<HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>?>(nil, eventLoop: connectionEventLoop)
@@ -506,7 +525,7 @@ extension NIOHTTPServer {
         try connectionChannel.pipeline.syncOperations.addHandlers([http3Handler, connectionManager])
         #endif
 
-        return connection
+        return HTTP3InboundConnection(connection: connection, context: context)
     }
 
     /// Configures the pipeline for an inbound HTTP/3 stream channel and wraps it in a `NIOAsyncChannel`.
