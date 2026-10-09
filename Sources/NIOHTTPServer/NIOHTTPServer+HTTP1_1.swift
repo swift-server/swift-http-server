@@ -34,7 +34,7 @@ extension NIOHTTPServer {
     ///
     /// - Throws: If an error occurs while iterating the incoming connection stream.
     func serveInsecureHTTP1_1<Handler: NIOHTTPServerConnectionHandler>(
-        connectionStream: NIOAsyncChannelInboundStream<HTTPRequestChannelAndCancellationSignal>,
+        connectionStream: NIOAsyncChannelInboundStream<HTTP1ConnectionChannel>,
         connectionHandler: Handler
     ) async throws {
         // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
@@ -46,8 +46,9 @@ extension NIOHTTPServer {
                 for try await connectionChannel in connectionStream {
                     group.addTask {
                         await self.dispatchPlaintextHTTP1_1Connection(
-                            requestChannel: connectionChannel.channel,
-                            clientClosed: connectionChannel.clientClosed,
+                            requestChannel: connectionChannel.requestChannel.channel,
+                            clientClosed: connectionChannel.requestChannel.clientClosed,
+                            context: connectionChannel.context,
                             connectionHandler: connectionHandler
                         )
                     }
@@ -65,9 +66,9 @@ extension NIOHTTPServer {
         }
     }
 
-    /// Builds the per-connection ``Connection`` and ``ConnectionContext`` for a
-    /// plaintext HTTP/1.1 child channel and dispatches to the connection
-    /// handler. Errors from the connection handler are logged.
+    /// Builds the per-connection ``Connection`` for a plaintext HTTP/1.1 child
+    /// channel and dispatches it, alongside its ``ConnectionContext``, to the
+    /// connection handler. Errors from the connection handler are logged.
     ///
     /// The dispatcher owns the channel's `executeThenClose` so the
     /// `NIOAsyncWriter` is finished cleanly whether or not the connection
@@ -75,16 +76,11 @@ extension NIOHTTPServer {
     private func dispatchPlaintextHTTP1_1Connection<Handler: NIOHTTPServerConnectionHandler>(
         requestChannel: sending NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>,
         clientClosed: AsyncStream<Void>,
+        context: ConnectionContext,
         connectionHandler: Handler
     ) async {
         do {
             try await requestChannel.executeThenClose { inbound, outbound in
-                let context = ConnectionContext(
-                    httpVersion: .plaintextHTTP1_1,
-                    remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.remoteAddress),
-                    localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.localAddress),
-                    validatedPeerCertificateChain: nil
-                )
                 let connection = Connection(
                     server: self,
                     context: context,
@@ -136,12 +132,21 @@ extension NIOHTTPServer {
         }
     }
 
-    /// Configures the HTTP/1.1 server pipeline and the keep-alive handler.
+    /// Configures the HTTP/1.1 server pipeline and the keep-alive handler, and builds the connection's
+    /// ``ConnectionContext``.
     func setupHTTP1_1Connection(
         channel: any Channel,
         isSecure: Bool
-    ) -> EventLoopFuture<HTTPRequestChannelAndCancellationSignal> {
+    ) -> EventLoopFuture<HTTP1ConnectionChannel> {
         channel.pipeline.configureHTTPServerPipeline().flatMapThrowing {
+            // Over TLS this runs once ALPN has negotiated HTTP/1.1, by which point the handshake has validated any
+            // peer certificate chain.
+            let context = ConnectionContext(
+                httpVersion: isSecure ? .http1_1 : .plaintextHTTP1_1,
+                remoteAddress: try? NIOHTTPServer.SocketAddress(channel.remoteAddress),
+                localAddress: try? NIOHTTPServer.SocketAddress(channel.localAddress),
+                validatedPeerCertificateChain: isSecure ? channel.extractPeerCertificateChain(logger: self.logger) : nil
+            )
 
             try channel.pipeline.syncOperations.addHandler(HTTP1ToHTTPServerCodec(secure: isSecure))
             try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
@@ -158,15 +163,20 @@ extension NIOHTTPServer {
                 ClientClosedMonitor(clientClosed: clientClosedContinuation)
             )
 
-            return HTTPRequestChannelAndCancellationSignal(
-                channel: try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
-                    wrappingChannelSynchronously: channel,
-                    configuration: .init(
-                        backPressureStrategy: .init(self.configuration.backpressureStrategy),
-                        isOutboundHalfClosureEnabled: true
-                    )
+            try channel.pipeline.syncOperations.addHandler(ConnectionEventsHandler(connectionContext: context))
+
+            return HTTP1ConnectionChannel(
+                requestChannel: HTTPRequestChannelAndCancellationSignal(
+                    channel: try NIOAsyncChannel<HTTPRequestPart, HTTPResponsePart>(
+                        wrappingChannelSynchronously: channel,
+                        configuration: .init(
+                            backPressureStrategy: .init(self.configuration.backpressureStrategy),
+                            isOutboundHalfClosureEnabled: true
+                        )
+                    ),
+                    clientClosed: clientClosed
                 ),
-                clientClosed: clientClosed
+                context: context
             )
         }
     }

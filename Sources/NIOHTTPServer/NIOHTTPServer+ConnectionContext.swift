@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOSSL
 public import X509
@@ -36,11 +37,12 @@ extension NIOHTTPServer {
     ///
     /// Carries connection-scoped data such as the negotiated HTTP version, the
     /// peer / local addresses, and the peer's validated certificate chain (when
-    /// applicable).
+    /// applicable), along with the events that happen on the connection.
     ///
     /// User code accesses this state via the corresponding ``RequestContext``
     /// capabilities (``HTTPServerCapability/ConnectionInfo``,
-    /// ``HTTPServerCapability/PeerCertificate``) when handling individual
+    /// ``HTTPServerCapability/PeerCertificate``,
+    /// ``HTTPServerCapability/ConnectionEvents``) when handling individual
     /// requests, and directly when implementing an
     /// ``NIOHTTPServerConnectionHandler``.
     public struct ConnectionContext: Sendable {
@@ -48,7 +50,12 @@ extension NIOHTTPServer {
         public let httpVersion: HTTPVersion
 
         /// The peer's address, when known.
-        public let remoteAddress: NIOHTTPServer.SocketAddress?
+        ///
+        /// Over HTTP/3 this can change during the connection's lifetime, when the client migrates the connection to a
+        /// new network path. ``connectionEvents`` reports each change.
+        public var remoteAddress: NIOHTTPServer.SocketAddress? {
+            self.currentRemoteAddress.withLockedValue { $0 }
+        }
 
         /// The local address the connection is bound to, when known.
         public let localAddress: NIOHTTPServer.SocketAddress?
@@ -58,6 +65,15 @@ extension NIOHTTPServer {
         /// derived validated chain.
         public var validatedPeerCertificateChain: X509.ValidatedCertificateChain?
 
+        /// The events that happen on this connection, such as the peer's address changing.
+        ///
+        /// The sequence finishes once the connection closes. See ``ConnectionEvents``.
+        public let connectionEvents: ConnectionEvents
+
+        /// Shared by every copy of this context, so that the connection's ``ConnectionEventsHandler`` keeps them all
+        /// current.
+        private let currentRemoteAddress: NIOLockedValueBox<NIOHTTPServer.SocketAddress?>
+
         init(
             httpVersion: HTTPVersion,
             remoteAddress: NIOHTTPServer.SocketAddress? = nil,
@@ -65,9 +81,25 @@ extension NIOHTTPServer {
             validatedPeerCertificateChain: X509.ValidatedCertificateChain? = nil
         ) {
             self.httpVersion = httpVersion
-            self.remoteAddress = remoteAddress
+            self.currentRemoteAddress = NIOLockedValueBox(remoteAddress)
             self.localAddress = localAddress
             self.validatedPeerCertificateChain = validatedPeerCertificateChain
+            self.connectionEvents = ConnectionEvents(broadcaster: ConnectionEventBroadcaster())
+        }
+
+        /// Applies `event` to this context, then delivers it to every iterator of ``connectionEvents``.
+        func apply(_ event: ConnectionEvent) {
+            switch event {
+            case .remoteAddressChanged(let address):
+                self.currentRemoteAddress.withLockedValue { $0 = address }
+            }
+
+            self.connectionEvents.broadcaster.yield(event)
+        }
+
+        /// Ends every iterator of ``connectionEvents``, now that the connection has closed.
+        func finishConnectionEvents() {
+            self.connectionEvents.broadcaster.finish()
         }
     }
 }

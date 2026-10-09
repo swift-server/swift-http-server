@@ -39,7 +39,10 @@ extension NIOHTTPServer {
         }
 
         let channel: NegotiatedChannel
-        let validatedPeerCertificateChain: X509.ValidatedCertificateChain?
+
+        /// The context built for the connection when its pipeline was set up, which the connection channel's
+        /// ``ConnectionEventsHandler`` keeps current.
+        let context: ConnectionContext
     }
 
     /// Serves incoming connections. Each connection undergoes ALPN negotiation to determine whether to use HTTP/1.1 or
@@ -96,6 +99,8 @@ extension NIOHTTPServer {
             return
         }
 
+        let context = result.context
+
         switch result.channel {
         case .http1_1(let requestChannel):
             // The dispatcher owns the channel's `executeThenClose` so the
@@ -103,12 +108,6 @@ extension NIOHTTPServer {
             // connection handler called `handleRequests`.
             do {
                 try await requestChannel.channel.executeThenClose { inbound, outbound in
-                    let context = ConnectionContext(
-                        httpVersion: .http1_1,
-                        remoteAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.channel.remoteAddress),
-                        localAddress: try? NIOHTTPServer.SocketAddress(requestChannel.channel.channel.localAddress),
-                        validatedPeerCertificateChain: result.validatedPeerCertificateChain
-                    )
                     let connection = Connection(
                         server: self,
                         context: context,
@@ -136,10 +135,6 @@ extension NIOHTTPServer {
             }
 
         case .http2(let connectionChannel, let multiplexer):
-            let context = NIOHTTPServer.makeHTTP2ConnectionContext(
-                connectionChannel: connectionChannel,
-                validatedPeerCertificateChain: result.validatedPeerCertificateChain
-            )
             let connection = Connection(
                 server: self,
                 context: context,
@@ -258,11 +253,16 @@ extension NIOHTTPServer {
         }
     }
 
+    /// Configures the HTTP/2 server pipeline, and builds the connection's ``ConnectionContext``.
     private func setupHTTP2Connection(
         channel: any Channel,
         configuration: NIOHTTPServerConfiguration.HTTP2
     ) -> EventLoopFuture<
-        (any Channel, NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>)
+        (
+            any Channel,
+            NIOHTTP2Handler.AsyncStreamMultiplexer<HTTPRequestChannelAndCancellationSignal>,
+            ConnectionContext
+        )
     > {
         channel.eventLoop.makeCompletedFuture {
             try channel.pipeline.syncOperations.configureAsyncHTTP2Pipeline(
@@ -311,8 +311,16 @@ extension NIOHTTPServer {
                 }
             )
         }
-        .flatMap { multiplexer in
-            channel.eventLoop.makeCompletedFuture(.success((channel, multiplexer)))
+        .flatMapThrowing { multiplexer in
+            // This runs once ALPN has negotiated HTTP/2, by which point the handshake has validated any peer
+            // certificate chain.
+            let context = NIOHTTPServer.makeHTTP2ConnectionContext(
+                connectionChannel: channel,
+                validatedPeerCertificateChain: channel.extractPeerCertificateChain(logger: self.logger)
+            )
+            try channel.pipeline.syncOperations.addHandler(ConnectionEventsHandler(connectionContext: context))
+
+            return (channel, multiplexer, context)
         }
     }
 
@@ -343,11 +351,10 @@ extension NIOHTTPServer {
                 return self.setupHTTP1_1Connection(
                     channel: channel,
                     isSecure: true
-                ).map { requestChannel in
+                ).map { connectionChannel in
                     NegotiationResult(
-                        channel: .http1_1(requestChannel),
-                        validatedPeerCertificateChain: requestChannel.channel.channel
-                            .extractPeerCertificateChain(logger: self.logger)
+                        channel: .http1_1(connectionChannel.requestChannel),
+                        context: connectionChannel.context
                     )
                 }
 
@@ -355,11 +362,8 @@ extension NIOHTTPServer {
                 return self.setupHTTP2Connection(
                     channel: channel,
                     configuration: http2Config
-                ).map { (channel, streamMultiplexer) in
-                    NegotiationResult(
-                        channel: .http2(channel, streamMultiplexer),
-                        validatedPeerCertificateChain: channel.extractPeerCertificateChain(logger: self.logger)
-                    )
+                ).map { (channel, streamMultiplexer, context) in
+                    NegotiationResult(channel: .http2(channel, streamMultiplexer), context: context)
                 }
 
             case (.negotiated, _), (.fallback, _):
