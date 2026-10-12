@@ -109,6 +109,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
         .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0", traits: []),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
+        .package(url: "https://github.com/apple/swift-system.git", from: "1.4.0"),
     ],
     targets: [
         .target(
@@ -177,6 +178,7 @@ let package = Package(
                 ),
                 .product(name: "NIOHTTP3", package: "swift-nio-http3", condition: .when(traits: ["HTTP3"])),
                 .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
+                .product(name: "SystemPackage", package: "swift-system"),
             ],
             swiftSettings: extraSettings
         ),
@@ -184,6 +186,7 @@ let package = Package(
             name: "NIOHTTPServerTests",
             dependencies: [
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
                 .product(name: "ServiceLifecycleTestKit", package: "swift-service-lifecycle"),
                 "NIOHTTPServer",

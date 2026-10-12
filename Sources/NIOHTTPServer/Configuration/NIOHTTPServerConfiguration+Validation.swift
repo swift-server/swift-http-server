@@ -30,6 +30,21 @@ extension NIOHTTPServerConfiguration {
         self.sslContext = try self.makeSSLContext()
     }
 
+    /// Validates that every bind target can be served over the supported HTTP versions.
+    ///
+    /// HTTP/3 runs over QUIC/UDP, so it cannot be served over a unix domain socket.
+    func validateBindTargets() throws {
+        #if HTTP3
+        guard self.supportedHTTPVersions.http3ConfigIfSupported != nil else { return }
+
+        for bindTarget in self.bindTargets {
+            if case .unixDomainSocket = bindTarget.backing {
+                throw NIOHTTPServerConfigurationError.unixDomainSocketNotSupportedOverHTTP3
+            }
+        }
+        #endif
+    }
+
     /// Creates the `NIOSSLContext` used by the secure upgrade channel(s), or `nil` if the configuration does not
     /// specify a secure upgrade channel.
     private func makeSSLContext() throws -> NIOSSLContext? {

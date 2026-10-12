@@ -14,10 +14,11 @@
 
 import NIOCore
 import NIOHTTP1
-import NIOHTTPServer
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1
 import NIOPosix
+
+@testable import NIOHTTPServer
 
 @available(anyAppleOS 27.0, *)
 extension Channel {
@@ -60,11 +61,20 @@ extension ClientBootstrap {
         at serverAddress: NIOHTTPServer.SocketAddress,
         additionalConnectionChannelInitializer: (@Sendable (any Channel) throws -> Void)? = nil
     ) async throws -> TestClientConnection {
-        .init(
+        let target: NIOCore.SocketAddress
+
+        switch serverAddress.base {
+        case .ipv4(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .ipv6(let address):
+            target = try NIOCore.SocketAddress(ipAddress: address.host, port: address.port)
+        case .unixDomainSocket(let path):
+            target = try NIOCore.SocketAddress(unixDomainSocketPath: path)
+        }
+
+        return .init(
             connectionProtocol: .http1(
-                connectionChannel: try await self.connect(
-                    to: try .init(ipAddress: serverAddress.host, port: serverAddress.port)
-                ) { channel in
+                connectionChannel: try await self.connect(to: target) { channel in
                     channel.configureTestHTTP1ClientPipeline(
                         additionalConnectionChannelInitializer: additionalConnectionChannelInitializer
                     )

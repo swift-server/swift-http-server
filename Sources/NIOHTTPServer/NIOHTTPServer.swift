@@ -618,6 +618,8 @@ extension NIOHTTPServer {
     ///
     /// - Note: The bind address is yielded to the provided `addressContinuation` immediately after the TCP socket has
     ///   been bound.
+    /// - Note: For a unix domain socket address, closing the socket also removes the socket file: `ServerSocket`
+    ///   cleans the path up on close, so the path is free for the next bind without this server unlinking it.
     func withTCPChannel<Child: Sendable>(
         address: NIOCore.SocketAddress,
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
