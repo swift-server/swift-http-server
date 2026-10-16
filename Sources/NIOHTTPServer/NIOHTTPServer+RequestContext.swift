@@ -23,6 +23,7 @@ extension NIOHTTPServer {
     /// Conforms to:
     /// - ``HTTPServerCapability/ConnectionInfo`` — peer / local addresses.
     /// - ``HTTPServerCapability/PeerCertificate`` — mTLS-validated peer chain.
+    /// - ``HTTPServerCapability/ConnectionEvents`` — events on the connection carrying the request.
     ///
     /// Generic library code can constrain on these capabilities to access
     /// per-request data without depending on ``NIOHTTPServer`` directly.
@@ -67,8 +68,16 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.PeerCertificate {
     /// Returns `nil` when mTLS is not configured, or when the configured custom verification callback did not return
     /// the derived validated chain.
     public var validatedPeerCertificateChain: X509.ValidatedCertificateChain? {
-        get {
-            self.connectionContext.validatedPeerCertificateChain
-        }
+        self.connectionContext.validatedPeerCertificateChain
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionEvents {
+    /// The events that happen on the connection carrying this request, such as the peer's address changing.
+    ///
+    /// The sequence finishes once the connection closes. See ``NIOHTTPServer/ConnectionEvents``.
+    public var connectionEvents: NIOHTTPServer.ConnectionEvents {
+        self.connectionContext.connectionEvents
     }
 }
