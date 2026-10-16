@@ -70,7 +70,7 @@ extension NIOHTTPServer {
         public consuming func sendAndFinish<Buffer>(
             _ response: HTTPResponse,
             buffer: inout Buffer,
-            trailer: HTTPFields?
+            trailer: HTTPFields? = nil
         ) async throws where Buffer: RangeReplaceableContainer, Buffer.Element == UInt8, Buffer: ~Copyable {
             precondition(response.status.kind != .informational)
             if buffer.isEmpty {
