@@ -119,17 +119,7 @@ struct NIOHTTPServerTests {
     }
 
     @available(anyAppleOS 27.0, *)
-    #if HTTP3
-    @Test(
-        "Request context reports the HTTP version",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2, .http3]
-    )
-    #else
-    @Test(
-        "Request context reports the HTTP version",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
-    #endif
+    @Test("Request context reports the HTTP version", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testRequestContextHTTPVersion(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
