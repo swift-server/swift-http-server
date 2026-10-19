@@ -135,11 +135,13 @@ extension QUICConfiguration {
         caPath: String?,
         maxDatagramFrameSize: Int = 65535
     ) -> QUICConfiguration {
-        QUICConfiguration.client(
+        var configuration = QUICConfiguration.forClient(
             verificationConfiguration: .x509Certificates(trustRootsFilePath: caPath),
-            applicationProtocols: [NIOHTTPServer.HTTPVersion.http3.alpnIdentifier],
-            maxDatagramFrameSize: maxDatagramFrameSize
+            applicationProtocols: [NIOHTTPServer.HTTPVersion.http3.alpnIdentifier]
         )
+        configuration.maxDatagramFrameSize = maxDatagramFrameSize
+
+        return configuration
     }
 }
 #endif

@@ -207,13 +207,11 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 }
 
 @available(anyAppleOS 27.0, *)
-extension NIOQUIC.QUICConfiguration.QLogConfiguration {
+extension NIOQUIC.QLogConfiguration {
     fileprivate init(_ configuration: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.QLogConfiguration) {
-        self.init(
-            path: configuration.path,
-            topic: configuration.topic,
-            description: configuration.description
-        )
+        self.init(path: configuration.path)
+        self.topic = configuration.topic
+        self.description = configuration.description
     }
 }
 
@@ -268,25 +266,25 @@ extension NIOQUIC.QUICConfiguration {
         _ config: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
         authenticationConfiguration: NIOQUIC.AuthenticationConfiguration
     ) {
-        self = .server(
+        self = .forServer(
             // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. See
             // https://github.com/apple/swift-nio-quic/issues/4.
             serverName: config.serverName,
             authenticationConfiguration: authenticationConfiguration,
-            keyExchangeGroup: .init(config.keyExchangeGroup),
-            applicationProtocols: ["h3"],
-            maxIdleTimeout: config.maxIdleTimeout,
-            initialMaxData: config.initialMaxData,
-            initialMaxStreamDataBidiLocal: config.initialMaxStreamDataBidirectionalLocal,
-            initialMaxStreamDataBidiRemote: config.initialMaxStreamDataBidirectionalRemote,
-            initialMaxStreamDataUni: config.initialMaxStreamDataUnidirectional,
-            initialMaxStreamsBidi: config.initialMaxStreamsBidirectional,
-            initialMaxStreamsUni: config.initialMaxStreamsUnidirectional,
-            keepAliveInterval: config.keepAliveInterval,
-            sendRetry: config.sendRetry,
-            keyLogPath: config.keyLogPath,
-            qLogConfiguration: config.qLogConfiguration.map { .init($0) }
+            applicationProtocols: ["h3"]
         )
+        self.keyExchangeGroup = .init(config.keyExchangeGroup)
+        self.maxIdleTimeout = config.maxIdleTimeout
+        self.initialMaxData = config.initialMaxData
+        self.initialMaxStreamDataBidiLocal = config.initialMaxStreamDataBidirectionalLocal
+        self.initialMaxStreamDataBidiRemote = config.initialMaxStreamDataBidirectionalRemote
+        self.initialMaxStreamDataUni = config.initialMaxStreamDataUnidirectional
+        self.initialMaxStreamsBidi = config.initialMaxStreamsBidirectional
+        self.initialMaxStreamsUni = config.initialMaxStreamsUnidirectional
+        self.keepAliveInterval = config.keepAliveInterval
+        self.sendRetry = config.sendRetry
+        self.keyLogPath = config.keyLogPath
+        self.qLogConfiguration = config.qLogConfiguration.map { .init($0) }
     }
 
     #if UnstableHTTPDatagrams
