@@ -41,6 +41,8 @@ struct NIOHTTPServerSwiftConfigurationTests {
             case .hostAndPort(let host, let port):
                 #expect(host == "localhost")
                 #expect(port == 8080)
+            case .unixDomainSocket(let path):
+                Issue.record("Expected first bind target to be host/port, got unix domain socket path: \(path)")
             }
         }
 
@@ -70,6 +72,49 @@ struct NIOHTTPServerSwiftConfigurationTests {
             }
 
             #expect("Missing required config value for key: port." == "\(configError)")
+        }
+
+        @Test("Valid unix domain socket path")
+        @available(anyAppleOS 27.0, *)
+        func testValidUnixDomainSocketConfig() throws {
+            let provider = InMemoryProvider(values: ["socketPath": "/tmp/test.sock"])
+
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            let bindTarget = try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
+
+            switch bindTarget.backing {
+            case .unixDomainSocket(let path):
+                #expect(path == "/tmp/test.sock")
+            case .hostAndPort(let host, let port):
+                Issue.record("Expected a unix domain socket bind target, got host \(host) and port \(port) instead.")
+            }
+        }
+
+        @Test("Init fails when both socketPath and host/port are provided")
+        @available(anyAppleOS 27.0, *)
+        func testSocketPathAndHostPortThrows() throws {
+            let provider = InMemoryProvider(values: ["socketPath": "/tmp/test.sock", "host": "localhost", "port": 8080])
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.hostPortAndSocketPathProvided) {
+                try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
+            }
+        }
+
+        @Test("Init fails when socketPath is provided with a port that is not an integer")
+        @available(anyAppleOS 27.0, *)
+        func testSocketPathAndMalformedPortThrows() throws {
+            // A malformed port must still conflict with `socketPath`, rather than being read as absent.
+            let provider = InMemoryProvider(values: ["socketPath": "/tmp/test.sock", "port": "http"])
+            let config = ConfigReader(provider: provider)
+            let snapshot = config.snapshot()
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.hostPortAndSocketPathProvided) {
+                try NIOHTTPServerConfiguration.BindTarget(config: snapshot)
+            }
         }
     }
 
@@ -137,6 +182,26 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 values: [
                     "bindTarget.host": "127.0.0.1",
                     "bindTarget.port": 8080,
+                    "bindTargets.hosts": .init(.stringArray(["127.0.0.1"]), isSecret: false),
+                    "bindTargets.ports": .init(.intArray([8443]), isSecret: false),
+                    "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+                    "transportSecurity.mode": "plaintext",
+                ]
+            )
+            let config = ConfigReader(provider: provider)
+
+            #expect(throws: NIOHTTPServerSwiftConfigurationError.singularAndPluralBindTargetsProvided) {
+                _ = try NIOHTTPServerConfiguration(config: config)
+            }
+        }
+
+        @Test("Providing a singular socket path and plural bind targets throws an error")
+        @available(anyAppleOS 27.0, *)
+        func testSingularSocketPathAndPluralThrows() throws {
+            // A socket path alone, without a host or port, must still count as a singular bind target.
+            let provider = InMemoryProvider(
+                values: [
+                    "bindTarget.socketPath": "/tmp/test.sock",
                     "bindTargets.hosts": .init(.stringArray(["127.0.0.1"]), isSecret: false),
                     "bindTargets.ports": .init(.intArray([8443]), isSecret: false),
                     "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),

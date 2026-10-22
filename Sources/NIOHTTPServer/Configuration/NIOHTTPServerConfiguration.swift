@@ -14,6 +14,7 @@
 
 import NIOCore
 import NIOSSL
+public import SystemPackage
 public import X509
 
 #if HTTP3
@@ -28,11 +29,12 @@ import NIOQUIC
 public struct NIOHTTPServerConfiguration: Sendable {
     /// Specifies where the server should bind and listen for incoming connections.
     ///
-    /// Currently supports binding to a specific host and port combination.
+    /// Supports binding to a host and port combination, or to a unix domain socket path.
     /// Additional binding targets may be added in the future.
     public struct BindTarget: Sendable {
         enum Backing {
             case hostAndPort(host: String, port: Int)
+            case unixDomainSocket(path: FilePath)
         }
 
         let backing: Backing
@@ -50,6 +52,19 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// ```
         public static func hostAndPort(host: String, port: Int) -> Self {
             Self(backing: .hostAndPort(host: host, port: port))
+        }
+
+        /// Creates a bind target for a unix domain socket.
+        ///
+        /// - Parameter path: The file system path to bind the unix domain socket to (e.g., "/tmp/server.sock")
+        /// - Returns: A configured `BindTarget` instance
+        ///
+        /// ## Example
+        /// ```swift
+        /// let target = BindTarget.unixDomainSocket(path: "/tmp/server.sock")
+        /// ```
+        public static func unixDomainSocket(path: FilePath) -> Self {
+            Self(backing: .unixDomainSocket(path: path))
         }
     }
 
@@ -290,11 +305,18 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Network binding configuration specifying all addresses where the server should listen.
     ///
-    /// - Precondition: Must not be empty.
+    /// - Precondition: Must not be empty, and must not contain a unix domain socket target when
+    ///   ``supportedHTTPVersions`` contains `.http3`.
     public var bindTargets: [BindTarget] {
         didSet {
             if self.bindTargets.isEmpty {
                 preconditionFailure(NIOHTTPServerConfigurationError.noBindTargetsSpecified.description)
+            }
+
+            do {
+                try self.validateBindTargets()
+            } catch {
+                preconditionFailure("\(error)")
             }
         }
     }
@@ -325,6 +347,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
     ///     on disk. Other credential sources are not supported.
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
+    ///   - `.http3` cannot be added while ``bindTargets`` contains a unix domain socket target.
     public var supportedHTTPVersions: Set<HTTPVersion> {
         didSet {
             if self.supportedHTTPVersions.isEmpty {
@@ -332,6 +355,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
             }
 
             do {
+                try self.validateBindTargets()
                 try self.validateTransportConfiguration()
             } catch {
                 preconditionFailure("\(error)")
@@ -412,6 +436,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
         self.maxConnections = nil
         self.connectionTimeouts = .defaults
         self.gracefulShutdown = .defaults
+
+        try self.validateBindTargets()
 
         // Validate the compatibility of `supportedHTTPVersions` and `transportSecurity`.
         try self.validateTransportConfiguration()

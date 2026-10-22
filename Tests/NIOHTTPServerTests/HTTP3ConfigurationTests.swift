@@ -77,5 +77,53 @@ struct HTTP3ConfigurationTests {
             }
         }
     }
+
+    @Test("Unix domain socket bind target is rejected for HTTP/3")
+    @available(anyAppleOS 27.0, *)
+    func unixDomainSocketRejectedForHTTP3() {
+        #expect(throws: NIOHTTPServerConfigurationError.unixDomainSocketNotSupportedOverHTTP3) {
+            _ = try NIOHTTPServerConfiguration(
+                bindTarget: .unixDomainSocket(path: "/tmp/http3.sock"),
+                supportedHTTPVersions: [.http3(config: .defaults)],
+                transportSecurity: .tls(
+                    credentials: .x509(.pemFile(certificateChainPath: "/cert.pem", privateKeyPath: "/key.pem"))
+                )
+            )
+        }
+    }
+
+    // The setters below must enforce the same rule as `init`. Each test first builds the starting configuration
+    // outside the exit test, so the exit test can only pass because of the setter, not because the starting
+    // configuration was invalid.
+
+    @Test("Adding HTTP/3 to a configuration with a unix domain socket bind target is a precondition failure")
+    @available(anyAppleOS 27.0, *)
+    func addingHTTP3ToUnixDomainSocketConfigurationFails() async throws {
+        _ = try TestHelpers.makeTLSServerConfiguration(
+            supportedHTTPVersions: [.http1_1, .http2],
+            bindTargetsOverride: [.unixDomainSocket(path: "/tmp/http3-setter.sock")]
+        )
+
+        await #expect(processExitsWith: .failure) {
+            var (configuration, _) = try TestHelpers.makeTLSServerConfiguration(
+                supportedHTTPVersions: [.http1_1, .http2],
+                bindTargetsOverride: [.unixDomainSocket(path: "/tmp/http3-setter.sock")]
+            )
+            configuration.supportedHTTPVersions.insert(.http3(config: .defaults))
+        }
+    }
+
+    @Test("Adding a unix domain socket bind target to an HTTP/3 configuration is a precondition failure")
+    @available(anyAppleOS 27.0, *)
+    func addingUnixDomainSocketToHTTP3ConfigurationFails() async throws {
+        _ = try TestHelpers.makeTLSServerConfiguration(supportedHTTPVersions: [.http3(config: .defaults)])
+
+        await #expect(processExitsWith: .failure) {
+            var (configuration, _) = try TestHelpers.makeTLSServerConfiguration(
+                supportedHTTPVersions: [.http3(config: .defaults)]
+            )
+            configuration.bindTargets = [.unixDomainSocket(path: "/tmp/http3-setter.sock")]
+        }
+    }
 }
 #endif  // HTTP3
