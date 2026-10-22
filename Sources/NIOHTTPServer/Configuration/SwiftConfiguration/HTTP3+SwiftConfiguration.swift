@@ -192,6 +192,8 @@ extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
     ///    at any one time.
     /// - `maximumFieldSectionSize` (int, optional, default: nil): The maximum size of a field section. When omitted,
     ///    there is no field section size limit.
+    /// - `enableConnectProtocol` (bool, optional, default: false): Whether the server is willing to receive Extended
+    ///   CONNECT requests.
     ///
     /// - Note: Negative `qpackMaximumTableCapacity` and `qpackBlockedStreams` values are clamped to 0. A negative
     ///   `maximumFieldSectionSize` value is resolved to `nil`.
@@ -201,12 +203,18 @@ extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
-            qpackMaximumTableCapacity: UInt64(clamping: config.int(forKey: "qpackMaximumTableCapacity", default: 0)),
-            qpackBlockedStreams: UInt64(clamping: config.int(forKey: "qpackBlockedStreams", default: 0)),
-            maximumFieldSectionSize: config.int(forKey: "maximumFieldSectionSize").flatMap { value in
+            qpackMaximumTableCapacity: config.int(forKey: "qpackMaximumTableCapacity").map { UInt64(clamping: $0) }
+                ?? Self.defaultQPACKMaximumTableCapacity,
+            qpackBlockedStreams: config.int(forKey: "qpackBlockedStreams").map { UInt64(clamping: $0) }
+                ?? Self.defaultQPACKBlockedStreams,
+            maximumFieldSectionSize: config.int(forKey: "maximumFieldSectionSize").map { value in
                 if value < 0 { return nil }
                 return UInt64(value)
-            }
+            } ?? Self.defaultMaximumFieldSectionSize,
+            enableConnectProtocol: config.bool(
+                forKey: "enableConnectProtocol",
+                default: Self.defaultEnableConnectProtocol
+            )
         )
     }
 }

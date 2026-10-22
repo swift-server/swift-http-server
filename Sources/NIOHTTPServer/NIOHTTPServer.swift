@@ -495,17 +495,20 @@ extension ChannelPipeline.SynchronousOperations {
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTP2Handler.Configuration {
-    init(httpServerHTTP2Configuration http2Config: NIOHTTPServerConfiguration.HTTP2) {
-        let clampedTargetWindowSize = Self.clampTargetWindowSize(http2Config.targetWindowSize)
-        let clampedMaxFrameSize = Self.clampMaxFrameSize(http2Config.maxFrameSize)
+    init(_ configuration: NIOHTTPServerConfiguration.HTTP2) {
+        let clampedTargetWindowSize = Self.clampTargetWindowSize(configuration.targetWindowSize)
+        let clampedMaxFrameSize = Self.clampMaxFrameSize(configuration.maxFrameSize)
 
         var http2HandlerConnectionConfiguration = NIOHTTP2Handler.ConnectionConfiguration()
-        let http2HandlerHTTP2Settings = HTTP2Settings([
+        var http2HandlerHTTP2Settings = HTTP2Settings([
             HTTP2Setting(parameter: .initialWindowSize, value: clampedTargetWindowSize),
             HTTP2Setting(parameter: .maxFrameSize, value: clampedMaxFrameSize),
-            HTTP2Setting(parameter: .maxConcurrentStreams, value: http2Config.maxConcurrentStreams),
+            HTTP2Setting(parameter: .maxConcurrentStreams, value: configuration.maxConcurrentStreams),
             HTTP2Setting(parameter: .maxHeaderListSize, value: HPACKDecoder.defaultMaxHeaderListSize),
         ])
+        if configuration.enableConnectProtocol {
+            http2HandlerHTTP2Settings.append(HTTP2Setting(parameter: .enableConnectProtocol, value: 1))
+        }
 
         http2HandlerConnectionConfiguration.initialSettings = http2HandlerHTTP2Settings
 

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #if HTTP3
+import HTTP3
 import NIOQUIC
 import Testing
 
@@ -52,6 +53,19 @@ struct HTTP3ConfigurationTests {
         #expect(config.connectionSettings.maximumFieldSectionSize == 8192)
         #expect(config.quicConfiguration.keepAliveInterval == .seconds(10))
         #expect(config.quicConfiguration.sendRetry == true)
+    }
+
+    @Suite
+    struct ConnectionSettingsTests {
+        @Test("SETTINGS_ENABLE_CONNECT_PROTOCOL is only advertised when enabled", arguments: [false, true])
+        @available(anyAppleOS 27.0, *)
+        func enableConnectProtocolSetting(enableConnectProtocol: Bool) {
+            var connectionSettings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings.defaults
+            connectionSettings.enableConnectProtocol = enableConnectProtocol
+
+            let settings = HTTP3Settings(connectionSettings)
+            #expect(settings.enableConnectProtocol == enableConnectProtocol)
+        }
     }
 
     @Suite

@@ -50,10 +50,12 @@ its respective key prefix.
 | `http.http2`                        | `maxFrameSize`                            | `int` (bytes)     | Optional                                                                                                                      | 2^14           |
 |                                     | `targetWindowSize`                        | `int` (bytes)     | Optional                                                                                                                      | 2^16-1         |
 |                                     | `maxConcurrentStreams`                    | `int`             | Optional                                                                                                                      | 100            |
+|                                     | `enableConnectProtocol`                   | `bool`            | Optional                                                                                                                      | false          |
 | `http.http3`                        | `preferHuffmanEncoding`                   | `bool`            | Optional                                                                                                                      | true           |
 | `http.http3.connectionSettings`     | `qpackMaximumTableCapacity`               | `int`             | Optional                                                                                                                      | 0              |
 |                                     | `qpackBlockedStreams`                     | `int`             | Optional                                                                                                                      | 0              |
 |                                     | `maximumFieldSectionSize`                 | `int`             | Optional                                                                                                                      | nil (no limit) |
+|                                     | `enableConnectProtocol`                   | `bool`            | Optional                                                                                                                      | false          |
 | `http.http3.quicConfiguration`      | `keyExchangeGroup`                        | `string`          | Optional (permitted values: `"secp256"`, `"secp384"`, `"x25519"`, `"x25519MLKEM768"`)                                         | x25519         |
 |                                     | `maxIdleTimeout`                          | `int` (seconds)   | Optional                                                                                                                      | 30             |
 |                                     | `initialMaxData`                          | `int` (bytes)     | Optional                                                                                                                      | 2^20 (1 MiB)   |
@@ -139,7 +141,8 @@ key were omitted.
         "http2": {
             "maxFrameSize": 16384,          // default: 2^14 (16384)
             "targetWindowSize": 65535,      // default: 2^16 - 1 (65535)
-            "maxConcurrentStreams": 100     // default: 100
+            "maxConcurrentStreams": 100,    // default: 100
+            "enableConnectProtocol": false  // default: false
         }
     },
     "transportSecurity": {

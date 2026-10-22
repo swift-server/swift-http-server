@@ -274,7 +274,7 @@ extension NIOHTTPServer {
                         .map { TimeAmount($0) },
                     keepalive: nil
                 ),
-                http2HandlerConfiguration: .init(httpServerHTTP2Configuration: configuration),
+                http2HandlerConfiguration: .init(configuration),
                 streamInitializer: { http2StreamChannel in
                     http2StreamChannel.eventLoop.makeCompletedFuture {
                         try http2StreamChannel.pipeline.syncOperations

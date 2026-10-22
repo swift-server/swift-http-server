@@ -137,19 +137,28 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// The number of concurrent streams on the HTTP/2 connection.
         public var maxConcurrentStreams: Int
 
+        /// Whether the server is willing to receive Extended CONNECT requests.
+        ///
+        /// - SeeAlso: https://www.rfc-editor.org/rfc/rfc8441#section-3. Corresponds to
+        ///   `SETTINGS_ENABLE_CONNECT_PROTOCOL`.
+        public var enableConnectProtocol: Bool
+
         /// - Parameters:
         ///   - maxFrameSize: The maximum frame size to be used in connections.
         ///   - targetWindowSize: The target window size for connections. This will also be set as the initial window
         ///     size.
         ///   - maxConcurrentStreams: The maximum number of concurrent streams permitted on connections.
+        ///   - enableConnectProtocol: Whether the server is willing to receive Extended CONNECT requests.
         public init(
             maxFrameSize: Int = Self.defaultMaxFrameSize,
             targetWindowSize: Int = Self.defaultTargetWindowSize,
-            maxConcurrentStreams: Int = Self.defaultMaxConcurrentStreams
+            maxConcurrentStreams: Int = Self.defaultMaxConcurrentStreams,
+            enableConnectProtocol: Bool = Self.defaultEnableConnectProtocol
         ) {
             self.maxFrameSize = maxFrameSize
             self.targetWindowSize = targetWindowSize
             self.maxConcurrentStreams = maxConcurrentStreams
+            self.enableConnectProtocol = enableConnectProtocol
         }
 
         @inlinable
@@ -161,13 +170,22 @@ public struct NIOHTTPServerConfiguration: Sendable {
         @inlinable
         static var defaultMaxConcurrentStreams: Int { 100 }
 
-        /// Default values. The max frame size defaults to 2^14, the target window size defaults to 2^16-1, and the max
-        /// concurrent streams default to 100.
+        @inlinable
+        static var defaultEnableConnectProtocol: Bool { false }
+
+        /// The default HTTP/2 configuration.
+        ///
+        /// Uses the following default values:
+        /// - `maxFrameSize`: 2^14 (16384)
+        /// - `targetWindowSize`: 2^16 - 1 (65535)
+        /// - `maxConcurrentStreams`: 100
+        /// - `enableConnectProtocol`: `false`
         public static var defaults: Self {
             Self(
                 maxFrameSize: Self.defaultMaxFrameSize,
                 targetWindowSize: Self.defaultTargetWindowSize,
-                maxConcurrentStreams: Self.defaultMaxConcurrentStreams
+                maxConcurrentStreams: Self.defaultMaxConcurrentStreams,
+                enableConnectProtocol: Self.defaultEnableConnectProtocol
             )
         }
     }

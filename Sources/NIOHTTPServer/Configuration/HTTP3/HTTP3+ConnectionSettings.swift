@@ -37,17 +37,37 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         ///   `SETTINGS_MAX_FIELD_SECTION_SIZE`.
         public var maximumFieldSectionSize: UInt64?
 
+        /// Whether the server is willing to receive Extended CONNECT requests.
+        ///
+        /// - SeeAlso: https://www.rfc-editor.org/info/rfc9220/#section-5-2.6.1. Corresponds to
+        ///   `SETTINGS_ENABLE_CONNECT_PROTOCOL`.
+        public var enableConnectProtocol: Bool
+
+        @inlinable
+        static var defaultQPACKMaximumTableCapacity: UInt64 { 0 }
+
+        @inlinable
+        static var defaultQPACKBlockedStreams: UInt64 { 0 }
+
+        @inlinable
+        static var defaultMaximumFieldSectionSize: UInt64? { nil }
+
+        @inlinable
+        static var defaultEnableConnectProtocol: Bool { false }
+
         /// The default HTTP/3 connection settings configuration.
         ///
         /// Uses the following default values:
         /// - `qpackMaximumTableCapacity`: 0
         /// - `qpackBlockedStreams`: 0
         /// - `maximumFieldSectionSize`: `nil` (no field section size limit)
+        /// - `enableConnectProtocol`: `false`
         public static var defaults: Self {
             Self(
-                qpackMaximumTableCapacity: 0,
-                qpackBlockedStreams: 0,
-                maximumFieldSectionSize: nil
+                qpackMaximumTableCapacity: Self.defaultQPACKMaximumTableCapacity,
+                qpackBlockedStreams: Self.defaultQPACKBlockedStreams,
+                maximumFieldSectionSize: Self.defaultMaximumFieldSectionSize,
+                enableConnectProtocol: Self.defaultEnableConnectProtocol
             )
         }
     }
@@ -56,22 +76,23 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 @available(anyAppleOS 27.0, *)
 extension HTTP3.HTTP3Settings {
     init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings) {
-        self.init(
-            qpackMaximumTableCapacity: connectionConfiguration.qpackMaximumTableCapacity,
-            qpackBlockedStreams: connectionConfiguration.qpackBlockedStreams,
-            maximumFieldSectionSize: connectionConfiguration.maximumFieldSectionSize
-        )
+        self.init(connectionConfiguration, h3Datagram: true)
     }
 
     #if UnstableHTTPDatagrams
     init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings, supportsDatagrams: Bool) {
+        self.init(connectionConfiguration, h3Datagram: supportsDatagrams)
+    }
+    #endif  // UnstableHTTPDatagrams
+
+    private init(_ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings, h3Datagram: Bool) {
         self.init(
             qpackMaximumTableCapacity: connectionConfiguration.qpackMaximumTableCapacity,
             qpackBlockedStreams: connectionConfiguration.qpackBlockedStreams,
             maximumFieldSectionSize: connectionConfiguration.maximumFieldSectionSize,
-            h3Datagram: supportsDatagrams
+            h3Datagram: h3Datagram,
+            enableConnectProtocol: connectionConfiguration.enableConnectProtocol
         )
     }
-    #endif  // UnstableHTTPDatagrams
 }
 #endif  // HTTP3

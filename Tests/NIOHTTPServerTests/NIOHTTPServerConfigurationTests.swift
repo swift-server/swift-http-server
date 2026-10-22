@@ -14,6 +14,7 @@
 
 import Foundation
 import NIOCertificateReloading
+import NIOHTTP2
 import NIOSSL
 import Testing
 import X509
@@ -87,6 +88,23 @@ struct NIOHTTPServerConfigurationTests {
             }
         }
         #endif  // HTTP3
+    }
+
+    @Suite
+    struct HTTP2 {
+        @available(anyAppleOS 27.0, *)
+        @Test("SETTINGS_ENABLE_CONNECT_PROTOCOL is only advertised when enabled", arguments: [false, true])
+        func enableConnectProtocolSetting(enableConnectProtocol: Bool) {
+            let http2Config = NIOHTTPServerConfiguration.HTTP2(enableConnectProtocol: enableConnectProtocol)
+            let handlerConfig = NIOHTTP2Handler.Configuration(http2Config)
+
+            let setting = handlerConfig.connection.initialSettings.first { $0.parameter == .enableConnectProtocol }
+            if enableConnectProtocol {
+                #expect(setting?.value == 1)
+            } else {
+                #expect(setting == nil)
+            }
+        }
     }
 
     @Suite

@@ -25,6 +25,8 @@ extension NIOHTTPServerConfiguration.HTTP2 {
     ///    connection.
     /// - `maxConcurrentStreams` (int, optional, default: 100): The maximum number of concurrent streams in an HTTP/2
     ///    connection.
+    /// - `enableConnectProtocol` (bool, optional, default: false): Whether the server is willing to receive Extended
+    ///   CONNECT requests.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
@@ -37,7 +39,14 @@ extension NIOHTTPServerConfiguration.HTTP2 {
                 forKey: "targetWindowSize",
                 default: NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize
             ),
-            maxConcurrentStreams: config.int(forKey: "maxConcurrentStreams", default: 100)
+            maxConcurrentStreams: config.int(
+                forKey: "maxConcurrentStreams",
+                default: NIOHTTPServerConfiguration.HTTP2.defaultMaxConcurrentStreams
+            ),
+            enableConnectProtocol: config.bool(
+                forKey: "enableConnectProtocol",
+                default: NIOHTTPServerConfiguration.HTTP2.defaultEnableConnectProtocol
+            )
         )
     }
 }
