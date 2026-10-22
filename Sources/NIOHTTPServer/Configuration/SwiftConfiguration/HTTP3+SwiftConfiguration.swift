@@ -73,6 +73,8 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     ///   streams the server is permitted to initiate.
     /// - `initialMaxStreamsUnidirectional` (int, optional, default: 100): The initial maximum number of unidirectional
     ///   streams the server is permitted to initiate.
+    /// - `initialPacketSize` (optional, default: `fixed` 1200): The UDP payload size of the server's Initial packets.
+    ///   Specify at most one of `fixed` (int bytes) or `matchingClientInitialUpTo` (int bytes).
     /// - `keepAliveInterval` (int seconds, optional, default: nil): The interval (in seconds) at which the server sends
     ///    keep-alive PING frames. When omitted, no keep-alive PINGs are sent.
     /// - `sendRetry` (bool, optional, default: false): Whether the server sends a Retry packet before accepting a new
@@ -82,7 +84,10 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     /// - `qlog` (optional, default: nil): qlog output configuration. When present, its `path`, `topic`, and
     ///   `description` are required; when omitted, qlog output is disabled.
     ///
-    /// - Throws: If `keyExchangeGroup` is specified with an invalid value, or when `qlog` is partially specified.
+    /// - Throws:
+    ///   - If `keyExchangeGroup` is specified with an invalid value, or;
+    ///   - When `qlog` is partially specified, or;
+    ///   - When both `initialPacketSize` keys are specified.
     ///
     /// - SeeAlso: ``NIOHTTPServerConfiguration/HTTP3/QUICConfiguration``.
     ///
@@ -118,6 +123,7 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
             ),
             initialMaxStreamsBidirectional: config.int(forKey: "initialMaxStreamsBidirectional", default: 100),
             initialMaxStreamsUnidirectional: config.int(forKey: "initialMaxStreamsUnidirectional", default: 100),
+            initialPacketSize: try InitialPacketSize(config: config.scoped(to: "initialPacketSize")),
             keepAliveInterval: config.int(forKey: "keepAliveInterval").map { .seconds($0) },
             sendRetry: config.bool(forKey: "sendRetry", default: false),
             keyLogPath: config.string(forKey: "keyLogPath"),
@@ -178,6 +184,39 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.KeyExchangeGroup {
             self = .x25519
         case .x25519MLKEM768:
             self = .x25519MLKEM768
+        }
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.InitialPacketSize {
+    /// Initialize a QUIC Initial packet size configuration from a config reader.
+    ///
+    /// ## Configuration keys:
+    /// - `fixed` (int bytes): The UDP payload size of the server's Initial packets.
+    /// - `matchingClientInitialUpTo` (int bytes): Match the size of the datagram containing the client's first Initial
+    ///    packet, but at most this many bytes.
+    ///
+    /// - Note: If neither `fixed` nor `matchingClientInitialUpTo` are present, a default fixed value of 1200B is used.
+    ///
+    /// - Throws: If both `fixed` and `matchingClientInitialUpTo` are provided.
+    ///
+    /// - Parameter config: The configuration reader, scoped to the `initialPacketSize` key.
+    fileprivate init(config: ConfigSnapshotReader) throws {
+        switch (config.int(forKey: "fixed"), config.int(forKey: "matchingClientInitialUpTo")) {
+        case (.some(let fixed), .none):
+            self = .fixed(fixed)
+
+        case (.none, .some(let matchingClientInitialUpTo)):
+            self = .matchingClientInitial(upTo: matchingClientInitialUpTo)
+
+        case (.none, .none):
+            // Use the default
+            self = .fixed(1200)
+
+        case (.some, .some):
+            // Cannot specify both `fixed` and `matchingClientInitialUpTo`
+            throw NIOHTTPServerSwiftConfigurationError.multipleQUICInitialPacketSizeKeysProvided
         }
     }
 }

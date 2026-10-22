@@ -21,6 +21,7 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
     case trustRootsSourceAndVerificationCallbackMismatch
     case singularAndPluralBindTargetsProvided
     case bindTargetsHostsAndPortsLengthMismatch
+    case multipleQUICInitialPacketSizeKeysProvided
 
     var description: String {
         switch self {
@@ -34,10 +35,13 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
             "Invalid configuration: there is a mismatch between the trustRootsSource key and the provided customCertificateVerificationCallback."
 
         case .singularAndPluralBindTargetsProvided:
-            "Invalid configuration: both the singular 'bindTarget' scope and the plural 'bindTargets' scope were provided. Use only one."
+            "Invalid configuration: both the singular 'bindTarget' scope and the plural 'bindTargets' scope were provided. Provide only one."
 
         case .bindTargetsHostsAndPortsLengthMismatch:
             "Invalid configuration: 'bindTargets.hosts' and 'bindTargets.ports' must have the same number of elements."
+
+        case .multipleQUICInitialPacketSizeKeysProvided:
+            "Invalid configuration: both 'initialPacketSize.fixed' and 'initialPacketSize.matchingClientInitialUpTo' were provided. Provide only one."
         }
     }
 }
