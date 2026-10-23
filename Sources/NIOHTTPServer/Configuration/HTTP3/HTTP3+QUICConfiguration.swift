@@ -83,7 +83,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// The UDP payload size of the server's Initial packets. Also the smallest maximum packet size the connection
         /// will use.
         ///
-        /// The server pads every datagram that carries an Initial packet to this size.Once the handshake succeeds, the
+        /// The server pads every datagram that carries an Initial packet to this size. Once the handshake succeeds, the
         /// packet size will never be lower than this size.
         ///
         /// - Note: Values of 1200 bytes or less have no effect, because every QUIC path must support 1200-byte UDP
