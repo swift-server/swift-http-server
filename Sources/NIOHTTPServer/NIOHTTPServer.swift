@@ -665,4 +665,103 @@ extension NIOHTTPServer {
             serverChannel.channel.close(promise: nil)
         }
     }
+
+    /// Coordinates the inbound connection accept loop and cancellation draining.
+    private final class AcceptLoopCoordinator: Sendable {
+        private enum Status {
+            case running
+            case streamFinished
+            case cancelled
+        }
+
+        private struct State {
+            var status: Status = .running
+            var task: Task<Void, any Error>?
+        }
+
+        private let state = NIOLockedValueBox(State())
+
+        func setTask(_ task: Task<Void, any Error>) {
+            self.state.withLockedValue { state in
+                state.task = task
+            }
+        }
+
+        func onStreamFinished() -> Bool {
+            self.state.withLockedValue { state -> Bool in
+                switch state.status {
+                case .running:
+                    state.status = .streamFinished
+                    return false
+                case .cancelled:
+                    return true
+                case .streamFinished:
+                    return false
+                }
+            }
+        }
+
+        func onCancel() {
+            let taskToCancel = self.state.withLockedValue { state -> Task<Void, any Error>? in
+                switch state.status {
+                case .running:
+                    state.status = .cancelled
+                    // Do not cancel the accept task while running; allow it to drain buffered connections.
+                    return nil
+                case .streamFinished:
+                    state.status = .cancelled
+                    // Stream is already finished, safe to cancel the task to abort running connection handlers.
+                    return state.task
+                case .cancelled:
+                    return nil
+                }
+            }
+            taskToCancel?.cancel()
+        }
+    }
+
+    /// Serves inbound connections from `connectionStream` by dispatching each connection to `dispatchConnection`
+    /// in a child task.
+    ///
+    /// When cancelled, the accept loop continues to drain buffered connections that were accepted before the listening
+    /// socket closed, preventing `NIOThrowingAsyncSequenceProducer` from dropping them with un-finished writers.
+    /// Once the stream finishes, all active child tasks are cancelled.
+    func serveInboundConnections<Item: Sendable>(
+        connectionStream: NIOAsyncChannelInboundStream<Item>,
+        dispatchConnection: @escaping @Sendable (Item) async -> Void
+    ) async throws {
+        let coordinator = AcceptLoopCoordinator()
+
+        try await withTaskCancellationHandler {
+            let task = Task {
+                var iterationError: (any Error)?
+                await withDiscardingTaskGroup { group in
+                    do {
+                        for try await item in connectionStream {
+                            group.addTask {
+                                await dispatchConnection(item)
+                            }
+                        }
+                    } catch {
+                        iterationError = error
+                    }
+
+                    let wasCancelled = coordinator.onStreamFinished()
+                    if wasCancelled {
+                        group.cancelAll()
+                    }
+                }
+
+                if let iterationError {
+                    throw iterationError
+                }
+            }
+
+            coordinator.setTask(task)
+            try await task.value
+            try Task.checkCancellation()
+        } onCancel: {
+            coordinator.onCancel()
+        }
+    }
 }

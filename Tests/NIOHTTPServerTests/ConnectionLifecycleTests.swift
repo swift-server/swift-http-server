@@ -491,6 +491,55 @@ struct ConnectionLifecycleTests {
             #expect(sawOK, "Closure-overloaded handleRequests should serve the request.")
         }
     }
+
+    /// Verifies that cancelling the task running `serve` while accepted connections are still buffered
+    /// in the inbound connection stream does not drop child channels without finishing their writers,
+    /// which would cause a fatal error ("Deinited NIOAsyncWriter without calling finish()").
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        "Cancelling serve does not trap when accepted connections are buffered",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testCancellationWithBufferedAcceptedConnections(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        for _ in 0..<5 {
+            let (server, _) = try TestHelpers.makeServerAndClientConfiguration(
+                for: httpVersion,
+                clientLogger: Self.clientLogger,
+                serverLogger: Self.serverLogger
+            )
+
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await server.serve { request, requestContext, reader, responseSender in
+                        var buffer = UniqueArray<UInt8>(copying: [])
+                        try await responseSender.sendAndFinish(.init(status: .ok), buffer: &buffer)
+                    }
+                }
+
+                let address = try #require(try await server.listeningAddresses.first)
+                let port = address.port
+
+                let burst = 32
+                let clientBootstrap = ClientBootstrap(
+                    group: MultiThreadedEventLoopGroup.singletonMultiThreadedEventLoopGroup
+                )
+                var clients = [any Channel]()
+                clients.reserveCapacity(burst)
+
+                for _ in 0..<burst {
+                    if let channel = try? await clientBootstrap.connect(host: address.host, port: port).get() {
+                        clients.append(channel)
+                    }
+                }
+
+                group.cancelAll()
+                for client in clients {
+                    try? await client.close()
+                }
+                _ = try? await group.next()
+            }
+        }
+    }
 }
 
 /// Connection handler that throws on the first invocation and runs normally thereafter, so the test can verify a thrown

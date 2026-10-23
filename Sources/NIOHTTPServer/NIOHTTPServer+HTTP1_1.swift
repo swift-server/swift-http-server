@@ -13,12 +13,19 @@
 //===----------------------------------------------------------------------===//
 
 import Logging
+
 import NIOCore
+
 import NIOExtras
+
 import NIOHTTP1
+
 import NIOHTTPTypes
+
 import NIOHTTPTypesHTTP1
+
 import NIOPosix
+
 import NIOSSL
 
 @available(anyAppleOS 27.0, *)
@@ -37,31 +44,12 @@ extension NIOHTTPServer {
         connectionStream: NIOAsyncChannelInboundStream<HTTPRequestChannelAndCancellationSignal>,
         connectionHandler: Handler
     ) async throws {
-        // We don't use a `withThrowingDiscardingTaskGroup` here because an error thrown from the body or a child
-        // task would immediately propagate upwards, cancelling all child tasks and bringing down the entire server.
-        // We instead use a non-throwing discarding task group so that errors in the body (e.g. from iterating
-        // `inbound`) must be caught and handled directly.
-        let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
-            do {
-                for try await connectionChannel in connectionStream {
-                    group.addTask {
-                        await self.dispatchPlaintextHTTP1_1Connection(
-                            requestChannel: connectionChannel.channel,
-                            clientClosed: connectionChannel.clientClosed,
-                            connectionHandler: connectionHandler
-                        )
-                    }
-                }
-
-                return nil
-            } catch {
-                return error
-            }
-        }
-
-        if let inboundConnectionIterationError {
-            // The error occurred while iterating the inbound connection stream
-            throw inboundConnectionIterationError
+        try await self.serveInboundConnections(connectionStream: connectionStream) { connectionChannel in
+            await self.dispatchPlaintextHTTP1_1Connection(
+                requestChannel: connectionChannel.channel,
+                clientClosed: connectionChannel.clientClosed,
+                connectionHandler: connectionHandler
+            )
         }
     }
 
