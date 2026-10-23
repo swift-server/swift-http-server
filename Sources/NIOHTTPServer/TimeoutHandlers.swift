@@ -85,18 +85,29 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 /// State machine:
 /// - On channel active, a header timeout is scheduled (if configured).
 /// - When `.head` is received, the header timeout is cancelled and a body timeout is scheduled (if configured).
-/// - When `.end` is received, the body timeout is cancelled and, for HTTP/1.1, the header timeout is rescheduled so
-///   that the next request on a keep-alive connection is also protected.
+/// - When `.end` is received, the body timeout is cancelled.
+/// - For HTTP/1.1, once the request `.end` has been received and the response `.end` has been written, the header
+///   timeout is rescheduled so that the next request on a keep-alive connection is also protected. Waiting for the
+///   response to complete ensures that long-running responses (e.g. Server-Sent Events) are not closed by the header
+///   timeout while they are still being written.
 ///
 /// If either timeout fires, the connection is closed.
-final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandler {
+final class RequestTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler {
     typealias InboundIn = HTTPRequestPart
+    typealias InboundOut = HTTPRequestPart
+    typealias OutboundIn = HTTPResponsePart
+    typealias OutboundOut = HTTPResponsePart
 
     private let readHeaderTimeout: TimeAmount?
     private let readBodyTimeout: TimeAmount?
     private var scheduledTimeout: Scheduled<Void>?
 
     private let expectMultipleRequests: Bool
+
+    /// Whether the `.end` of the current request has been received.
+    private var requestEnded = false
+    /// Whether the `.end` of the current response has been written.
+    private var responseEnded = false
 
     /// - Parameters:
     ///   - readHeaderTimeout: How long to wait for a request head to arrive before closing the channel. Pass `nil` to
@@ -131,6 +142,8 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
         case .head:
             self.scheduledTimeout?.cancel()
             self.scheduledTimeout = nil
+            self.requestEnded = false
+            self.responseEnded = false
             if let readBodyTimeout {
                 self.scheduleTimeout(readBodyTimeout, context: context)
             }
@@ -139,12 +152,18 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
         case .end:
             self.scheduledTimeout?.cancel()
             self.scheduledTimeout = nil
-            // Re-arm the header timer so the next request on this connection is also protected.
-            if self.expectMultipleRequests, let readHeaderTimeout {
-                self.scheduleTimeout(readHeaderTimeout, context: context)
-            }
+            self.requestEnded = true
+            self.rescheduleHeaderTimeoutIfRequestCompleted(context: context)
         }
         context.fireChannelRead(data)
+    }
+
+    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+        context.write(data, promise: promise)
+        if case .end = self.unwrapOutboundIn(data) {
+            self.responseEnded = true
+            self.rescheduleHeaderTimeoutIfRequestCompleted(context: context)
+        }
     }
 
     func handlerRemoved(context: ChannelHandlerContext) {
@@ -158,7 +177,20 @@ final class RequestTimeoutHandler: ChannelInboundHandler, RemovableChannelHandle
         }
     }
 
+    /// Re-arms the header timer once both the request and the response are complete, so the next request on this
+    /// connection is also protected. While the response is still being written, the connection is not waiting for a
+    /// new request head.
+    private func rescheduleHeaderTimeoutIfRequestCompleted(context: ChannelHandlerContext) {
+        guard self.expectMultipleRequests, self.requestEnded, self.responseEnded else {
+            return
+        }
+        self.requestEnded = false
+        self.responseEnded = false
+        self.scheduleHeaderTimeoutIfNeeded(context: context)
+    }
+
     private func scheduleTimeout(_ timeout: TimeAmount, context: ChannelHandlerContext) {
+        self.scheduledTimeout?.cancel()
         self.scheduledTimeout = context.eventLoop.assumeIsolated().scheduleTask(in: timeout) {
             context.close(promise: nil)
         }

@@ -537,6 +537,7 @@ extension NIOHTTP2Handler.Configuration {
     }
 }
 
+@available(anyAppleOS 27.0, *)
 extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
     /// Reads the next request head from the iterator. Returns `nil` if the connection is done or an unexpected part is
     /// received.
