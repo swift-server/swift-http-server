@@ -13,12 +13,16 @@
 //===----------------------------------------------------------------------===//
 
 enum RequestBodyReadError: Error, CustomStringConvertible {
-    case streamEndedBeforeReceivingRequestEnd
+    case streamEnded
+    case readAfterRequestEnd
 
     var description: String {
         switch self {
-        case .streamEndedBeforeReceivingRequestEnd:
-            "The request stream unexpectedly ended before receiving a request end part."
+        case .streamEnded:
+            "The request stream unexpectedly ended before the request end part was received."
+
+        case .readAfterRequestEnd:
+            "Attempted to read after the request end part was already received."
         }
     }
 }
