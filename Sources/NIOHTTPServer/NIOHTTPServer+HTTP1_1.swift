@@ -44,7 +44,8 @@ extension NIOHTTPServer {
         let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
             do {
                 for try await connectionChannel in connectionStream {
-                    group.addTask {
+                    let executor = connectionChannel.channel.channel.eventLoop as? any TaskExecutor
+                    group.addTask(executorPreference: executor) {
                         await self.dispatchPlaintextHTTP1_1Connection(
                             requestChannel: connectionChannel.channel,
                             clientClosed: connectionChannel.clientClosed,

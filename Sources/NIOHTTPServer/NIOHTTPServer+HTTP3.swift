@@ -230,7 +230,8 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "HTTP/3 over \(address) on \(eventLoop)") {
+        let executor = eventLoop as? any TaskExecutor
+        group.addTask(name: "HTTP/3 over \(address) on \(eventLoop)", executorPreference: executor) {
             try await self.withHTTP3Channel(
                 address: address,
                 eventLoop: eventLoop,

@@ -64,7 +64,8 @@ extension NIOHTTPServer {
         let inboundConnectionIterationError = await withDiscardingTaskGroup { connectionGroup -> (any Error)? in
             do {
                 for try await upgradeResult in connectionStream {
-                    connectionGroup.addTask {
+                    let executor = upgradeResult.eventLoop as? any TaskExecutor
+                    connectionGroup.addTask(executorPreference: executor) {
                         await self.dispatchSecureConnection(
                             upgradeResult: upgradeResult,
                             connectionHandler: connectionHandler
