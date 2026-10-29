@@ -24,6 +24,7 @@ extension NIOHTTPServer {
     /// - ``HTTPServerCapability/ConnectionInfo`` — peer / local addresses.
     /// - ``HTTPServerCapability/HTTPVersion`` — HTTP version of the connection.
     /// - ``HTTPServerCapability/PeerCertificate`` — mTLS-validated peer chain.
+    /// - ``HTTPServerCapability/ConnectionEvents`` — events on the connection carrying the request.
     ///
     /// Generic library code can constrain on these capabilities to access
     /// per-request data without depending on ``NIOHTTPServer`` directly.
@@ -77,8 +78,20 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.PeerCertificate {
     /// Returns `nil` when mTLS is not configured, or when the configured custom verification callback did not return
     /// the derived validated chain.
     public var validatedPeerCertificateChain: X509.ValidatedCertificateChain? {
-        get {
-            self.connectionContext.validatedPeerCertificateChain
-        }
+        self.connectionContext.validatedPeerCertificateChain
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionEvents {
+    /// Runs `operation` while `onEvent` is called for each event that happens on the connection carrying this request,
+    /// such as the peer's address changing.
+    ///
+    /// See ``NIOHTTPServer/ConnectionContext/withConnectionEventHandler(operation:onEvent:)`` for details.
+    public func withConnectionEventHandler<Return, Failure: Error>(
+        operation: () async throws(Failure) -> Return,
+        onEvent: @escaping @Sendable (NIOHTTPServer.ConnectionEvent) -> Void
+    ) async throws(Failure) -> Return {
+        try await self.connectionContext.withConnectionEventHandler(operation: operation, onEvent: onEvent)
     }
 }

@@ -41,6 +41,7 @@ struct NIOHTTPServiceLifecycleTests {
 
     @Test(
         "Active connection completes when graceful shutdown triggered",
+        .timeLimit(.minutes(1)),
         arguments: [NIOHTTPServer.HTTPVersion.http1_1, .http2]
     )
     @available(anyAppleOS 27.0, *)
