@@ -577,12 +577,13 @@ extension ServerBootstrap {
     ///
     /// - Note: A `ConnectionLimitHandler` is only installed when `maxConnections` is non-`nil`.
     static func makeTCPBootstrap(
-        group: any EventLoopGroup,
+        listeningSocketGroup: any EventLoopGroup,
+        acceptedConnectionsGroup: any EventLoopGroup,
         maxConnections: Int?
     ) -> (ServerBootstrap, ServerQuiescingHelper) {
-        let serverQuiescingHelper = ServerQuiescingHelper(group: group)
+        let serverQuiescingHelper = ServerQuiescingHelper(group: listeningSocketGroup)
 
-        let bootstrap = ServerBootstrap(group: group)
+        let bootstrap = ServerBootstrap(group: listeningSocketGroup, childGroup: acceptedConnectionsGroup)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .serverChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
@@ -622,11 +623,14 @@ extension NIOHTTPServer {
     func withTCPChannel<Child: Sendable>(
         address: NIOCore.SocketAddress,
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
+        listeningSocketGroup: any EventLoopGroup,
+        acceptedConnectionsGroup: any EventLoopGroup,
         childChannelInitializer: @escaping @Sendable (any Channel) -> EventLoopFuture<Child>,
         _ body: (NIOAsyncChannelInboundStream<Child>) async throws -> Void
     ) async throws {
         let (bootstrap, serverQuiescingHelper) = ServerBootstrap.makeTCPBootstrap(
-            group: self.eventLoopGroup,
+            listeningSocketGroup: listeningSocketGroup,
+            acceptedConnectionsGroup: acceptedConnectionsGroup,
             maxConnections: self.configuration.maxConnections
         )
 

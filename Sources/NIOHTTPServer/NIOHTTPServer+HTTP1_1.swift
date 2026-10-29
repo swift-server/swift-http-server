@@ -124,10 +124,15 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "Plaintext HTTP/1.1 over \(address)") {
+        let listeningSocketEventLoop = self.eventLoopGroup.any()
+        let listeningSocketExecutor = listeningSocketEventLoop as? any TaskExecutor
+
+        group.addTask(name: "Plaintext HTTP/1.1 over \(address)", executorPreference: listeningSocketExecutor) {
             try await self.withTCPChannel(
                 address: address,
                 addressContinuation: addressContinuation,
+                listeningSocketGroup: listeningSocketEventLoop,
+                acceptedConnectionsGroup: self.eventLoopGroup,
                 childChannelInitializer: { channel in
                     self.setupHTTP1_1Connection(channel: channel, isSecure: false)
                 }
