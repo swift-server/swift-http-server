@@ -210,6 +210,44 @@ struct NIOHTTPServerReaderTests {
         }
     }
 
+    @available(anyAppleOS 27.0, *)
+    @Test("A reader that is never read leaves the iterator for the next request")
+    func testUnreadReaderLeavesIterator() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        source.yield(.end(nil))
+        source.finish()
+        let readerState = NIOHTTPServer.Reader.ReaderState(iterator: stream.makeAsyncIterator())
+
+        _ = NIOHTTPServer.Reader(readerState: readerState)
+
+        var iterator = try #require(readerState.takeIterator())
+        #expect(try await iterator.next() == .end(nil))
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test("Reading past the request end throws and leaves the next request untouched")
+    func testReadPastRequestEndDoesNotTakeNextRequest() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        let nextRequest = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/next")
+        source.yield(.end(nil))
+        source.yield(.head(nextRequest))
+        source.yield(.end(nil))
+        source.finish()
+        let readerState = NIOHTTPServer.Reader.ReaderState(iterator: stream.makeAsyncIterator())
+        var requestReader = NIOHTTPServer.Reader(readerState: readerState)
+        _ = try await requestReader.read { _, _ in }
+
+        do {
+            try await requestReader.read { _, _ in }
+            Issue.record("Expected reading past the request end to throw.")
+        } catch {
+            #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
+        }
+
+        var iterator = try #require(readerState.takeIterator())
+        #expect(try await iterator.next() == .head(nextRequest))
+    }
+
     #if HTTP3 && UnstableHTTPDatagrams
     @Test("takeDatagramReader vends no datagram reader when not available")
     @available(anyAppleOS 27.0, *)

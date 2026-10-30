@@ -25,7 +25,7 @@ extension NIOHTTPServer {
                 var finishedReading: Bool = false
 
                 /// The iterator. Initially populated from the channel; taken by the
-                /// body reader at construction time and returned by it once request
+                /// body reader on its first read and returned by it once request
                 /// `.end` has been observed (for HTTP/1.1 keep-alive recovery).
                 var iterator:
                     Disconnected<
@@ -59,20 +59,24 @@ extension NIOHTTPServer {
         var state: ReaderState
 
         /// The iterator that provides HTTP request parts from the underlying channel.
-        /// Taken from `state` at construction; returned to `state` when this reader
-        /// observes request `.end` so the outer request loop can recover it for
-        /// HTTP/1.1 keep-alive.
+        /// Taken from `state` on the first read, so a handler that never reads leaves it
+        /// there for the next request; returned to `state` when this reader observes
+        /// request `.end` so the outer request loop can recover it for HTTP/1.1 keep-alive.
         private var iterator: NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+
+        /// Whether this reader has taken the iterator from `state`. A reader takes it at most once: after request
+        /// `.end` the iterator belongs to the next request, so a later read must not take it again.
+        private var hasTakenIterator = false
 
         /// A reusable buffer handed to the body closure on each call to ``read(body:)``.
         /// Reusing it across calls preserves the allocation; the buffer is cleared
         /// (while keeping its capacity) at the start of every read.
         private var buffer: UniqueArray<UInt8>
 
-        /// Initializes a new request body reader, taking the iterator from the shared `ReaderState`.
+        /// Initializes a new request body reader over the shared `ReaderState`.
         init(readerState: ReaderState) {
             self.state = readerState
-            self.iterator = readerState.takeIterator()
+            self.iterator = nil
             self.buffer = UniqueArray<UInt8>()
         }
 
@@ -85,7 +89,7 @@ extension NIOHTTPServer {
         /// transport supports unreliable datagrams.
         init(readerState: ReaderState, datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil) {
             self.state = readerState
-            self.iterator = readerState.takeIterator()
+            self.iterator = nil
             self.buffer = UniqueArray<UInt8>()
             self.datagramStreamFuture = datagramStreamFuture
         }
@@ -94,6 +98,10 @@ extension NIOHTTPServer {
         public mutating func read<Return: ~Copyable, Failure: Error>(
             body: (inout Buffer, consuming HTTPFields??) async throws(Failure) -> Return
         ) async throws(EitherError<ReadFailure, Failure>) -> Return {
+            if !self.hasTakenIterator {
+                self.hasTakenIterator = true
+                self.iterator = self.state.takeIterator()
+            }
             let requestPart: HTTPRequestPart?
             do {
                 requestPart = try await self.iterator?.next(isolation: #isolation)

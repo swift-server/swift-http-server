@@ -200,6 +200,41 @@ struct ConnectionLifecycleTests {
         #expect(state.requestInvocations.withLockedValue { $0 } == 2)
     }
 
+    /// HTTP/1.1 keep-alive: a handler that never touches the request reader still leaves the connection reusable. A
+    /// bodyless request has nothing left to read, so the next request on the connection must be served.
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        "HTTP/1.1 keep-alive: connection is reused when the handler doesn't read the request",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
+    )
+    func testKeepAliveWhenHandlerIgnoresReader(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
+            for: httpVersion,
+            clientLogger: Self.clientLogger,
+            serverLogger: Self.serverLogger
+        )
+
+        try await TestHelpers.withClientServerRequestChannel(
+            clientConfiguration: clientConfiguration,
+            server: server,
+            serverHandler: HTTPServerClosureRequestHandler { _, _, _, responseSender in
+                try await responseSender.sendAndFinish(.init(status: .ok))
+            }
+        ) { _, inbound, outbound in
+            var iterator = inbound.makeAsyncIterator()
+
+            try await outbound.write(.testHead(method: .get, path: "/a", for: httpVersion))
+            try await outbound.write(.end(nil))
+            try #require(try await iterator.next() == .head(.makeResponse(status: .ok, for: httpVersion)))
+            try #require(try await iterator.next() == .end(nil))
+
+            try await outbound.write(.testHead(method: .get, path: "/b", for: httpVersion))
+            try await outbound.write(.end(nil))
+            #expect(try await iterator.next() == .head(.makeResponse(status: .ok, for: httpVersion)))
+            #expect(try await iterator.next() == .end(nil))
+        }
+    }
+
     /// HTTP/2: three concurrent streams on one connection result in one `handleConnection` call and three
     /// request-handler calls. A user counter held by the connection handler observes three after `handleRequests`
     /// returns.
