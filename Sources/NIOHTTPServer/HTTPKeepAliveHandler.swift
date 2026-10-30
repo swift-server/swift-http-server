@@ -72,11 +72,14 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     private var requestEndReceived: Bool = true
 
     /// `true` if we've committed to closing the connection after this response's
-    /// `.end` is written. Set when the request head carries `Connection: close`,
-    /// when the buffer is flushed while request `.end` has not yet arrived, and
-    /// when a request is aborted (so a still-buffered head picks up
-    /// `Connection: close` on its way out). Cleared when a new request begins
-    /// unless that request also asks to close.
+    /// `.end` is written.
+    ///
+    /// Set to `true` in either of the following scenarios:
+    /// - when the request head carries `Connection: close`, or;
+    /// - when the buffer is flushed while request `.end` has not yet arrived, or;
+    /// - when a request is aborted (so a still-buffered head picks up `Connection: close` on its way out).
+    ///
+    /// Cleared when a new request begins unless that request also asks to close.
     private var closeAfterResponseEnd: Bool = false
 
     private var finalResponseState: FinalResponseState = .notStarted
@@ -282,24 +285,47 @@ final class HTTPKeepAliveHandler: ChannelDuplexHandler {
     /// A `close` token in any field, in any position, with any case, means the
     /// client will not send another request on this connection (RFC 9112 §9.6).
     private static func connectionContainsCloseToken(_ fields: HTTPFields) -> Bool {
-        for value in fields[values: .connection] {
-            for rawToken in value.split(separator: ",") {
-                if Self.trimmedLowercasedASCII(rawToken) == "close" {
+        for field in fields where field.name == .connection {
+            var remaining = field.value.utf8[...]
+            while true {
+                let comma = remaining.firstIndex(of: UInt8(ascii: ",")) ?? remaining.endIndex
+                if Self.isCloseToken(remaining[..<comma]) {
                     return true
                 }
+
+                if comma == remaining.endIndex {
+                    break
+                }
+
+                remaining = remaining[remaining.index(after: comma)...]
             }
         }
         return false
     }
 
-    private static func trimmedLowercasedASCII(_ token: Substring) -> String {
+    private static func isCloseToken(_ token: Substring.UTF8View) -> Bool {
         var trimmed = token
-        while trimmed.first?.isWhitespace == true {
+        while trimmed.first?.isOptionalWhitespace == true {
             trimmed = trimmed.dropFirst()
         }
-        while trimmed.last?.isWhitespace == true {
+        while trimmed.last?.isOptionalWhitespace == true {
             trimmed = trimmed.dropLast()
         }
-        return trimmed.lowercased()
+
+        // `| 0x20` lowercases ASCII letters.
+        return trimmed.elementsEqual("close".utf8) { ($0 | 0x20) == $1 }
+    }
+}
+
+extension UTF8.CodeUnit {
+    fileprivate var isOptionalWhitespace: Bool {
+        switch self {
+        case UInt8(ascii: " "),
+            UInt8(ascii: "\t"):
+            return true
+
+        default:
+            return false
+        }
     }
 }
