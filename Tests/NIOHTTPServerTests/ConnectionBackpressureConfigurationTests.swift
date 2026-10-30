@@ -19,14 +19,14 @@ import Testing
 @Suite("Connection Backpressure Configuration")
 struct ConnectionBackpressureConfigurationTests {
     @available(anyAppleOS 27.0, *)
-    @Test("maxConnections nil is the default")
-    func maxConnectionsNilIsDefault() throws {
+    @Test("tcpConnectionLimits has no limits by default")
+    func tcpConnectionLimitsUnlimitedByDefault() throws {
         let config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
             transportSecurity: .plaintext
         )
-        #expect(config.maxConnections == nil)
+        #expect(config.tcpConnectionLimits == .defaults)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -39,15 +39,108 @@ struct ConnectionBackpressureConfigurationTests {
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test("Valid maxConnections is accepted")
-    func validMaxConnectionsAccepted() throws {
+    @Test("Valid TCP connection limits are accepted on a plaintext HTTP/1.1 configuration")
+    func validTCPConnectionLimitsAccepted() throws {
         var config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
             transportSecurity: .plaintext
         )
-        config.maxConnections = 100
-        #expect(config.maxConnections == 100)
+        for maxConnections in [1, 100] {
+            config.tcpConnectionLimits = .init(maxConnections: maxConnections)
+            #expect(config.tcpConnectionLimits.maxConnections == maxConnections)
+        }
+        for newConnectionRateLimit in [1, 1_000_000_000] {
+            config.tcpConnectionLimits = .init(newConnectionRateLimit: newConnectionRateLimit)
+            #expect(config.tcpConnectionLimits.newConnectionRateLimit == newConnectionRateLimit)
+        }
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func zeroMaxConnectionsPreconditionFailure() async {
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            var config = try NIOHTTPServerConfiguration(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+            config.tcpConnectionLimits = .init(maxConnections: 0)
+        }
+
+        Self.expectStandardError(
+            of: result,
+            contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.maxConnections",
+                requirement: "greater than 0"
+            )
+        )
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func tooLargeRateLimitPreconditionFailure() async {
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            var config = try NIOHTTPServerConfiguration(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+            config.tcpConnectionLimits = .init(newConnectionRateLimit: 1_000_000_001)
+        }
+
+        Self.expectStandardError(
+            of: result,
+            contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.newConnectionRateLimit",
+                requirement: "between 1 and 1,000,000,000"
+            )
+        )
+    }
+
+    #if HTTP3
+    @available(anyAppleOS 27.0, *)
+    @Test func tcpConnectionLimitsOnHTTP3OnlyAreRejected() async {
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            var (config, _) = try TestHelpers.makeTLSServerConfiguration(supportedHTTPVersions: [.http3])
+            config.tcpConnectionLimits = .init(maxConnections: 10)
+        }
+
+        Self.expectStandardError(
+            of: result,
+            contains: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2
+        )
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func switchingToHTTP3OnlyWithTCPConnectionLimitsIsRejected() async {
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            var (config, _) = try TestHelpers.makeTLSServerConfiguration(
+                supportedHTTPVersions: [.http1_1, .http2, .http3]
+            )
+            config.tcpConnectionLimits = .init(maxConnections: 10)
+            // We already set a TCP connection limit. Moving to just supporting HTTP/3 should fail.
+            config.supportedHTTPVersions = [.http3]
+        }
+
+        Self.expectStandardError(
+            of: result,
+            contains: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2
+        )
+    }
+    #endif
+
+    /// Checks that the standard error output of an exit test contains the description of `error`.
+    @available(anyAppleOS 27.0, *)
+    private static func expectStandardError(
+        of result: ExitTest.Result?,
+        contains error: NIOHTTPServerConfigurationError,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let standardError = String(decoding: result?.standardErrorContent ?? [], as: UTF8.self)
+        #expect(
+            standardError.contains(error.description),
+            "Standard error should contain '\(error.description)', but was '\(standardError)'",
+            sourceLocation: sourceLocation
+        )
     }
 
     @available(anyAppleOS 27.0, *)
@@ -71,19 +164,21 @@ import Configuration
 @Suite("Connection Backpressure SwiftConfiguration")
 struct ConnectionBackpressureSwiftConfigurationTests {
     @available(anyAppleOS 27.0, *)
-    @Test("SwiftConfiguration parses maxConnections")
-    func parsesMaxConnections() throws {
+    @Test("SwiftConfiguration parses tcpConnectionLimits")
+    func parsesTCPConnectionLimits() throws {
         let provider = InMemoryProvider(values: [
             "bindTarget.host": "127.0.0.1",
             "bindTarget.port": 8080,
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
-            "maxConnections": 500,
+            "tcpConnectionLimits.maxConnections": 500,
+            "tcpConnectionLimits.newConnectionRateLimit": 250,
         ])
         let config = ConfigReader(provider: provider)
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-        #expect(serverConfig.maxConnections == 500)
+        #expect(serverConfig.tcpConnectionLimits.maxConnections == 500)
+        #expect(serverConfig.tcpConnectionLimits.newConnectionRateLimit == 250)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -118,10 +213,95 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         let config = ConfigReader(provider: provider)
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-        #expect(serverConfig.maxConnections == nil)
+        #expect(serverConfig.tcpConnectionLimits == .defaults)
         #expect(serverConfig.connectionTimeouts.idle == nil)
         #expect(serverConfig.connectionTimeouts.readHeader == nil)
         #expect(serverConfig.connectionTimeouts.readBody == nil)
     }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func rejectsZeroMaxConnections() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "tcpConnectionLimits.maxConnections": 0,
+        ])
+        let config = ConfigReader(provider: provider)
+
+        #expect(
+            throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.maxConnections",
+                requirement: "greater than 0"
+            )
+        ) {
+            _ = try NIOHTTPServerConfiguration(config: config)
+        }
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func rejectsZeroNewConnectionRateLimit() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "tcpConnectionLimits.newConnectionRateLimit": 0,
+        ])
+        let config = ConfigReader(provider: provider)
+
+        #expect(
+            throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.newConnectionRateLimit",
+                requirement: "between 1 and 1,000,000,000"
+            )
+        ) {
+            _ = try NIOHTTPServerConfiguration(config: config)
+        }
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func rejectsTooLargeNewConnectionRateLimit() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "tcpConnectionLimits.newConnectionRateLimit": 1_000_000_001,
+        ])
+        let config = ConfigReader(provider: provider)
+
+        #expect(
+            throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.newConnectionRateLimit",
+                requirement: "between 1 and 1,000,000,000"
+            )
+        ) {
+            _ = try NIOHTTPServerConfiguration(config: config)
+        }
+    }
+
+    #if HTTP3
+    @available(anyAppleOS 27.0, *)
+    @Test func rejectsTCPConnectionLimitsOnHTTP3Only() throws {
+        let (leafPath, _, keyPath) = try TestCA.makeSelfSignedChain().writeToDisk()
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http3"]), isSecret: false),
+            "transportSecurity.mode": "tls",
+            "transportSecurity.credentialSource": "file",
+            "transportSecurity.certificateChainPEMPath": .init(.string(leafPath), isSecret: false),
+            "transportSecurity.privateKeyPEMPath": .init(.string(keyPath), isSecret: true),
+            "tcpConnectionLimits.maxConnections": 10,
+        ])
+        let config = ConfigReader(provider: provider)
+
+        #expect(throws: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2) {
+            _ = try NIOHTTPServerConfiguration(config: config)
+        }
+    }
+    #endif
 }
 #endif  // Configuration

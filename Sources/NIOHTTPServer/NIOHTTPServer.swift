@@ -572,14 +572,25 @@ struct HTTPRequestChannelAndCancellationSignal: Sendable {
 }
 
 @available(anyAppleOS 27.0, *)
+extension ConnectionLimitHandler.LimitConfiguration {
+    init(_ limits: NIOHTTPServerConfiguration.TCPConnectionLimits) {
+        self.init(
+            maxConnections: limits.maxConnections,
+            newConnectionRateLimit: limits.newConnectionRateLimit
+        )
+    }
+}
+
+@available(anyAppleOS 27.0, *)
 extension ServerBootstrap {
     /// Makes a `ServerBootstrap` alongside the `ServerQuiescingHelper` used to later shut that listener down gracefully.
     ///
-    /// - Note: A `ConnectionLimitHandler` is only installed when `maxConnections` is non-`nil`.
+    /// - Note: A `ConnectionLimitHandler` is only installed when `connectionLimits` sets at least one limit.
     static func makeTCPBootstrap(
         listeningSocketGroup: any EventLoopGroup,
         acceptedConnectionsGroup: any EventLoopGroup,
-        maxConnections: Int?
+        connectionLimits: NIOHTTPServerConfiguration.TCPConnectionLimits,
+        logger: Logger
     ) -> (ServerBootstrap, ServerQuiescingHelper) {
         let serverQuiescingHelper = ServerQuiescingHelper(group: listeningSocketGroup)
 
@@ -591,9 +602,12 @@ extension ServerBootstrap {
                         serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                     )
 
-                    if let maxConnections {
+                    if connectionLimits.isEnabled {
                         try channel.pipeline.syncOperations.addHandler(
-                            ConnectionLimitHandler(maxConnections: maxConnections)
+                            ConnectionLimitHandler(
+                                limits: ConnectionLimitHandler.LimitConfiguration(connectionLimits),
+                                logger: logger
+                            )
                         )
                     }
                 }
@@ -631,7 +645,8 @@ extension NIOHTTPServer {
         let (bootstrap, serverQuiescingHelper) = ServerBootstrap.makeTCPBootstrap(
             listeningSocketGroup: listeningSocketGroup,
             acceptedConnectionsGroup: acceptedConnectionsGroup,
-            maxConnections: self.configuration.maxConnections
+            connectionLimits: self.configuration.tcpConnectionLimits,
+            logger: self.logger
         )
 
         let serverChannel: NIOAsyncChannel<Child, Never>

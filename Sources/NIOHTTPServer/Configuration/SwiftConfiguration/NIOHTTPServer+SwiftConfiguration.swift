@@ -47,8 +47,8 @@ extension NIOHTTPServerConfiguration {
     ///
     /// - **`"backpressureStrategy"`**: The backpressure strategy (see ``BackPressureStrategy/init(config:)``).
     ///
-    /// - **`"maxConnections"`** (int, optional, default: nil): The maximum number of concurrent connections the server
-    ///   will accept. When omitted, no limit is imposed.
+    /// - **`"tcpConnectionLimits"`**: Limits on the connections each TCP listener accepts (see
+    ///   ``TCPConnectionLimits/init(config:)``). Only valid when HTTP/1.1 or HTTP/2 is supported.
     ///
     /// - **`"connectionTimeouts"`**: The idle, header read, and body read timeouts applied to connections (see
     ///   ``ConnectionTimeouts/init(config:)``).
@@ -70,6 +70,8 @@ extension NIOHTTPServerConfiguration {
     ///       `"bindTarget"` and `"bindTargets"` are provided.
     ///     - Throws `NIOHTTPServerSwiftConfigurationError/bindTargetsHostsAndPortsLengthMismatch` if
     ///       `bindTargets.hosts` and `bindTargets.ports` have different lengths.
+    ///     - Throws `NIOHTTPServerConfigurationError` if the connection limits are invalid: if a limit is out of range,
+    ///       or if a limit that doesn't apply to the supported HTTP versions is set.
     public init(
         config: ConfigReader,
         customCertificateVerificationCallback: (
@@ -87,9 +89,11 @@ extension NIOHTTPServerConfiguration {
             )
         )
         self.backpressureStrategy = .init(config: snapshot.scoped(to: "backpressureStrategy"))
-        self.maxConnections = snapshot.int(forKey: "maxConnections")
+        self.tcpConnectionLimits = .init(config: snapshot.scoped(to: "tcpConnectionLimits"))
         self.connectionTimeouts = .init(config: snapshot.scoped(to: "connectionTimeouts"))
         self.gracefulShutdown = .init(config: snapshot.scoped(to: "gracefulShutdown"))
+
+        try self.validateConnectionLimits()
     }
 
     /// Reads bind targets from either the singular `bindTarget` scope or the plural `bindTargets` scope.
@@ -499,6 +503,25 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
             idle: config.int(forKey: "idle").map { .seconds($0) },
             readHeader: config.int(forKey: "readHeader").map { .seconds($0) },
             readBody: config.int(forKey: "readBody").map { .seconds($0) }
+        )
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServerConfiguration.TCPConnectionLimits {
+    /// Initialize TCP connection limits from a config reader.
+    ///
+    /// ## Configuration keys:
+    /// - `maxConnections` (int, optional, default: nil): The maximum number of accepted connections that may be open
+    ///   at once.
+    /// - `newConnectionRateLimit` (int, optional, default: nil): The maximum number of new connections accepted per
+    ///   second. Must be between 1 and 1,000,000,000.
+    ///
+    /// - Parameter config: The configuration reader.
+    public init(config: ConfigSnapshotReader) {
+        self.init(
+            maxConnections: config.int(forKey: "maxConnections"),
+            newConnectionRateLimit: config.int(forKey: "newConnectionRateLimit")
         )
     }
 }

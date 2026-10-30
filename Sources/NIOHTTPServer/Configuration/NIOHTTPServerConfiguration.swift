@@ -264,6 +264,40 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public static var defaults: Self { .init() }
     }
 
+    /// Configuration for connection limits imposed by the TCP listening socket.
+    public struct TCPConnectionLimits: Sendable, Hashable {
+        /// The maximum number of accepted TCP connections that may be open at once. `nil` means unlimited.
+        ///
+        /// When this limit is reached, the listener socket stops accepting new connections until existing connections
+        /// close.
+        ///
+        /// - Precondition: Must be greater than 0 if non-`nil`.
+        public var maxConnections: Int?
+
+        /// The maximum number of new connections accepted per second. A burst of up to this many is accepted at once;
+        /// after that, capacity refills at this rate. `nil` means unlimited.
+        ///
+        /// When the rate is exhausted, `accept()` calls on the listening socket are held back until the rate limiter
+        /// permits.
+        ///
+        /// - Precondition: Must be between 1 and 1,000,000,000 if non-`nil`.
+        public var newConnectionRateLimit: Int?
+
+        /// Whether any of the limits are set.
+        var isEnabled: Bool {
+            self.maxConnections != nil || self.newConnectionRateLimit != nil
+        }
+
+        /// The default TCP connection limits.
+        ///
+        /// Uses the following default values:
+        /// - ``maxConnections``: `nil` (no limit on the number of open connections).
+        /// - ``newConnectionRateLimit``: `nil` (no limit on the rate of new connections).
+        public static var defaults: Self {
+            Self(maxConnections: nil, newConnectionRateLimit: nil)
+        }
+    }
+
     /// Configuration options for graceful shutdown behavior.
     public struct GracefulShutdownConfiguration: Sendable, Hashable {
         /// The maximum amount of time that the connection has to close gracefully before being forcefully closed.
@@ -309,52 +343,41 @@ public struct NIOHTTPServerConfiguration: Sendable {
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
     public var transportSecurity: TransportSecurity {
         didSet {
-            do {
-                try self.validateTransportConfiguration()
-            } catch {
-                preconditionFailure("\(error)")
-            }
+            self.preconditionValidTransportConfiguration()
         }
     }
 
     /// The HTTP protocol versions the server advertises and accepts connections for.
     ///
-    /// - Precondition: Must not be empty, and must be compatible with ``transportSecurity``:
+    /// - Precondition: Must not be empty, and must be compatible with ``transportSecurity`` and
+    ///   ``tcpConnectionLimits``:
     ///   - `transportSecurity == .mTLS` is not supported when `supportedHTTPVersions` contains `.http3`.
     ///   - Raw Public Key credentials are only supported when `supportedHTTPVersions == [.http3]`.
     ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
     ///     on disk. Other credential sources are not supported.
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
+    ///   - `tcpConnectionLimits` can only be set when `supportedHTTPVersions` contains `.http1_1` or `.http2`.
     public var supportedHTTPVersions: Set<HTTPVersion> {
         didSet {
             if self.supportedHTTPVersions.isEmpty {
                 preconditionFailure(NIOHTTPServerConfigurationError.noSupportedHTTPVersionsSpecified.description)
             }
 
-            do {
-                try self.validateTransportConfiguration()
-            } catch {
-                preconditionFailure("\(error)")
-            }
+            self.preconditionValidTransportConfiguration()
+            self.preconditionValidConnectionLimits()
         }
     }
 
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
 
-    /// The maximum number of concurrent connections the server will accept.
+    /// Connection limits imposed by the TCP listening socket.
     ///
-    /// When this limit is reached, the server stops accepting new connections until existing ones close. `nil` means
-    /// unlimited (the default).
-    ///
-    /// - Note: Connection limits are not currently supported over HTTP/3.
-    ///
-    /// - Precondition: Must be greater than 0 if non-`nil`.
-    public var maxConnections: Int? {
+    /// - Precondition: TCP connection limits can only be set when ``supportedHTTPVersions`` contains HTTP/1.1 and/or
+    ///   HTTP/2. Each limit must also be valid (see ``TCPConnectionLimits``).
+    public var tcpConnectionLimits: TCPConnectionLimits {
         didSet {
-            if let maxConnections, maxConnections <= 0 {
-                preconditionFailure("`maxConnections` must be greater than 0.")
-            }
+            self.preconditionValidConnectionLimits()
         }
     }
 
@@ -384,7 +407,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Create a new configuration with multiple bind targets.
     ///
-    /// Other configuration properties (``backpressureStrategy``, ``maxConnections``, ``connectionTimeouts``,
+    /// Other configuration properties (``backpressureStrategy``, ``tcpConnectionLimits``, ``connectionTimeouts``,
     /// ``gracefulShutdown``) are initialized to their defaults and can be set on the resulting value before passing it
     /// to ``NIOHTTPServer``.
     ///
@@ -409,7 +432,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = .defaults
-        self.maxConnections = nil
+        self.tcpConnectionLimits = .defaults
         self.connectionTimeouts = .defaults
         self.gracefulShutdown = .defaults
 
@@ -419,7 +442,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Create a new configuration with a single bind target.
     ///
-    /// Other configuration properties (``backpressureStrategy``, ``maxConnections``, ``connectionTimeouts``,
+    /// Other configuration properties (``backpressureStrategy``, ``tcpConnectionLimits``, ``connectionTimeouts``,
     /// ``gracefulShutdown``) are initialized to their defaults and can be set on the resulting value before passing it
     /// to ``NIOHTTPServer``.
     ///

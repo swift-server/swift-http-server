@@ -37,7 +37,7 @@ struct ConnectionBackpressureEndToEndTests {
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.maxConnections = 2
+            configuration.tcpConnectionLimits = .init(maxConnections: 2)
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 
@@ -86,18 +86,46 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func moreConnectionsThanLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        // Open 20 connections at once with maxConnections: 2.
+        try await self.expectAllConnectionsComplete(
+            numConnections: 20,
+            limits: .init(maxConnections: 2),
+            httpVersion: httpVersion
+        )
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        "More connections than the rate limit all eventually complete",
+        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
+    )
+    func moreConnectionsThanRateLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        // Open 30 connections at once with a rate of 20 per second. All should eventually complete, as the connections
+        // beyond the burst wait in the backlog until the rate limiter has a token for them.
+        try await self.expectAllConnectionsComplete(
+            numConnections: 30,
+            limits: .init(newConnectionRateLimit: 20),
+            httpVersion: httpVersion
+        )
+    }
+
+    /// Opens `numConnections` concurrent connections to a server with `limits`, and checks that every one of them gets a
+    /// response.
+    @available(anyAppleOS 27.0, *)
+    private func expectAllConnectionsComplete(
+        numConnections: Int,
+        limits: NIOHTTPServerConfiguration.TCPConnectionLimits,
+        httpVersion: NIOHTTPServer.HTTPVersion
+    ) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.maxConnections = 2
+            configuration.tcpConnectionLimits = limits
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 
-        // Open 5 connections with maxConnections: 2. All should eventually complete
-        // as the connection limit handler releases slots when connections close.
-        let numConnections = 5
         try await confirmation(expectedCount: numConnections) { responseReceived in
             try await TestHelpers.withServer(
                 server: server,
@@ -107,9 +135,9 @@ struct ConnectionBackpressureEndToEndTests {
                         reader: reader,
                         sender: responseSender
                     )
-                },
+                }
             ) { serverAddress in
-                await withThrowingTaskGroup { group in
+                try await withThrowingTaskGroup(of: Void.self) { group in
                     for _ in 0..<numConnections {
                         group.addTask {
                             try await TestClientConnection.withConnectedRequestChannel(
@@ -130,6 +158,8 @@ struct ConnectionBackpressureEndToEndTests {
                             }
                         }
                     }
+
+                    try await group.waitForAll()
                 }
             }
         }
