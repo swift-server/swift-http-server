@@ -22,6 +22,7 @@ extension NIOHTTPServer {
     ///
     /// Conforms to:
     /// - ``HTTPServerCapability/ConnectionInfo`` — peer / local addresses.
+    /// - ``HTTPServerCapability/HTTPVersion`` — HTTP version of the connection.
     /// - ``HTTPServerCapability/PeerCertificate`` — mTLS-validated peer chain.
     ///
     /// Generic library code can constrain on these capabilities to access
@@ -57,6 +58,15 @@ extension NIOHTTPServer.RequestContext: HTTPServerCapability.ConnectionInfo {
     /// Returns `nil` under the same conditions as ``remoteAddress``.
     public var localAddress: NIOHTTPServer.SocketAddress? {
         self.connectionContext.localAddress
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServer.RequestContext: HTTPServerCapability.HTTPVersion {
+    /// The application-level HTTP version in use on the connection carrying
+    /// this request.
+    public var httpVersion: NIOHTTPServer.HTTPVersion {
+        self.connectionContext.httpVersion
     }
 }
 

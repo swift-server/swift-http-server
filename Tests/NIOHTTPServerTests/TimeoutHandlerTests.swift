@@ -288,9 +288,11 @@ struct RequestTimeoutHandlerTests {
         // Send end within body timeout
         channel.embeddedEventLoop.advanceTime(by: .seconds(8))
         try channel.writeInbound(HTTPRequestPart.end(nil))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
 
-        // Right after `.end`, the header timeout is re-armed for the next request. Send a fresh
-        // head before that timer fires so the connection stays open.
+        // Right after the response `.end`, the header timeout is re-armed for the next request.
+        // Send a fresh head before that timer fires so the connection stays open.
         channel.embeddedEventLoop.advanceTime(by: .seconds(3))
         try channel.writeInbound(HTTPRequestPart.head(head))
 
@@ -350,13 +352,79 @@ struct RequestTimeoutHandlerTests {
 
         try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
 
-        // First request completes successfully within the header timeout window.
+        // First request/response cycle completes successfully within the header timeout window.
         let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/")
         try channel.writeInbound(HTTPRequestPart.head(head))
         try channel.writeInbound(HTTPRequestPart.end(nil))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
 
         // Now no second request arrives within the header timeout — connection should be closed.
         channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
+    }
+
+    @Test("Header timeout is not re-armed while the response is still being written")
+    func headerTimeoutNotRearmedWhileResponseInFlight() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(
+            readHeaderTimeout: .seconds(5),
+            readBodyTimeout: .seconds(5),
+            expectMultipleRequests: true
+        )
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // A GET request is complete right after its head, but the response is long-running, e.g.
+        // Server-Sent Events.
+        let head = HTTPRequest(method: .get, scheme: "http", authority: "", path: "/events")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+
+        // Keep streaming body parts well past the header and body timeouts.
+        for _ in 0..<10 {
+            channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+            try channel.writeOutbound(HTTPResponsePart.body(ByteBuffer(string: "data: tick\n\n")))
+        }
+        #expect(channel.isActive)
+
+        // Once the response ends, the header timeout protects the connection again.
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
+        channel.embeddedEventLoop.advanceTime(by: .seconds(6))
+
+        #expect(!channel.isActive)
+    }
+
+    @Test("Header timeout is re-armed after request end when the response ended first")
+    func headerTimeoutRearmedAfterRequestEndWhenResponseEndedFirst() throws {
+        let channel = EmbeddedChannel()
+        let handler = RequestTimeoutHandler(
+            readHeaderTimeout: .seconds(5),
+            readBodyTimeout: .seconds(10),
+            expectMultipleRequests: true
+        )
+        try channel.pipeline.syncOperations.addHandler(handler)
+
+        try channel.connect(to: .init(ipAddress: "127.0.0.1", port: 8080)).wait()
+
+        // The server responds before the request body is complete.
+        let head = HTTPRequest(method: .post, scheme: "http", authority: "", path: "/")
+        try channel.writeInbound(HTTPRequestPart.head(head))
+        try channel.writeOutbound(HTTPResponsePart.head(HTTPResponse(status: .ok)))
+        try channel.writeOutbound(HTTPResponsePart.end(nil))
+
+        // The body timeout still applies to the remaining request body.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(8))
+        #expect(channel.isActive)
+        try channel.writeInbound(HTTPRequestPart.end(nil))
+
+        // The body timeout must not fire anymore, but the header timeout must.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(4))
+        #expect(channel.isActive)
+        channel.embeddedEventLoop.advanceTime(by: .seconds(2))
 
         #expect(!channel.isActive)
     }

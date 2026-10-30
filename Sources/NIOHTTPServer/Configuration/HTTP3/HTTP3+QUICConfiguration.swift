@@ -80,6 +80,42 @@ extension NIOHTTPServerConfiguration.HTTP3 {
             }
         }
 
+        /// The UDP payload size of the server's Initial packets. Also the smallest maximum packet size the connection
+        /// will use.
+        ///
+        /// The server pads every datagram that carries an Initial packet to this size. Once the handshake succeeds, the
+        /// packet size will never be lower than this size.
+        ///
+        /// - Note: Values of 1200 bytes or less have no effect, because every QUIC path must support 1200-byte UDP
+        ///   payloads.
+        ///
+        /// - Important: The network will drop datagrams larger than the path MTU instead of fragmenting them.
+        ///   Therefore, a size the path can't carry will stall the handshake until the idle timeout.
+        ///
+        /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-14.1
+        public struct InitialPacketSize: Sendable, Hashable {
+            enum Kind: Sendable, Hashable {
+                case fixed(Int)
+                case matchingClientInitial(maximum: Int)
+            }
+
+            let kind: Kind
+
+            /// Use `size` bytes, regardless of the size of the datagram containing the client's first Initial packet.
+            public static func fixed(_ size: Int) -> Self {
+                Self(kind: .fixed(size))
+            }
+
+            /// Send UDP payloads as large as the datagram containing the client's first Initial packet, but at most
+            /// `maximum` bytes.
+            ///
+            /// - Note: The client's Initial only shows that the path carries packets of its size towards the server,
+            ///   not back towards the client.
+            public static func matchingClientInitial(upTo maximum: Int) -> Self {
+                Self(kind: .matchingClientInitial(maximum: maximum))
+            }
+        }
+
         /// The server's hostname for the TLS handshake.
         ///
         /// - Important: SwiftTLS currently just ignores the server name sent in the ClientHello. See
@@ -131,6 +167,12 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-18.2-4.24.1
         public var initialMaxStreamsUnidirectional: Int
 
+        /// The UDP payload size of the server's Initial packets. Path MTU discovery may raise the packet size later in
+        /// the connection, but the packet size will never drop below this size.
+        ///
+        /// - SeeAlso: https://datatracker.ietf.org/doc/html/rfc9000#section-14.1
+        public var initialPacketSize: InitialPacketSize
+
         /// The interval at which the server sends keep-alive PING frames.
         ///
         /// Each PING restarts both endpoints' idle timers. The server's idle timer is restarted when the PING is sent,
@@ -180,6 +222,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// - `initialMaxStreamDataUnidirectional`: 1 MiB.
         /// - `initialMaxStreamsBidirectional`: 100 streams.
         /// - `initialMaxStreamsUnidirectional`: 100 streams.
+        /// - `initialPacketSize`: 1200 bytes.
         /// - `keepAliveInterval`: `nil` (no keep-alive PINGs are sent).
         /// - `sendRetry`: `false`.
         /// - `keyLogPath`: `nil` (TLS session keys are not logged).
@@ -197,6 +240,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
                 initialMaxStreamDataUnidirectional: 1024 * 1024,
                 initialMaxStreamsBidirectional: 100,
                 initialMaxStreamsUnidirectional: 100,
+                initialPacketSize: .fixed(1200),
                 keepAliveInterval: nil,
                 sendRetry: false,
                 keyLogPath: nil,
@@ -207,13 +251,11 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 }
 
 @available(anyAppleOS 27.0, *)
-extension NIOQUIC.QUICConfiguration.QLogConfiguration {
+extension NIOQUIC.QLogConfiguration {
     fileprivate init(_ configuration: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.QLogConfiguration) {
-        self.init(
-            path: configuration.path,
-            topic: configuration.topic,
-            description: configuration.description
-        )
+        self.init(path: configuration.path)
+        self.topic = configuration.topic
+        self.description = configuration.description
     }
 }
 
@@ -232,6 +274,19 @@ extension NIOQUIC.KeyExchangeGroup {
 
         case .x25519MLKEM768:
             self = .x25519MLKEM768
+        }
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOQUIC.InitialPacketSize {
+    fileprivate init(_ configuration: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.InitialPacketSize) {
+        switch configuration.kind {
+        case .fixed(let size):
+            self = .fixed(size)
+
+        case .matchingClientInitial(let maximum):
+            self = .matchingClientInitial(upTo: maximum)
         }
     }
 }
@@ -268,25 +323,26 @@ extension NIOQUIC.QUICConfiguration {
         _ config: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration,
         authenticationConfiguration: NIOQUIC.AuthenticationConfiguration
     ) {
-        self = .server(
+        self = .forServer(
             // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. See
             // https://github.com/apple/swift-nio-quic/issues/4.
             serverName: config.serverName,
             authenticationConfiguration: authenticationConfiguration,
-            keyExchangeGroup: .init(config.keyExchangeGroup),
-            applicationProtocols: ["h3"],
-            maxIdleTimeout: config.maxIdleTimeout,
-            initialMaxData: config.initialMaxData,
-            initialMaxStreamDataBidiLocal: config.initialMaxStreamDataBidirectionalLocal,
-            initialMaxStreamDataBidiRemote: config.initialMaxStreamDataBidirectionalRemote,
-            initialMaxStreamDataUni: config.initialMaxStreamDataUnidirectional,
-            initialMaxStreamsBidi: config.initialMaxStreamsBidirectional,
-            initialMaxStreamsUni: config.initialMaxStreamsUnidirectional,
-            keepAliveInterval: config.keepAliveInterval,
-            sendRetry: config.sendRetry,
-            keyLogPath: config.keyLogPath,
-            qLogConfiguration: config.qLogConfiguration.map { .init($0) }
+            applicationProtocols: ["h3"]
         )
+        self.keyExchangeGroup = .init(config.keyExchangeGroup)
+        self.maxIdleTimeout = config.maxIdleTimeout
+        self.initialMaxData = config.initialMaxData
+        self.initialMaxStreamDataBidiLocal = config.initialMaxStreamDataBidirectionalLocal
+        self.initialMaxStreamDataBidiRemote = config.initialMaxStreamDataBidirectionalRemote
+        self.initialMaxStreamDataUni = config.initialMaxStreamDataUnidirectional
+        self.initialMaxStreamsBidi = config.initialMaxStreamsBidirectional
+        self.initialMaxStreamsUni = config.initialMaxStreamsUnidirectional
+        self.initialPacketSize = .init(config.initialPacketSize)
+        self.keepAliveInterval = config.keepAliveInterval
+        self.sendRetry = config.sendRetry
+        self.keyLogPath = config.keyLogPath
+        self.qLogConfiguration = config.qLogConfiguration.map { .init($0) }
     }
 
     #if UnstableHTTPDatagrams

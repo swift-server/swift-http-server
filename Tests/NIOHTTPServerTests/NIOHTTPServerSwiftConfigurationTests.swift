@@ -380,6 +380,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "quicConfiguration.initialMaxStreamsBidirectional": 150,
                 "quicConfiguration.initialMaxStreamsUnidirectional": 175,
                 "quicConfiguration.sendRetry": true,
+                "quicConfiguration.initialPacketSize.matchingClientInitialUpTo": 1500,
                 "quicConfiguration.keyLogPath": "/tmp/keylog",
                 "quicConfiguration.qlog.path": "/tmp/qlog",
                 "quicConfiguration.qlog.topic": "topic",
@@ -417,6 +418,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(quic.initialMaxStreamDataUnidirectional == 125)
             #expect(quic.initialMaxStreamsBidirectional == 150)
             #expect(quic.initialMaxStreamsUnidirectional == 175)
+            #expect(quic.initialPacketSize == .matchingClientInitial(upTo: 1500))
             #expect(quic.sendRetry == true)
             #expect(quic.keyLogPath == "/tmp/keylog")
             #expect(quic.qLogConfiguration == .init(path: "/tmp/qlog", topic: "topic", description: "description"))
@@ -576,6 +578,43 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     "Config value for key 'keyExchangeGroup' failed to cast to type KeyExchangeGroupKind."
                         == "\(configError)"
                 )
+            }
+
+            @Test(
+                "Custom QUIC Initial packet size",
+                arguments: [
+                    ("fixed", NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.InitialPacketSize.fixed(1500)),
+                    ("matchingClientInitialUpTo", .matchingClientInitial(upTo: 1500)),
+                ]
+            )
+            @available(anyAppleOS 27.0, *)
+            func customInitialPacketSize(
+                key: String,
+                expected: NIOHTTPServerConfiguration.HTTP3.QUICConfiguration.InitialPacketSize
+            ) throws {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(values: [AbsoluteConfigKey(["initialPacketSize", key]): 1500])
+                ).snapshot()
+
+                let config = try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+                #expect(config.initialPacketSize == expected)
+            }
+
+            @Test("Providing both QUIC Initial packet size keys throws")
+            @available(anyAppleOS 27.0, *)
+            func provideBothInitialPacketSizeKeys() throws {
+                let snapshot = ConfigReader(
+                    provider: InMemoryProvider(
+                        values: [
+                            "initialPacketSize.fixed": 1500,
+                            "initialPacketSize.matchingClientInitialUpTo": 1500,
+                        ]
+                    )
+                ).snapshot()
+
+                #expect(throws: NIOHTTPServerSwiftConfigurationError.multipleQUICInitialPacketSizeKeysProvided) {
+                    try NIOHTTPServerConfiguration.HTTP3.QUICConfiguration(config: snapshot)
+                }
             }
         }
 

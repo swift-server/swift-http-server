@@ -230,7 +230,8 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "HTTP/3 over \(address) on \(eventLoop)") {
+        let executor = eventLoop as? any TaskExecutor
+        group.addTask(name: "HTTP/3 over \(address) on \(eventLoop)", executorPreference: executor) {
             try await self.withHTTP3Channel(
                 address: address,
                 eventLoop: eventLoop,
@@ -270,6 +271,13 @@ extension NIOHTTPServer {
         do {
             (quicChannel, multiplexer) = try await bootstrap.bind(to: address) { channel in
                 channel.eventLoop.makeCompletedFuture {
+                    // Set don't fragment on IP sockets for QUIC per RFC 9000, § 14.
+                    switch address {
+                    case .v4, .v6:
+                        try QUICDontFragment.set(on: channel)
+                    case .unixDomainSocket:
+                        break
+                    }
                     let multiplexer = try self.setupQUICChannel(
                         channel: channel,
                         configuration: configuration,
