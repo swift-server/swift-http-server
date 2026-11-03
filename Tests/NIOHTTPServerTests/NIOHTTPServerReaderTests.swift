@@ -40,31 +40,48 @@ struct NIOHTTPServerReaderTests {
             source.finish()
 
             var requestReader = NIOHTTPServer.Reader(
-                readerState: .init(iterator: stream.makeAsyncIterator())
+                iterator: stream.makeAsyncIterator(),
+                exchangeState: .singleUse(state: .init())
             )
 
             try await requestReader.read { _, _ in }
         }
     }
 
-    @Test("Stream cannot be finished before writing request end part")
     @available(anyAppleOS 27.0, *)
-    func testNotWritingRequestEndPartFatalError() async throws {
-        await #expect(processExitsWith: .failure) {
-            let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+    @Test("Reading after request end part throws") func readAfterRequestEndThrows() async throws {
+        let (stream, source) = NIOAsyncChannelInboundStream<HTTPRequestPart>.makeTestingStream()
+        source.yield(.body(ByteBuffer(string: "hello")))
+        source.yield(.end(nil))
+        source.finish()
 
-            // Only write a request body part; do not write an end part.
-            source.yield(.body(.init()))
-            source.finish()
+        let exchangeState = NIOHTTPServer.ExchangeState()
+        var requestReader = NIOHTTPServer.Reader(
+            iterator: stream.makeAsyncIterator(),
+            exchangeState: .reusable(state: exchangeState)
+        )
 
-            var requestReader = NIOHTTPServer.Reader(
-                readerState: .init(iterator: stream.makeAsyncIterator())
-            )
+        // Read the request body.
+        let body = try await requestReader.read { buffer, _ in
+            var byteBuffer = ByteBuffer()
+            byteBuffer.writeBytes(buffer.span.bytes)
+            return byteBuffer
+        }
+        #expect(body == ByteBuffer(string: "hello"))
 
-            try await requestReader.read { _, _ in }
-            // The stream has finished without an end part. Calling `read` now should result in a fatal error.
+        // Read the request end.
+        let finalElement = try await requestReader.read { _, finalElement in finalElement }
+        #expect(finalElement == .some(nil))
+
+        // We should get the iterator back.
+        #expect(exchangeState.finishedReading)
+        #expect(exchangeState.takeIterator() != nil)
+
+        // Now try to read again. This should result in an error
+        let error = try await #require(throws: EitherError<any Error, Never>.self) {
             try await requestReader.read { _, _ in }
         }
+        #expect(throws: RequestBodyReadError.readAfterRequestEnd) { try error.unwrap() }
     }
 
     @Test(
@@ -83,7 +100,10 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(trailers))
         source.finish()
 
-        var requestReader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
+        var requestReader = NIOHTTPServer.Reader(
+            iterator: stream.makeAsyncIterator(),
+            exchangeState: .singleUse(state: .init())
+        )
         var requestBody = ByteBuffer()
 
         _ = try await requestReader.read { buffer, _ in
@@ -124,7 +144,8 @@ struct NIOHTTPServerReaderTests {
 
             group.addTask {
                 let requestReader = NIOHTTPServer.Reader(
-                    readerState: .init(iterator: stream.makeAsyncIterator())
+                    iterator: stream.makeAsyncIterator(),
+                    exchangeState: .singleUse(state: .init())
                 )
                 // Read all body chunks
                 var chunksProcessed = 0
@@ -156,7 +177,8 @@ struct NIOHTTPServerReaderTests {
         source.finish()
 
         var requestReader = NIOHTTPServer.Reader(
-            readerState: .init(iterator: stream.makeAsyncIterator())
+            iterator: stream.makeAsyncIterator(),
+            exchangeState: .singleUse(state: .init())
         )
 
         // Check that the read error is propagated
@@ -183,7 +205,8 @@ struct NIOHTTPServerReaderTests {
         // There are more bytes available than our limit.
         await #expect(throws: AsyncReaderLeftOverElementsError.self) {
             let requestReader = NIOHTTPServer.Reader(
-                readerState: .init(iterator: stream.makeAsyncIterator())
+                iterator: stream.makeAsyncIterator(),
+                exchangeState: .singleUse(state: .init())
             )
 
             var buffer = UniqueArray<UInt8>()
@@ -219,7 +242,10 @@ struct NIOHTTPServerReaderTests {
         source.yield(.end(nil))
         source.finish()
 
-        var requestBodyReader = NIOHTTPServer.Reader(readerState: .init(iterator: stream.makeAsyncIterator()))
+        var requestBodyReader = NIOHTTPServer.Reader(
+            iterator: stream.makeAsyncIterator(),
+            exchangeState: .singleUse(state: .init())
+        )
 
         let datagramReader = await requestBodyReader.takeDatagramReader()
         var collected: [UInt8] = []
@@ -257,7 +283,8 @@ struct NIOHTTPServerReaderTests {
         // Now create the reader.
         let datagramStreamPromise = connectionChannel.eventLoop.makePromise(of: HTTP3UnreliableDatagramStream.self)
         var requestBodyReader = NIOHTTPServer.Reader(
-            readerState: .init(iterator: reliableStream.makeAsyncIterator()),
+            iterator: reliableStream.makeAsyncIterator(),
+            exchangeState: .singleUse(state: .init()),
             datagramStreamFuture: datagramStreamPromise.futureResult
         )
 
@@ -311,7 +338,8 @@ struct NIOHTTPServerReaderTests {
         // Now create the reader.
         let datagramStreamPromise = connectionChannel.eventLoop.makePromise(of: HTTP3UnreliableDatagramStream.self)
         var requestBodyReader = NIOHTTPServer.Reader(
-            readerState: .init(iterator: reliableStream.makeAsyncIterator()),
+            iterator: reliableStream.makeAsyncIterator(),
+            exchangeState: .singleUse(state: .init()),
             datagramStreamFuture: datagramStreamPromise.futureResult
         )
 
