@@ -27,7 +27,10 @@ struct NIOHTTPServerResponseSenderTests {
         // Sending an informational header with a non-1xx status code shouldn't be allowed
         try await #require(processExitsWith: .failure) {
             let (outboundWriter, _) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-            var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
+            var sender = NIOHTTPServer.ResponseSender(
+                writer: outboundWriter,
+                exchangeState: .init(state: .init())
+            )
 
             try await sender.sendInformational(.init(status: .ok, headerFields: [.contentType: "application/json"]))
         }
@@ -37,7 +40,7 @@ struct NIOHTTPServerResponseSenderTests {
     @available(anyAppleOS 27.0, *)
     func testSendMultipleInformationalResponses() async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: .init())
+        var sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, exchangeState: .init(state: .init()))
 
         // Send two informational responses
         let firstInfoHead = HTTPResponse(status: .continue, headerFields: [.contentType: "application/json"])
@@ -71,17 +74,17 @@ struct NIOHTTPServerResponseSenderTests {
     @available(anyAppleOS 27.0, *)
     func testBufferedResponse(byteCount: Int, includeTrailers: Bool) async throws {
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        let state = NIOHTTPServer.ResponseSender.WriterState()
-        let sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: state)
+        let state = NIOHTTPServer.ExchangeState()
+        let sender = NIOHTTPServer.ResponseSender(writer: outboundWriter, exchangeState: .init(state: state))
         let response = HTTPResponse(status: .ok)
         let trailers: HTTPFields? = includeTrailers ? [.serverTiming: "test"] : nil
         var buffer = UniqueArray<UInt8>(copying: [UInt8](repeating: 97, count: byteCount))
 
-        #expect(!state.wrapped.withLock { $0.finishedWriting })
+        #expect(!state.finishedWriting)
         try await sender.sendAndFinish(response, buffer: &buffer, trailer: trailers)
         let drained = buffer.isEmpty
         #expect(drained)
-        #expect(state.wrapped.withLock { $0.finishedWriting })
+        #expect(state.finishedWriting)
 
         var iterator = sink.makeAsyncIterator()
         #expect(await iterator.next() == .head(response))
@@ -102,9 +105,9 @@ struct NIOHTTPServerResponseSenderTests {
             #expect(drained)
         }
         let (outboundWriter, sink) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-        let state = NIOHTTPServer.ResponseSender.WriterState()
-        try await send(NIOHTTPServer.ResponseSender(writer: outboundWriter, writerState: state))
-        #expect(state.wrapped.withLock { $0.finishedWriting })
+        let state = NIOHTTPServer.ExchangeState()
+        try await send(NIOHTTPServer.ResponseSender(writer: outboundWriter, exchangeState: .init(state: state)))
+        #expect(state.finishedWriting)
         var iterator = sink.makeAsyncIterator()
         #expect(await iterator.next() == .head(.init(status: .ok)))
         #expect(await iterator.next() == .body(ByteBuffer(bytes: [1, 2, 3])))
@@ -116,7 +119,7 @@ struct NIOHTTPServerResponseSenderTests {
     func testBufferedResponseStatusPrecondition() async throws {
         await #expect(processExitsWith: .failure) {
             let (writer, _) = NIOAsyncChannelOutboundWriter<HTTPResponsePart>.makeTestingWriter()
-            let sender = NIOHTTPServer.ResponseSender(writer: writer, writerState: .init())
+            let sender = NIOHTTPServer.ResponseSender(writer: writer, exchangeState: .init(state: .init()))
             var buffer = UniqueArray<UInt8>()
             try await sender.sendAndFinish(.init(status: .continue), buffer: &buffer)
         }

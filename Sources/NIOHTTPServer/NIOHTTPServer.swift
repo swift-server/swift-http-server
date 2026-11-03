@@ -303,24 +303,24 @@ public struct NIOHTTPServer: HTTPServer {
         )
     }
 
-    /// Shared core: invokes the request handler with the appropriate reader/writer state.
-    /// Returns the recovered iterator if the request was fully consumed (for HTTP/1.1 reuse),
-    /// or `nil` if the request could not be fully consumed.
+    /// Shared core: invokes the request handler with the reader and response sender.
+    ///
+    /// - Parameters:
+    ///   - exchangeState: The state shared by `requestReader` and `responseSender`.
+    /// - Returns: `true` if the handler returned without throwing and concluded the response; `false` otherwise.
     private func invokeHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
         requestContext: RequestContext,
+        exchangeState: ExchangeState,
         requestReader: consuming sending Reader,
         responseSender: consuming sending ResponseSender,
         handler: Handler
-    ) async -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    ) async -> Bool
     where
         Handler.RequestContext == RequestContext,
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        let readerState = requestReader.state
-        let writerState = responseSender.writerState
-
         do {
             // Cancellation when the exchange ends is not handled here: what can end belongs to the
             // channel, not to this request, so the race lives at the level that owns the channel —
@@ -346,25 +346,20 @@ public struct NIOHTTPServer: HTTPServer {
             // to abort, and resetting the stream afterwards can make the peer discard a response it has already
             // received in full: RFC 9000 § 3.1 permits `RESET_STREAM` from the "Data Sent" state, so over HTTP/3 the
             // reset does reach the client rather than being dropped as it is over HTTP/2.
-            if !writerState.wrapped.withLock({ $0.finishedWriting }) {
+            if !exchangeState.finishedWriting {
                 Self.abortRequest(requestContext: requestContext, error: error)
             }
 
-            // The handler failed, so this connection cannot carry another request.
-            return nil
+            return false
         }
 
-        // If the handler didn't properly conclude the response, the HTTP codec
-        // is in an inconsistent state and the connection cannot be reused.
-        if !writerState.wrapped.withLock({ $0.finishedWriting }) {
-            self.logger.debug("Handler did not conclude the response. Closing connection.")
-            return nil
+        // If the handler didn't properly conclude the response, the HTTP codec is in an inconsistent state.
+        if !exchangeState.finishedWriting {
+            self.logger.debug("Handler did not conclude the response.")
+            return false
         }
 
-        // Recover the iterator for potential connection reuse. If the handler started
-        // reading the request body but didn't finish, the iterator was consumed by the
-        // reader and not returned, so we can't reuse the connection.
-        return readerState.takeIterator()
+        return true
     }
 
     #if HTTP3 && UnstableHTTPDatagrams
@@ -381,51 +376,88 @@ public struct NIOHTTPServer: HTTPServer {
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        let readerState = Reader.ReaderState(iterator: inboundIterator)
-        let writerState = ResponseSender.WriterState()
-
-        let requestReader = Reader(readerState: readerState, datagramStreamFuture: datagramStreamFuture)
-        let responseSender = ResponseSender(
-            writer: outbound,
-            writerState: writerState,
-            datagramStreamFuture: datagramStreamFuture
-        )
-
+        let exchangeState = ExchangeState()
         _ = await self.invokeHandler(
             request: request,
             requestContext: requestContext,
-            requestReader: requestReader,
-            responseSender: responseSender,
+            exchangeState: exchangeState,
+            requestReader: Reader(
+                iterator: inboundIterator,
+                exchangeState: .singleUse(state: exchangeState),
+                datagramStreamFuture: datagramStreamFuture
+            ),
+            responseSender: ResponseSender(
+                writer: outbound,
+                exchangeState: .init(state: exchangeState),
+                datagramStreamFuture: datagramStreamFuture
+            ),
             handler: handler
         )
     }
     #endif  // HTTP3 && UnstableHTTPDatagrams
 
+    /// Invokes the request handler for an HTTP/2 or HTTP/3 stream.
     func invokeHandler<Handler: HTTPServerRequestHandler>(
         request: HTTPRequest,
         requestContext: RequestContext,
         inboundIterator: consuming sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator,
         outbound: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
         handler: Handler
-    ) async -> NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?
+    ) async
     where
         Handler.RequestContext == RequestContext,
         Handler.Reader == Reader,
         Handler.ResponseSender == ResponseSender
     {
-        let readerState = Reader.ReaderState(iterator: inboundIterator)
-        let writerState = ResponseSender.WriterState()
-
-        let requestReader = Reader(readerState: readerState)
-        let responseSender = ResponseSender(writer: outbound, writerState: writerState)
-
-        return await self.invokeHandler(
+        let exchangeState = ExchangeState()
+        _ = await self.invokeHandler(
             request: request,
             requestContext: requestContext,
-            requestReader: requestReader,
-            responseSender: responseSender,
+            exchangeState: exchangeState,
+            requestReader: Reader(iterator: inboundIterator, exchangeState: .singleUse(state: exchangeState)),
+            responseSender: ResponseSender(writer: outbound, exchangeState: .init(state: exchangeState)),
             handler: handler
         )
+    }
+
+    /// Invokes the request handler for an HTTP/1.1 request.
+    ///
+    /// - Parameters:
+    ///   - request: The request whose head was just read from `reuseCoordinator`.
+    ///   - reuseCoordinator: The connection's re-use coordinator.
+    /// - Returns: Whether the connection can carry another request.
+    func invokeHTTP1Handler<Handler: HTTPServerRequestHandler>(
+        request: HTTPRequest,
+        requestContext: RequestContext,
+        reuseCoordinator: inout HTTP1ConnectionReuseCoordinator,
+        handler: Handler
+    ) async -> Bool
+    where
+        Handler.RequestContext == RequestContext,
+        Handler.Reader == Reader,
+        Handler.ResponseSender == ResponseSender
+    {
+        let exchangeState = reuseCoordinator.state
+        let requestReader = reuseCoordinator.makeReader()
+        let responseSender = reuseCoordinator.makeResponseSender()
+
+        // If the handler failed or didn't conclude the response, the connection cannot be reused.
+        guard
+            await self.invokeHandler(
+                request: request,
+                requestContext: requestContext,
+                exchangeState: exchangeState,
+                requestReader: requestReader,
+                responseSender: responseSender,
+                handler: handler
+            )
+        else {
+            return false
+        }
+
+        // Try to take the iterator back. Note that `recoverIterator` will return `false` if the handler didn't read the
+        // request through to the request end part.
+        return reuseCoordinator.recoverIterator()
     }
 
     /// Fail the listening address promise if the server is shutting down before it began listening.
