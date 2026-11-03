@@ -20,7 +20,7 @@ import NIOCore
 /// 2. `newConnectionRateLimit`: How quickly new connections can be accepted.
 ///
 /// - When the `maxConnections` or `newConnectionRateLimit` limit is reached, this handler stops forwarding `read()`
-///   calls to prevents NIO from calling `accept()` on the listening socket and accepting more connection.
+///   calls to prevent NIO from calling `accept()` on the listening socket and accepting more connection.
 ///
 ///   Note that a single `read()` call can potentially result in multiple connections being accepted (depending on the
 ///   `MaxMessagesPerReadOption` channel option, which defaults to 4). As such, we may sometimes marginally exceed these

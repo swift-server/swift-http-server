@@ -136,13 +136,13 @@ struct TokenBucketTests {
 
         // Now go into debt.
         bucket.take(now: .uptimeNanoseconds(0))
-        // The next token will be available after 2 `refreshInterval`s (we need to pay for the one we just borrowed,
+        // The next token will be available after 2 `refillInterval`s (we need to pay for the one we just borrowed,
         // and for the next token itself).
         #expect(bucket.timeUntilNextToken(now: .uptimeNanoseconds(0)) == .milliseconds(1000))
 
         // Go into more debt.
         bucket.take(now: .uptimeNanoseconds(0))
-        // Now we need to wait 3 `refreshInterval`s for the next token to be available.
+        // Now we need to wait 3 `refillInterval`s for the next token to be available.
         #expect(bucket.timeUntilNextToken(now: .uptimeNanoseconds(0)) == .milliseconds(1500))
     }
 }

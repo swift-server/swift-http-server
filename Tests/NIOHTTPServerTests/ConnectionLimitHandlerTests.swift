@@ -146,7 +146,7 @@ struct ConnectionLimitHandlerTests {
         let readCounter = ReadCountingHandler()
         try channel.pipeline.syncOperations.addHandler(readCounter)
 
-        // Set a rate limit of 2 new connections per second. This means the token `refreshInterval` is 500ms.
+        // Set a rate limit of 2 new connections per second. This means the token `refillInterval` is 500ms.
         try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionRateLimit: 2))
 
         for expectedReadCount in 1...2 {
@@ -180,7 +180,7 @@ struct ConnectionLimitHandlerTests {
         let readCounter = ReadCountingHandler()
         try channel.pipeline.syncOperations.addHandler(readCounter)
 
-        // Set a rate limit of 2 new connections per second. This means the token `refreshInterval` is 500ms.
+        // Set a rate limit of 2 new connections per second. This means the token `refillInterval` is 500ms.
         try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionRateLimit: 2))
 
         // Fire a `read()` call.
@@ -201,7 +201,7 @@ struct ConnectionLimitHandlerTests {
             #expect(forwarded != nil, "A connection beyond the rate should be forwarded")
         }
 
-        // The next `read()` call should not be forwarded until 3 `refreshInterval`s (1500ms) have passed: two to cover
+        // The next `read()` call should not be forwarded until 3 `refillInterval`s (1500ms) have passed: two to cover
         // the debt, and one more for the next connection.
         channel.read()
         #expect(readCounter.readCount == 1, "Read should be held while the bucket refills the debt")
@@ -272,7 +272,7 @@ struct ConnectionLimitHandlerTests {
         channel.read()
         channel.read()
         channel.read()
-        // All three should be forwared. Tokens should only be consumed on `channelRead()`.
+        // All three should be forwarded. Tokens should only be consumed on `channelRead()`.
         #expect(readCounter.readCount == 3, "Reads shouldn't take the only token")
 
         // Now simulate a connection arriving. This should exhaust the rate limit.
@@ -280,7 +280,7 @@ struct ConnectionLimitHandlerTests {
         let forwarded = try channel.readInbound(as: Channel.self)
         #expect(forwarded != nil)
 
-        // Further `read()` calls shouldn't be forwared now.
+        // Further `read()` calls shouldn't be forwarded now.
         channel.read()
         #expect(readCounter.readCount == 3)
     }
@@ -290,7 +290,7 @@ struct ConnectionLimitHandlerTests {
         let readCounter = ReadCountingHandler()
         try channel.pipeline.syncOperations.addHandler(readCounter)
 
-        // Set a rate limit of 1 new connection per second. This means the token `refreshInterval` is also 1s.
+        // Set a rate limit of 1 new connection per second. This means the token `refillInterval` is also 1s.
         try channel.pipeline.syncOperations.addHandler(
             makeConnectionLimitHandler(maxConnections: 1, newConnectionRateLimit: 1)
         )
