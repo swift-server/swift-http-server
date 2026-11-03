@@ -200,7 +200,7 @@ extension NIOHTTPServer {
                             logger: self.logger,
                             context: context
                         ) { request, requestContext, inboundIterator, outbound in
-                            _ = await self.invokeHandler(
+                            await self.invokeHandler(
                                 request: request,
                                 requestContext: requestContext,
                                 inboundIterator: inboundIterator,

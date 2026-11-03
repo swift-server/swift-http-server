@@ -313,7 +313,7 @@ struct NIOHTTPServiceLifecycleTests {
                     // intentional because we want to keep the connection alive until the grace timer (500ms) fires.
                     try await requestReader.read { _, _ in }
                 }
-                #expect(throws: RequestBodyReadError.streamEndedBeforeReceivingRequestEnd) { try error.unwrap() }
+                #expect(throws: RequestBodyReadError.streamEnded) { try error.unwrap() }
             }
         }
 

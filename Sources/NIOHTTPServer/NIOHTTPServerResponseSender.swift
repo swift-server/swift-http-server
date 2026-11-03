@@ -20,15 +20,16 @@ import Synchronization
 extension NIOHTTPServer {
     public struct ResponseSender: HTTPResponseSender, ~Copyable {
         let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
-        let writerState: WriterState
+        /// The response sender's access to the request-response exchange state.
+        let exchangeState: NIOHTTPServer.ExchangeState.ResponseHandle
 
         // Initializes a new response sender.
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-            writerState: WriterState
+            exchangeState: consuming NIOHTTPServer.ExchangeState.ResponseHandle
         ) {
             self.writer = writer
-            self.writerState = writerState
+            self.exchangeState = exchangeState
         }
 
         #if HTTP3 && UnstableHTTPDatagrams
@@ -38,11 +39,11 @@ extension NIOHTTPServer {
         /// supports unreliable datagrams.
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-            writerState: WriterState,
+            exchangeState: consuming NIOHTTPServer.ExchangeState.ResponseHandle,
             datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil
         ) {
             self.writer = writer
-            self.writerState = writerState
+            self.exchangeState = exchangeState
             self.datagramStreamFuture = datagramStreamFuture
         }
         #endif
@@ -59,11 +60,11 @@ extension NIOHTTPServer {
             #if HTTP3 && UnstableHTTPDatagrams
             return Writer(
                 writer: self.writer,
-                writerState: self.writerState,
+                exchangeState: self.exchangeState,
                 datagramStreamFuture: self.datagramStreamFuture
             )
             #else
-            return Writer(writer: self.writer, writerState: self.writerState)
+            return Writer(writer: self.writer, exchangeState: self.exchangeState)
             #endif
         }
 
@@ -79,21 +80,13 @@ extension NIOHTTPServer {
                 let body = ByteBuffer(draining: &buffer)
                 try await self.writer.write(contentsOf: [.head(response), .body(body), .end(trailer)])
             }
-            self.writerState.wrapped.withLock { $0.finishedWriting = true }
+            self.exchangeState.recordEnd()
         }
     }
 }
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServer.ResponseSender {
-    final class WriterState: Sendable {
-        struct Wrapped: ~Copyable {
-            var finishedWriting: Bool = false
-        }
-
-        let wrapped: Mutex<Wrapped> = .init(.init())
-    }
-
     public struct Writer: CallerAsyncWriter, ~Copyable {
         public typealias WriteElement = UInt8
 
@@ -104,14 +97,15 @@ extension NIOHTTPServer.ResponseSender {
         /// The underlying NIO writer for HTTP response parts.
         let writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>
 
-        let writerState: WriterState
+        /// The response sender's access to the exchange state.
+        let exchangeState: NIOHTTPServer.ExchangeState.ResponseHandle
 
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-            writerState: WriterState
+            exchangeState: consuming NIOHTTPServer.ExchangeState.ResponseHandle
         ) {
             self.writer = writer
-            self.writerState = writerState
+            self.exchangeState = exchangeState
         }
 
         #if HTTP3 && UnstableHTTPDatagrams
@@ -120,11 +114,11 @@ extension NIOHTTPServer.ResponseSender {
 
         init(
             writer: NIOAsyncChannelOutboundWriter<HTTPResponsePart>,
-            writerState: WriterState,
+            exchangeState: consuming NIOHTTPServer.ExchangeState.ResponseHandle,
             datagramStreamFuture: EventLoopFuture<HTTP3UnreliableDatagramStream>? = nil
         ) {
             self.writer = writer
-            self.writerState = writerState
+            self.exchangeState = exchangeState
             self.datagramStreamFuture = datagramStreamFuture
         }
         #endif
@@ -143,7 +137,7 @@ extension NIOHTTPServer.ResponseSender {
                 try await self.writer.write(.body(ByteBuffer(draining: &buffer)))
             }
             try await self.writer.write(.end(finalElement))
-            self.writerState.wrapped.withLock { $0.finishedWriting = true }
+            self.exchangeState.recordEnd()
         }
 
         #if HTTP3 && UnstableHTTPDatagrams
