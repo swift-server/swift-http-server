@@ -30,12 +30,6 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
     typealias InboundOut = Channel
     typealias OutboundIn = Channel
 
-    /// Configuration for the connection limits to enforce.
-    struct LimitConfiguration: Sendable {
-        var maxConnections: Int?
-        var newConnectionRateLimit: Int?
-    }
-
     private var stateMachine: ConnectionLimitStateMachine
     private let logger: Logger
 
@@ -45,12 +39,13 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
     private var nextTokenCallback: NIOScheduledCallback?
 
     /// - Parameters:
-    ///   - limits: The limits to enforce.
+    ///   - maxConnections: How many accepted connections can be open at once. `nil` means unlimited.
+    ///   - newConnectionRateLimit: How many new connections can be accepted per second. `nil` means unlimited.
     ///   - logger: The logger to use.
-    init(limits: LimitConfiguration, logger: Logger) {
+    init(maxConnections: Int? = nil, newConnectionRateLimit: Int? = nil, logger: Logger) {
         self.stateMachine = ConnectionLimitStateMachine(
-            maxConnections: limits.maxConnections,
-            newConnectionRateLimit: limits.newConnectionRateLimit
+            maxConnections: maxConnections,
+            newConnectionRateLimit: newConnectionRateLimit
         )
         self.logger = logger
     }
@@ -80,8 +75,11 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
         self.handleReadAction(readAction, context: context)
     }
 
-    private func handleReadAction(_ action: ConnectionLimitStateMachine.ReadAction, context: ChannelHandlerContext) {
-        switch action {
+    private func handleReadAction(
+        _ action: consuming ConnectionLimitStateMachine.ReadAction,
+        context: ChannelHandlerContext
+    ) {
+        switch consume action {
         case .forwardRead:
             context.read()
 

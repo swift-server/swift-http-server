@@ -572,16 +572,6 @@ struct HTTPRequestChannelAndCancellationSignal: Sendable {
 }
 
 @available(anyAppleOS 27.0, *)
-extension ConnectionLimitHandler.LimitConfiguration {
-    init(_ limits: NIOHTTPServerConfiguration.TCPConnectionLimits) {
-        self.init(
-            maxConnections: limits.maxConnections,
-            newConnectionRateLimit: limits.newConnectionRateLimit
-        )
-    }
-}
-
-@available(anyAppleOS 27.0, *)
 extension ServerBootstrap {
     /// Makes a `ServerBootstrap` alongside the `ServerQuiescingHelper` used to later shut that listener down gracefully.
     ///
@@ -605,7 +595,8 @@ extension ServerBootstrap {
                     if connectionLimits.isEnabled {
                         try channel.pipeline.syncOperations.addHandler(
                             ConnectionLimitHandler(
-                                limits: ConnectionLimitHandler.LimitConfiguration(connectionLimits),
+                                maxConnections: connectionLimits.maxConnections,
+                                newConnectionRateLimit: connectionLimits.newConnectionRateLimit,
                                 logger: logger
                             )
                         )

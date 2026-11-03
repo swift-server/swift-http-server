@@ -332,10 +332,8 @@ private func makeConnectionLimitHandler(
     newConnectionRateLimit: Int? = nil
 ) -> ConnectionLimitHandler {
     ConnectionLimitHandler(
-        limits: ConnectionLimitHandler.LimitConfiguration(
-            maxConnections: maxConnections,
-            newConnectionRateLimit: newConnectionRateLimit
-        ),
+        maxConnections: maxConnections,
+        newConnectionRateLimit: newConnectionRateLimit,
         logger: Logger(label: "ConnectionLimitHandlerTests")
     )
 }
