@@ -15,75 +15,101 @@
 import NIOCore
 
 /// Decides when ``ConnectionLimitHandler`` may forward `read()` calls and admit accepted connections.
-struct ConnectionLimitStateMachine {
+struct ConnectionLimitStateMachine: ~Copyable {
     /// Tracks whether a `read()` call is waiting to be forwarded.
-    private enum ReadState {
+    private enum ReadState: ~Copyable {
         /// We are not holding back a `read()` call.
-        case idle
+        case idle(Limits)
 
         /// We are holding back a `read()` call until an admitted connection closes.
-        case waitingForCapacity
+        case waitingForCapacity(Limits)
 
         /// We are holding back a `read()` call until the connection rate limiter has a token again.
-        case waitingForToken
+        case waitingForToken(Limits)
 
         /// The handler was removed.
         case removed
+
+        struct Limits: ~Copyable {
+            /// The `maxConnections` limit: how many admitted connections can be open at once.
+            struct OpenConnectionLimit: ~Copyable {
+                let maxConnections: Int
+                private var openConnections = 0
+
+                init(maxConnections: Int) {
+                    self.maxConnections = maxConnections
+                }
+
+                /// Whether another connection may be admitted.
+                var hasCapacity: Bool {
+                    self.openConnections < self.maxConnections
+                }
+
+                mutating func connectionOpened() {
+                    self.openConnections += 1
+                }
+
+                mutating func connectionClosed() {
+                    assert(self.openConnections > 0, "More connections closed than opened")
+                    self.openConnections -= 1
+                }
+            }
+
+            /// The `newConnectionRateLimit`: how quickly incoming connections can be accepted.
+            struct RateLimit: ~Copyable {
+                private var tokens: TokenBucket
+
+                init(newConnectionRateLimit: Int) {
+                    // Round up so that tokens never refill faster than the configured rate.
+                    let rate = Int64(newConnectionRateLimit)
+                    let refillInterval = TimeAmount.nanoseconds((1_000_000_000 + rate - 1) / rate)
+                    self.tokens = TokenBucket(capacity: newConnectionRateLimit, refillInterval: refillInterval)
+                }
+
+                /// How long until another connection may be accepted, or `nil` if a connection can be accepted now.
+                mutating func timeUntilNextConnection(now: NIODeadline) -> TimeAmount? {
+                    self.tokens.timeUntilNextToken(now: now)
+                }
+
+                /// Takes a token for an admitted connection.
+                mutating func connectionAdmitted(now: NIODeadline) {
+                    self.tokens.take(now: now)
+                }
+            }
+
+            var openConnectionLimit: OpenConnectionLimit?
+            var rateLimit: RateLimit?
+
+            enum ReadAction: ~Copyable {
+                case waitForConnectionCapacity
+                case waitForNextRateLimitToken(delay: TimeAmount)
+                case forwardRead
+            }
+
+            mutating func readIfAllowed(now: NIODeadline) -> ReadAction {
+                if self.openConnectionLimit?.hasCapacity == false {
+                    self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                    // We hit the limit for active connections. Hold the `read()` call until some connections close.
+                    return .waitForConnectionCapacity
+                }
+
+                if let delay = self.rateLimit?.timeUntilNextConnection(now: now) {
+                    self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                    // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
+                    return .waitForNextRateLimitToken(delay: delay)
+                }
+
+                self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                return .forwardRead
+            }
+        }
     }
 
-    /// The `maxConnections` limit: how many admitted connections can be open at once.
-    private struct OpenConnectionLimit {
-        let maxConnections: Int
-        private var openConnections = 0
+    private var readState: ReadState
 
-        init(maxConnections: Int) {
-            self.maxConnections = maxConnections
-        }
-
-        /// Whether another connection may be admitted.
-        var hasCapacity: Bool {
-            self.openConnections < self.maxConnections
-        }
-
-        mutating func connectionOpened() {
-            self.openConnections += 1
-        }
-
-        mutating func connectionClosed() {
-            assert(self.openConnections > 0, "More connections closed than opened")
-            self.openConnections -= 1
-        }
+    private init(readState: consuming ReadState) {
+        self.readState = readState
     }
-
-    /// The `newConnectionRateLimit`: how quickly incoming connections can be accepted.
-    private struct RateLimit {
-        private var tokens: TokenBucket
-
-        init(newConnectionRateLimit: Int) {
-            // Round up so that tokens never refill faster than the configured rate.
-            let rate = Int64(newConnectionRateLimit)
-            let refillInterval = TimeAmount.nanoseconds((1_000_000_000 + rate - 1) / rate)
-            self.tokens = TokenBucket(capacity: newConnectionRateLimit, refillInterval: refillInterval)
-        }
-
-        /// How long until another connection may be accepted, or `nil` if a connection can be accepted now.
-        mutating func timeUntilNextConnection(now: NIODeadline) -> TimeAmount? {
-            self.tokens.timeUntilNextToken(now: now)
-        }
-
-        /// Takes a token for an admitted connection.
-        mutating func connectionAdmitted(now: NIODeadline) {
-            self.tokens.take(now: now)
-        }
-    }
-
-    private var readState: ReadState = .idle
-
-    /// `nil` when `maxConnections` isn't set.
-    private var openConnectionLimit: OpenConnectionLimit?
-
-    /// `nil` when `newConnectionRateLimit` isn't set.
-    private var rateLimit: RateLimit?
 
     /// At least one of the limits must be set.
     ///
@@ -96,17 +122,20 @@ struct ConnectionLimitStateMachine {
             "A ConnectionLimitStateMachine needs at least one limit"
         )
 
-        self.openConnectionLimit = maxConnections.map { limit in
-            OpenConnectionLimit(maxConnections: limit)
-        }
-
-        self.rateLimit = newConnectionRateLimit.map { limit in
-            RateLimit(newConnectionRateLimit: limit)
-        }
+        self.readState = .idle(
+            .init(
+                openConnectionLimit: maxConnections.map { limit in
+                    .init(maxConnections: limit)
+                },
+                rateLimit: newConnectionRateLimit.map { limit in
+                    .init(newConnectionRateLimit: limit)
+                }
+            )
+        )
     }
 
     /// The action the handler should take following a `read()` call.
-    enum ReadAction: Equatable {
+    enum ReadAction: ~Copyable {
         /// Forward the `read()` call.
         case forwardRead
 
@@ -120,52 +149,55 @@ struct ConnectionLimitStateMachine {
 
     /// Determines whether the handler should forward or hold back an incoming `read()` call.
     mutating func read(now: NIODeadline) -> ReadAction {
-        switch self.readState {
-        case .idle, .waitingForCapacity:
-            return self.readIfAllowed(now: now)
+        switch consume self.readState {
+        case .idle(var limits):
+            switch limits.readIfAllowed(now: now) {
+            case .waitForConnectionCapacity:
+                // We hit the limit for active connections. Hold the `read()` call until some connections close.
+                self = .init(readState: .waitingForCapacity(limits))
+                return .doNothing
 
-        case .waitingForToken:
+            case .waitForNextRateLimitToken(let delay):
+                // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
+                self = .init(readState: .waitingForToken(limits))
+                return .waitForNextToken(in: delay)
+
+            case .forwardRead:
+                self = .init(readState: .idle(limits))
+                return .forwardRead
+            }
+
+        case .waitingForCapacity(var limits):
+            switch limits.readIfAllowed(now: now) {
+            case .waitForConnectionCapacity:
+                // We hit the limit for active connections. Hold the `read()` call until some connections close.
+                self = .init(readState: .waitingForCapacity(limits))
+                return .doNothing
+
+            case .waitForNextRateLimitToken(let delay):
+                // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
+                self = .init(readState: .waitingForToken(limits))
+                return .waitForNextToken(in: delay)
+
+            case .forwardRead:
+                self = .init(readState: .idle(limits))
+                return .forwardRead
+            }
+
+        case .waitingForToken(let limits):
             // The next-token callback is scheduled. Hold for now; that callback will decide what to do with the
             // `read()` call.
+            self = .init(readState: .waitingForToken(limits))
             return .doNothing
 
         case .removed:
+            self = .init(readState: .removed)
             preconditionFailure("read() called after the handler was removed")
-        }
-    }
-
-    /// Forwards the waiting read if no limit is reached.
-    private mutating func readIfAllowed(now: NIODeadline) -> ReadAction {
-        switch self.readState {
-        case .idle, .waitingForCapacity, .waitingForToken:
-            if let openConnectionLimit = self.openConnectionLimit {
-                guard openConnectionLimit.hasCapacity else {
-                    // We hit the limit for active connections. Hold the `read()` call until some connections close.
-                    self.readState = .waitingForCapacity
-                    return .doNothing
-                }
-            }
-
-            if let delay = self.rateLimit?.timeUntilNextConnection(now: now) {
-                // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
-                self.readState = .waitingForToken
-                return .waitForNextToken(in: delay)
-            }
-
-            self.readState = .idle
-            return .forwardRead
-
-        case .removed:
-            preconditionFailure("Only a new or held read() call should be checked against the limits")
         }
     }
 
     /// Informs the state machine that the handler accepted a connection.
     mutating func connectionAccepted(now: NIODeadline) {
-        guard self.readState != .removed else {
-            preconditionFailure("connectionAccepted(now:) called after the handler was removed")
-        }
-
         // We might temporarily exceed the limits here. This is because a single `read()` call can potentially lead to
         // multiple connections being accepted (depending on the `MaxMessagesPerReadOption` channel option, which
         // defaults to 4).
@@ -174,52 +206,106 @@ struct ConnectionLimitStateMachine {
         // balance is negative, we artificially consume tokens (i.e. take a token and do nothing with it) until the
         // "debt" is repaid. For the active connection limit, we just go over the limit. New connections are only
         // admitted once the limit comes down.
-        self.rateLimit?.connectionAdmitted(now: now)
+        switch consume self.readState {
+        case .idle(var limits):
+            limits.rateLimit?.connectionAdmitted(now: now)
+            limits.openConnectionLimit?.connectionOpened()
+            self = .init(readState: .idle(limits))
 
-        self.openConnectionLimit?.connectionOpened()
+        case .waitingForCapacity(var limits):
+            limits.rateLimit?.connectionAdmitted(now: now)
+            limits.openConnectionLimit?.connectionOpened()
+            self = .init(readState: .waitingForCapacity(limits))
+
+        case .waitingForToken(var limits):
+            limits.rateLimit?.connectionAdmitted(now: now)
+            limits.openConnectionLimit?.connectionOpened()
+            self = .init(readState: .waitingForToken(limits))
+
+        case .removed:
+            self = .init(readState: .removed)
+            preconditionFailure("connectionAccepted(now:) called after the handler was removed")
+        }
     }
 
     /// An admitted connection closed.
     mutating func connectionClosed(now: NIODeadline) -> ReadAction {
-        switch self.readState {
-        case .idle:
-            self.openConnectionLimit?.connectionClosed()
+        switch consume self.readState {
+        case .idle(var limits):
+            limits.openConnectionLimit?.connectionClosed()
+            self = .init(readState: .idle(limits))
             return .doNothing
 
-        case .waitingForCapacity:
-            self.openConnectionLimit?.connectionClosed()
+        case .waitingForCapacity(var limits):
+            limits.openConnectionLimit?.connectionClosed()
             // We previously held back a `read()` call due to the connection limit being hit. Check if that `read()`
             // call can be forwarded now.
-            return self.readIfAllowed(now: now)
+            switch limits.readIfAllowed(now: now) {
+            case .waitForConnectionCapacity:
+                // We hit the limit for active connections. Hold the `read()` call until some connections close.
+                self = .init(readState: .waitingForCapacity(limits))
+                return .doNothing
 
-        case .waitingForToken:
-            self.openConnectionLimit?.connectionClosed()
+            case .waitForNextRateLimitToken(let delay):
+                // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
+                self = .init(readState: .waitingForToken(limits))
+                return .waitForNextToken(in: delay)
+
+            case .forwardRead:
+                self = .init(readState: .idle(limits))
+                return .forwardRead
+            }
+
+        case .waitingForToken(var limits):
+            limits.openConnectionLimit?.connectionClosed()
+            self = .init(readState: .waitingForToken(limits))
             // The next-token callback is scheduled. That callback will decide whether we can call `read()` again.
             return .doNothing
 
         case .removed:
+            self = .init(readState: .removed)
             return .doNothing
         }
     }
 
     /// The next-token callback scheduled by a ``ReadAction/waitForNextToken(in:)`` action was called.
     mutating func nextTokenDue(now: NIODeadline) -> ReadAction {
-        switch self.readState {
-        case .waitingForToken:
+        switch consume self.readState {
+        case .waitingForToken(var limits):
             // We previously held back a `read()` call due to the connection rate limit being hit. We have now waited
             // for the token refill interval, so let's check if the `read()` call can be forwarded now.
-            return self.readIfAllowed(now: now)
+            switch limits.readIfAllowed(now: now) {
+            case .waitForConnectionCapacity:
+                // We hit the limit for active connections. Hold the `read()` call until some connections close.
+                self = .init(readState: .waitingForCapacity(limits))
+                return .doNothing
 
-        case .idle, .waitingForCapacity:
+            case .waitForNextRateLimitToken(let delay):
+                // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
+                self = .init(readState: .waitingForToken(limits))
+                return .waitForNextToken(in: delay)
+
+            case .forwardRead:
+                self = .init(readState: .idle(limits))
+                return .forwardRead
+            }
+
+        case .idle(let limits):
+            self = .init(readState: .idle(limits))
+            preconditionFailure("nextTokenDue(now:) called while no next-token callback is scheduled")
+
+        case .waitingForCapacity(let limits):
+            self = .init(readState: .waitingForCapacity(limits))
             preconditionFailure("nextTokenDue(now:) called while no next-token callback is scheduled")
 
         case .removed:
+            self = .init(readState: .removed)
             return .doNothing
         }
     }
 
     /// What the handler should do once it is removed from the pipeline.
-    enum HandlerRemovedAction: Equatable {
+    enum HandlerRemovedAction: ~Copyable {
         /// Cancel the next-token callback, which is scheduled.
         case cancelNextTokenCallback
 
@@ -229,16 +315,21 @@ struct ConnectionLimitStateMachine {
 
     /// The handler was removed from the pipeline. Nothing is forwarded or started after this.
     mutating func handlerRemoved() -> HandlerRemovedAction {
-        switch self.readState {
+        switch consume self.readState {
         case .waitingForToken:
-            self.readState = .removed
+            self = .init(readState: .removed)
             return .cancelNextTokenCallback
 
-        case .idle, .waitingForCapacity:
-            self.readState = .removed
+        case .idle:
+            self = .init(readState: .removed)
+            return .doNothing
+
+        case .waitingForCapacity:
+            self = .init(readState: .removed)
             return .doNothing
 
         case .removed:
+            self = .init(readState: .removed)
             preconditionFailure("handlerRemoved() called twice")
         }
     }
