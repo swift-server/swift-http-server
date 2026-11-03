@@ -44,7 +44,8 @@ extension NIOHTTPServer {
         let inboundConnectionIterationError = await withDiscardingTaskGroup { group -> (any Error)? in
             do {
                 for try await connectionChannel in connectionStream {
-                    group.addTask {
+                    let executor = connectionChannel.channel.channel.eventLoop as? any TaskExecutor
+                    group.addTask(executorPreference: executor) {
                         await self.dispatchPlaintextHTTP1_1Connection(
                             requestChannel: connectionChannel.channel,
                             clientClosed: connectionChannel.clientClosed,
@@ -123,10 +124,15 @@ extension NIOHTTPServer {
         addressContinuation: AsyncThrowingStream<NIOCore.SocketAddress, any Error>.Continuation,
         connectionHandler: Handler
     ) {
-        group.addTask(name: "Plaintext HTTP/1.1 over \(address)") {
+        let listeningSocketEventLoop = self.eventLoopGroup.any()
+        let listeningSocketExecutor = listeningSocketEventLoop as? any TaskExecutor
+
+        group.addTask(name: "Plaintext HTTP/1.1 over \(address)", executorPreference: listeningSocketExecutor) {
             try await self.withTCPChannel(
                 address: address,
                 addressContinuation: addressContinuation,
+                listeningSocketGroup: listeningSocketEventLoop,
+                acceptedConnectionsGroup: self.eventLoopGroup,
                 childChannelInitializer: { channel in
                     self.setupHTTP1_1Connection(channel: channel, isSecure: false)
                 }
