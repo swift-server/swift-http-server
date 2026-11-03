@@ -242,10 +242,18 @@ extension NIOHTTPServerConfiguration.HTTP3.ConnectionSettings {
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
-            qpackMaximumTableCapacity: config.int(forKey: "qpackMaximumTableCapacity").map { UInt64(clamping: $0) }
-                ?? Self.defaultQPACKMaximumTableCapacity,
-            qpackBlockedStreams: config.int(forKey: "qpackBlockedStreams").map { UInt64(clamping: $0) }
-                ?? Self.defaultQPACKBlockedStreams,
+            qpackMaximumTableCapacity: UInt64(
+                clamping: config.int(
+                    forKey: "qpackMaximumTableCapacity",
+                    default: Int(Self.defaultQPACKMaximumTableCapacity)
+                )
+            ),
+            qpackBlockedStreams: UInt64(
+                clamping: config.int(
+                    forKey: "qpackBlockedStreams",
+                    default: Int(Self.defaultQPACKBlockedStreams)
+                )
+            ),
             maximumFieldSectionSize: config.int(forKey: "maximumFieldSectionSize").map { value in
                 if value < 0 { return nil }
                 return UInt64(value)
