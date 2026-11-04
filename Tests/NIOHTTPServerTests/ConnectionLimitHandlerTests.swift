@@ -324,16 +324,77 @@ struct ConnectionLimitHandlerTests {
         channel.read()
         #expect(readCounter.readCount == 2, "Read should be held until the next token is due")
     }
+
+    @Test func tlsHandshakeLimitRejectsConnectionsUntilAHandshakeFinishes() throws {
+        let channel = EmbeddedChannel()
+        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(maxConcurrentTLSHandshakes: 2))
+
+        channel.read()
+
+        let child1 = try makeActiveChild(on: channel.embeddedEventLoop)
+        let child2 = try makeActiveChild(on: channel.embeddedEventLoop)
+        try channel.writeInbound(child1)
+        try channel.writeInbound(child2)
+        #expect(try channel.readInbound(as: Channel.self) != nil)
+        #expect(try channel.readInbound(as: Channel.self) != nil)
+
+        // Both handshake slots are taken, so the next connection should be closed instead of forwarded.
+        let child3 = try makeActiveChild(on: channel.embeddedEventLoop)
+        try channel.writeInbound(child3)
+        #expect(try channel.readInbound(as: Channel.self) == nil, "A connection over the limit should be rejected")
+        #expect(!child3.isActive, "A rejected connection should be closed")
+
+        // Once a handshake finishes, its slot can be taken by a new connection.
+        channel.pipeline.fireUserInboundEventTriggered(ConnectionLimitHandler.TLSHandshakeFinished())
+        let child4 = try makeActiveChild(on: channel.embeddedEventLoop)
+        try channel.writeInbound(child4)
+        #expect(try channel.readInbound(as: Channel.self) != nil, "A connection should be admitted into a freed slot")
+        #expect(child4.isActive)
+    }
+
+    @Test func tlsHandshakeLimitRejectionKeepsReadWaitingForToken() throws {
+        let channel = EmbeddedChannel()
+        let readCounter = ReadCountingHandler()
+        try channel.pipeline.syncOperations.addHandler(readCounter)
+
+        // Set a rate limit of 1 new connection per second. This means the token `refillInterval` is also 1s.
+        try channel.pipeline.syncOperations.addHandler(
+            makeConnectionLimitHandler(newConnectionRateLimit: 1, maxConcurrentTLSHandshakes: 1)
+        )
+
+        // The first connection takes the only token and the only handshake slot.
+        channel.read()
+        #expect(readCounter.readCount == 1)
+        try channel.writeInbound(try makeActiveChild(on: channel.embeddedEventLoop))
+        #expect(try channel.readInbound(as: Channel.self) != nil)
+
+        // The rate limit holds the next read and schedules the next-token callback.
+        channel.read()
+        #expect(readCounter.readCount == 1)
+
+        // A connection from the earlier read arrives while we wait for the token, and is rejected by the handshake
+        // limit.
+        let rejected = try makeActiveChild(on: channel.embeddedEventLoop)
+        try channel.writeInbound(rejected)
+        #expect(try channel.readInbound(as: Channel.self) == nil)
+        #expect(!rejected.isActive)
+
+        // The read should still be waiting for the token, so the next-token callback forwards it.
+        channel.embeddedEventLoop.advanceTime(by: .seconds(1))
+        #expect(readCounter.readCount == 2, "Read should be forwarded once the next token is due")
+    }
 }
 
 /// Makes a handler that enforces the given limits.
 private func makeConnectionLimitHandler(
     maxConnections: Int? = nil,
-    newConnectionRateLimit: Int? = nil
+    newConnectionRateLimit: Int? = nil,
+    maxConcurrentTLSHandshakes: Int? = nil
 ) -> ConnectionLimitHandler {
     ConnectionLimitHandler(
         maxConnections: maxConnections,
         newConnectionRateLimit: newConnectionRateLimit,
+        maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes,
         logger: Logger(label: "ConnectionLimitHandlerTests")
     )
 }

@@ -77,8 +77,35 @@ struct ConnectionLimitStateMachine: ~Copyable {
                 }
             }
 
+            /// The `maxConcurrentTLSHandshakes` limit: how many admitted connections may be mid-handshake at once.
+            struct TLSHandshakeLimit: ~Copyable {
+                let maxConcurrentTLSHandshakes: Int
+
+                /// The number of admitted connections whose TLS handshake hasn't finished.
+                private var handshakesInProgress = 0
+
+                init(maxConcurrentTLSHandshakes: Int) {
+                    self.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
+                }
+
+                /// Whether a connection can start its TLS handshake.
+                var hasCapacity: Bool {
+                    self.handshakesInProgress < self.maxConcurrentTLSHandshakes
+                }
+
+                mutating func handshakeStarted() {
+                    self.handshakesInProgress += 1
+                }
+
+                mutating func handshakeFinished() {
+                    assert(self.handshakesInProgress > 0, "More TLS handshakes finished than started")
+                    self.handshakesInProgress -= 1
+                }
+            }
+
             var openConnectionLimit: OpenConnectionLimit?
             var rateLimit: RateLimit?
+            var tlsHandshakeLimit: TLSHandshakeLimit?
 
             enum ReadAction: ~Copyable {
                 case waitForConnectionCapacity
@@ -88,18 +115,30 @@ struct ConnectionLimitStateMachine: ~Copyable {
 
             mutating func readIfAllowed(now: NIODeadline) -> ReadAction {
                 if self.openConnectionLimit?.hasCapacity == false {
-                    self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                    self = .init(
+                        openConnectionLimit: self.openConnectionLimit,
+                        rateLimit: self.rateLimit,
+                        tlsHandshakeLimit: self.tlsHandshakeLimit
+                    )
                     // We hit the limit for active connections. Hold the `read()` call until some connections close.
                     return .waitForConnectionCapacity
                 }
 
                 if let delay = self.rateLimit?.timeUntilNextConnection(now: now) {
-                    self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                    self = .init(
+                        openConnectionLimit: self.openConnectionLimit,
+                        rateLimit: self.rateLimit,
+                        tlsHandshakeLimit: self.tlsHandshakeLimit
+                    )
                     // We are rate limited on accepting new connections. Hold the `read()` call and try again after `delay`.
                     return .waitForNextRateLimitToken(delay: delay)
                 }
 
-                self = .init(openConnectionLimit: self.openConnectionLimit, rateLimit: self.rateLimit)
+                self = .init(
+                    openConnectionLimit: self.openConnectionLimit,
+                    rateLimit: self.rateLimit,
+                    tlsHandshakeLimit: self.tlsHandshakeLimit
+                )
                 return .forwardRead
             }
         }
@@ -116,9 +155,11 @@ struct ConnectionLimitStateMachine: ~Copyable {
     /// - Parameters:
     ///   - maxConnections: How many admitted connections can be open at once. `nil` means unlimited.
     ///   - newConnectionRateLimit: How quickly connections can be accepted. `nil` means unlimited.
-    init(maxConnections: Int? = nil, newConnectionRateLimit: Int? = nil) {
+    ///   - maxConcurrentTLSHandshakes: How many connections can be in the TLS handshake stage at once. `nil` means
+    ///     unlimited.
+    init(maxConnections: Int? = nil, newConnectionRateLimit: Int? = nil, maxConcurrentTLSHandshakes: Int? = nil) {
         assert(
-            maxConnections != nil || newConnectionRateLimit != nil,
+            maxConnections != nil || newConnectionRateLimit != nil || maxConcurrentTLSHandshakes != nil,
             "A ConnectionLimitStateMachine needs at least one limit"
         )
 
@@ -129,6 +170,9 @@ struct ConnectionLimitStateMachine: ~Copyable {
                 },
                 rateLimit: newConnectionRateLimit.map { limit in
                     .init(newConnectionRateLimit: limit)
+                },
+                tlsHandshakeLimit: maxConcurrentTLSHandshakes.map { limit in
+                    .init(maxConcurrentTLSHandshakes: limit)
                 }
             )
         )
@@ -196,8 +240,25 @@ struct ConnectionLimitStateMachine: ~Copyable {
         }
     }
 
+    /// What the handler should do with an accepted connection.
+    enum AcceptAction: Equatable {
+        /// Forward the connection.
+        case admit
+
+        /// Close the connection without forwarding it.
+        case reject(RejectReason)
+
+        /// Why an accepted connection was rejected.
+        enum RejectReason: Equatable {
+            /// `maxConcurrentTLSHandshakes` admitted connections are already mid-handshake.
+            case handshakeLimitReached
+        }
+    }
+
     /// Informs the state machine that the handler accepted a connection.
-    mutating func connectionAccepted(now: NIODeadline) {
+    ///
+    /// An admitted connection holds a TLS handshake slot until ``handshakeFinished()`` is called for it.
+    mutating func connectionAccepted(now: NIODeadline) -> AcceptAction {
         // We might temporarily exceed the limits here. This is because a single `read()` call can potentially lead to
         // multiple connections being accepted (depending on the `MaxMessagesPerReadOption` channel option, which
         // defaults to 4).
@@ -208,24 +269,50 @@ struct ConnectionLimitStateMachine: ~Copyable {
         // admitted once the limit comes down.
         switch consume self.readState {
         case .idle(var limits):
+            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
+            // unfortunately need to close this connection now.
+            if limits.tlsHandshakeLimit?.hasCapacity == false {
+                self = .init(readState: .idle(limits))
+                return .reject(.handshakeLimitReached)
+            }
+
             limits.rateLimit?.connectionAdmitted(now: now)
             limits.openConnectionLimit?.connectionOpened()
+            limits.tlsHandshakeLimit?.handshakeStarted()
             self = .init(readState: .idle(limits))
 
         case .waitingForCapacity(var limits):
+            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
+            // unfortunately need to close this connection now.
+            if limits.tlsHandshakeLimit?.hasCapacity == false {
+                self = .init(readState: .waitingForCapacity(limits))
+                return .reject(.handshakeLimitReached)
+            }
+
             limits.rateLimit?.connectionAdmitted(now: now)
             limits.openConnectionLimit?.connectionOpened()
+            limits.tlsHandshakeLimit?.handshakeStarted()
             self = .init(readState: .waitingForCapacity(limits))
 
         case .waitingForToken(var limits):
+            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
+            // unfortunately need to close this connection now.
+            if limits.tlsHandshakeLimit?.hasCapacity == false {
+                self = .init(readState: .waitingForToken(limits))
+                return .reject(.handshakeLimitReached)
+            }
+
             limits.rateLimit?.connectionAdmitted(now: now)
             limits.openConnectionLimit?.connectionOpened()
+            limits.tlsHandshakeLimit?.handshakeStarted()
             self = .init(readState: .waitingForToken(limits))
 
         case .removed:
             self = .init(readState: .removed)
             preconditionFailure("connectionAccepted(now:) called after the handler was removed")
         }
+
+        return .admit
     }
 
     /// An admitted connection closed.
@@ -265,6 +352,29 @@ struct ConnectionLimitStateMachine: ~Copyable {
         case .removed:
             self = .init(readState: .removed)
             return .doNothing
+        }
+    }
+
+    /// An admitted connection's TLS handshake finished.
+    ///
+    /// Must be called exactly once for each connection (including the connections that close before the handshake
+    /// finished).
+    mutating func handshakeFinished() {
+        switch consume self.readState {
+        case .idle(var limits):
+            limits.tlsHandshakeLimit?.handshakeFinished()
+            self = .init(readState: .idle(limits))
+
+        case .waitingForCapacity(var limits):
+            limits.tlsHandshakeLimit?.handshakeFinished()
+            self = .init(readState: .waitingForCapacity(limits))
+
+        case .waitingForToken(var limits):
+            limits.tlsHandshakeLimit?.handshakeFinished()
+            self = .init(readState: .waitingForToken(limits))
+
+        case .removed:
+            preconditionFailure("handshakeFinished() called after the handler was removed")
         }
     }
 

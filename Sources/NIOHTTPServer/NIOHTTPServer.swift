@@ -632,6 +632,7 @@ extension ServerBootstrap {
                             ConnectionLimitHandler(
                                 maxConnections: connectionLimits.maxConnections,
                                 newConnectionRateLimit: connectionLimits.newConnectionRateLimit,
+                                maxConcurrentTLSHandshakes: connectionLimits.maxConcurrentTLSHandshakes,
                                 logger: logger
                             )
                         )

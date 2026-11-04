@@ -30,6 +30,15 @@ struct ConnectionBackpressureConfigurationTests {
     }
 
     @available(anyAppleOS 27.0, *)
+    @Test("TCPConnectionLimits is enabled as soon as one limit is set")
+    func tcpConnectionLimitsIsEnabled() {
+        #expect(!NIOHTTPServerConfiguration.TCPConnectionLimits().isEnabled)
+        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConnections: 1).isEnabled)
+        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConcurrentTLSHandshakes: 1).isEnabled)
+        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(newConnectionRateLimit: 1).isEnabled)
+    }
+
+    @available(anyAppleOS 27.0, *)
     @Test("ConnectionTimeouts defaults has expected values")
     func connectionTimeoutsDefaults() {
         let timeouts = NIOHTTPServerConfiguration.ConnectionTimeouts.defaults

@@ -301,9 +301,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// - Precondition: Must be between 1 and 1,000,000,000 if non-`nil`.
         public var newConnectionRateLimit: Int?
 
+        /// The maximum number of connections that can be in the TLS handshake stage at once. `nil` means unlimited.
+        ///
+        /// When this limit is reached, new connections are immediately closed as soon as they are accepted.
+        ///
+        /// - Precondition: Must be greater than 0 if non-`nil`, and can only be set when
+        ///   ``NIOHTTPServerConfiguration/transportSecurity`` is TLS or mTLS.
+        public var maxConcurrentTLSHandshakes: Int?
+
         /// Whether any of the limits are set.
         var isEnabled: Bool {
-            self.maxConnections != nil || self.newConnectionRateLimit != nil
+            self.maxConnections != nil || self.newConnectionRateLimit != nil || self.maxConcurrentTLSHandshakes != nil
         }
 
         /// The default TCP connection limits.
@@ -353,15 +361,18 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// TLS configuration for the server.
     ///
-    /// - Precondition: Must be compatible with ``supportedHTTPVersions``:
+    /// - Precondition: Must be compatible with ``supportedHTTPVersions`` and ``tcpConnectionLimits``:
     ///   - `transportSecurity == .mTLS` is not supported when `supportedHTTPVersions` contains `.http3`.
     ///   - Raw Public Key credentials are only supported when `supportedHTTPVersions == [.http3]`.
     ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
     ///     on disk. Other credential sources are not supported.
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
+    ///   - `transportSecurity` cannot be set to `.plaintext` when `tcpConnectionLimits.maxConcurrentTLSHandshakes` is
+    ///     set.
     public var transportSecurity: TransportSecurity {
         didSet {
             self.preconditionValidTransportConfiguration()
+            self.preconditionValidConnectionLimits()
         }
     }
 

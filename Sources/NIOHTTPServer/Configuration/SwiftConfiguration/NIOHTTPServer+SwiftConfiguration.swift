@@ -516,12 +516,16 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
     ///   at once.
     /// - `newConnectionRateLimit` (int, optional, default: nil): The maximum number of new connections accepted per
     ///   second. Must be between 1 and 1,000,000,000.
+    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
+    ///   performing a TLS handshake at once. When this limit is reached, new connections are immediately closed. Only
+    ///   valid with TLS or mTLS.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
             maxConnections: config.int(forKey: "maxConnections"),
-            newConnectionRateLimit: config.int(forKey: "newConnectionRateLimit")
+            newConnectionRateLimit: config.int(forKey: "newConnectionRateLimit"),
+            maxConcurrentTLSHandshakes: config.int(forKey: "maxConcurrentTLSHandshakes")
         )
     }
 }

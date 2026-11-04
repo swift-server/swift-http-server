@@ -93,6 +93,7 @@ its respective key prefix.
 |                                                  | `highWatermark`                           | `int`                          | Optional                                                                                                                      | 10             |
 | `tcpConnectionLimits`                            | `maxConnections`                          | `int`                          | Optional                                                                                                                      | nil            |
 |                                                  | `newConnectionRateLimit`                  | `int` (connections per second) | Optional                                                                                                                      | nil            |
+|                                                  | `maxConcurrentTLSHandshakes`              | `int`                          | Optional                                                                                                                      | nil            |
 | `connectionTimeouts`                             | `idle`                                    | `int`                          | Optional                                                                                                                      | nil            |
 |                                                  | `readHeader`                              | `int`                          | Optional                                                                                                                      | nil            |
 |                                                  | `readBody`                                | `int`                          | Optional                                                                                                                      | nil            |
@@ -163,7 +164,8 @@ key were omitted.
     },
     "tcpConnectionLimits": {
         "maxConnections": 1000,             // default: nil (unlimited)
-        "newConnectionRateLimit": 500       // default: nil (unlimited)
+        "newConnectionRateLimit": 500,      // default: nil (unlimited)
+        "maxConcurrentTLSHandshakes": 100   // default: nil (unlimited)
     },
     "connectionTimeouts": {
         "idle": 60,                         // default: nil (no timeout)
