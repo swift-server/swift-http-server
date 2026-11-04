@@ -94,5 +94,24 @@ extension HTTP3.HTTP3Settings {
             enableConnectProtocol: connectionConfiguration.enableConnectProtocol
         )
     }
+
+    #if UnstableWebTransport
+    init(
+        _ connectionConfiguration: NIOHTTPServerConfiguration.HTTP3.ConnectionSettings,
+        supportsWebTransport: Bool
+    ) throws {
+        var settings: [HTTP3Setting] = [
+            .init(identifier: .qpackMaximumTableCapacity, value: connectionConfiguration.qpackMaximumTableCapacity),
+            .init(identifier: .qpackBlockedStreams, value: connectionConfiguration.qpackBlockedStreams),
+            .init(identifier: .h3Datagram, value: 1),
+            .init(identifier: .enableConnectProtocol, value: 1),
+            .init(identifier: .webTransportEnabled, value: 1),
+        ]
+        if let maximumFieldSectionSize = connectionConfiguration.maximumFieldSectionSize {
+            settings.append(.init(identifier: .maximumFieldSectionSize, value: maximumFieldSectionSize))
+        }
+        try self.init(parsing: settings)
+    }
+    #endif  // UnstableWebTransport
 }
 #endif  // HTTP3
