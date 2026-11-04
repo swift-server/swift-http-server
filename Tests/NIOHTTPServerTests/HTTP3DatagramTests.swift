@@ -42,7 +42,9 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: true, extendedConnectSupported: true)
+        )
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 2, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -72,7 +74,9 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: true, extendedConnectSupported: true)
+        )
 
         let stream = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         manager.register(datagramStream: stream)
@@ -96,7 +100,9 @@ struct HTTP3DatagramTests {
             datagramsNegotiatedPromise: datagramsNegotiatedPromise
         )
         try channel.pipeline.syncOperations.addHandler(manager)
-        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: true, extendedConnectSupported: true)
+        )
 
         let first = HTTP3UnreliableDatagramStream(streamID: 0, connectionChannel: channel, maxBufferedDatagrams: 16)
         let second = HTTP3UnreliableDatagramStream(streamID: 16, connectionChannel: channel, maxBufferedDatagrams: 16)
@@ -137,7 +143,9 @@ struct HTTP3DatagramTests {
             return stream
         }
 
-        channel.pipeline.syncOperations.fireUserInboundEventTriggered(ReceivedSettings(datagramsSupported: true))
+        channel.pipeline.syncOperations.fireUserInboundEventTriggered(
+            ReceivedSettings(datagramsSupported: true, extendedConnectSupported: true)
+        )
 
         let stream = try await datagramStreamFuture.get()
         var reader = NIOHTTPServer.DatagramReader(iterator: stream.inbound.makeAsyncIterator())

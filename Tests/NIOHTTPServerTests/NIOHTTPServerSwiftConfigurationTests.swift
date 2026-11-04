@@ -314,6 +314,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == NIOHTTPServerConfiguration.HTTP2.defaultMaxFrameSize)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
             #expect(http2.maxConcurrentStreams == 100)
+            #expect(http2.enableConnectProtocol == false)
         }
 
         @Test("Custom values")
@@ -323,6 +324,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "maxFrameSize": 1,
                 "targetWindowSize": 2,
                 "maxConcurrentStreams": 3,
+                "enableConnectProtocol": true,
             ])
             let config = ConfigReader(provider: provider)
             let snapshot = config.snapshot()
@@ -332,6 +334,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == 1)
             #expect(http2.targetWindowSize == 2)
             #expect(http2.maxConcurrentStreams == 3)
+            #expect(http2.enableConnectProtocol == true)
         }
 
         @Test("Partial custom values")
@@ -346,6 +349,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(http2.maxFrameSize == 5)
             #expect(http2.targetWindowSize == NIOHTTPServerConfiguration.HTTP2.defaultTargetWindowSize)
             #expect(http2.maxConcurrentStreams == 100)
+            #expect(http2.enableConnectProtocol == false)
         }
     }
 
@@ -370,6 +374,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 "connectionSettings.qpackMaximumTableCapacity": 4096,
                 "connectionSettings.qpackBlockedStreams": 16,
                 "connectionSettings.maximumFieldSectionSize": 8192,
+                "connectionSettings.enableConnectProtocol": true,
                 "quicConfiguration.keyExchangeGroup": "secp384",
                 "quicConfiguration.maxIdleTimeout": 10,
                 "quicConfiguration.keepAliveInterval": 20,
@@ -400,6 +405,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(connectionSettings.qpackMaximumTableCapacity == 4096)
             #expect(connectionSettings.qpackBlockedStreams == 16)
             #expect(connectionSettings.maximumFieldSectionSize == 8192)
+            #expect(connectionSettings.enableConnectProtocol == true)
 
             #if UnstableHTTPDatagrams
             let datagramConfiguration = try #require(http3.datagramConfiguration)
@@ -434,9 +440,6 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 let settings = NIOHTTPServerConfiguration.HTTP3.ConnectionSettings(config: snapshot)
 
                 #expect(settings == .defaults)
-                #expect(settings.qpackMaximumTableCapacity == 0)
-                #expect(settings.qpackBlockedStreams == 0)
-                #expect(settings.maximumFieldSectionSize == nil)
             }
 
             @Test("Custom values")
@@ -447,6 +450,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                         "qpackMaximumTableCapacity": 1024,
                         "qpackBlockedStreams": 8,
                         "maximumFieldSectionSize": 4096,
+                        "enableConnectProtocol": true,
                     ])
                 ).snapshot()
 
@@ -455,6 +459,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                 #expect(settings.qpackMaximumTableCapacity == 1024)
                 #expect(settings.qpackBlockedStreams == 8)
                 #expect(settings.maximumFieldSectionSize == 4096)
+                #expect(settings.enableConnectProtocol == true)
             }
 
             @Test("Negative values resolve to valid values")
@@ -1222,6 +1227,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
                     "http.http2.maxFrameSize": 1,
                     "http.http2.targetWindowSize": 2,
                     "http.http2.maxConcurrentStreams": 3,
+                    "http.http2.enableConnectProtocol": true,
                     "gracefulShutdown.maximumDuration": 4,
                     "transportSecurity.mode": .init(.string("mTLS"), isSecret: false),
                     "transportSecurity.credentialSource": .init(.string("inline"), isSecret: false),
@@ -1248,7 +1254,7 @@ struct NIOHTTPServerSwiftConfigurationTests {
             #expect(serverConfig.supportedHTTPVersions.contains(.http1_1))
             #expect(
                 serverConfig.supportedHTTPVersions.http2ConfigIfSupported
-                    == .init(maxFrameSize: 1, targetWindowSize: 2, maxConcurrentStreams: 3)
+                    == .init(maxFrameSize: 1, targetWindowSize: 2, maxConcurrentStreams: 3, enableConnectProtocol: true)
             )
             #expect(
                 serverConfig.gracefulShutdown == .init(maximumGracefulShutdownDuration: .seconds(4))
