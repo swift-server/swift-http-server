@@ -55,15 +55,15 @@ struct ConnectionLimitStateMachine: ~Copyable {
                 }
             }
 
-            /// The `newConnectionRateLimit`: how quickly incoming connections can be accepted.
+            /// The `newConnectionsPerSecond` limit: how quickly incoming connections can be accepted.
             struct RateLimit: ~Copyable {
                 private var tokens: TokenBucket
 
-                init(newConnectionRateLimit: Int) {
+                init(newConnectionsPerSecond: Int) {
                     // Round up so that tokens never refill faster than the configured rate.
-                    let rate = Int64(newConnectionRateLimit)
+                    let rate = Int64(newConnectionsPerSecond)
                     let refillInterval = TimeAmount.nanoseconds((1_000_000_000 + rate - 1) / rate)
-                    self.tokens = TokenBucket(capacity: newConnectionRateLimit, refillInterval: refillInterval)
+                    self.tokens = TokenBucket(capacity: newConnectionsPerSecond, refillInterval: refillInterval)
                 }
 
                 /// How long until another connection may be accepted, or `nil` if a connection can be accepted now.
@@ -115,10 +115,10 @@ struct ConnectionLimitStateMachine: ~Copyable {
     ///
     /// - Parameters:
     ///   - maxConnections: How many admitted connections can be open at once. `nil` means unlimited.
-    ///   - newConnectionRateLimit: How quickly connections can be accepted. `nil` means unlimited.
-    init(maxConnections: Int? = nil, newConnectionRateLimit: Int? = nil) {
+    ///   - newConnectionsPerSecond: How quickly connections can be accepted. `nil` means unlimited.
+    init(maxConnections: Int? = nil, newConnectionsPerSecond: Int? = nil) {
         assert(
-            maxConnections != nil || newConnectionRateLimit != nil,
+            maxConnections != nil || newConnectionsPerSecond != nil,
             "A ConnectionLimitStateMachine needs at least one limit"
         )
 
@@ -127,8 +127,8 @@ struct ConnectionLimitStateMachine: ~Copyable {
                 openConnectionLimit: maxConnections.map { limit in
                     .init(maxConnections: limit)
                 },
-                rateLimit: newConnectionRateLimit.map { limit in
-                    .init(newConnectionRateLimit: limit)
+                rateLimit: newConnectionsPerSecond.map { limit in
+                    .init(newConnectionsPerSecond: limit)
                 }
             )
         )

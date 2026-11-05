@@ -631,7 +631,7 @@ extension ServerBootstrap {
                         try channel.pipeline.syncOperations.addHandler(
                             ConnectionLimitHandler(
                                 maxConnections: connectionLimits.maxConnections,
-                                newConnectionRateLimit: connectionLimits.newConnectionRateLimit,
+                                newConnectionsPerSecond: connectionLimits.newConnectionsPerSecond,
                                 logger: logger
                             )
                         )

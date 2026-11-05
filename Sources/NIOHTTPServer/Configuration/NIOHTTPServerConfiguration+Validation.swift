@@ -36,11 +36,11 @@ extension NIOHTTPServerConfiguration {
             )
         }
 
-        if let newConnectionRateLimit = tcpConnectionLimits.newConnectionRateLimit,
-            !(1...1_000_000_000).contains(newConnectionRateLimit)
+        if let newConnectionsPerSecond = tcpConnectionLimits.newConnectionsPerSecond,
+            !(1...1_000_000_000).contains(newConnectionsPerSecond)
         {
             throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionRateLimit",
+                name: "tcpConnectionLimits.newConnectionsPerSecond",
                 requirement: "between 1 and 1,000,000,000"
             )
         }

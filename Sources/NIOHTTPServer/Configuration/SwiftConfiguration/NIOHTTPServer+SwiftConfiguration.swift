@@ -514,14 +514,14 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
     /// ## Configuration keys:
     /// - `maxConnections` (int, optional, default: nil): The maximum number of accepted connections that may be open
     ///   at once.
-    /// - `newConnectionRateLimit` (int, optional, default: nil): The maximum number of new connections accepted per
+    /// - `newConnectionsPerSecond` (int, optional, default: nil): The maximum number of new connections accepted per
     ///   second. Must be between 1 and 1,000,000,000.
     ///
     /// - Parameter config: The configuration reader.
     public init(config: ConfigSnapshotReader) {
         self.init(
             maxConnections: config.int(forKey: "maxConnections"),
-            newConnectionRateLimit: config.int(forKey: "newConnectionRateLimit")
+            newConnectionsPerSecond: config.int(forKey: "newConnectionsPerSecond")
         )
     }
 }
