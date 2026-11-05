@@ -104,7 +104,7 @@ struct ConnectionBackpressureEndToEndTests {
         // beyond the burst wait in the backlog until the rate limiter has a token for them.
         try await self.expectAllConnectionsComplete(
             numConnections: 30,
-            limits: .init(newConnectionRateLimit: 20),
+            limits: .init(newConnectionsPerSecond: 20),
             httpVersion: httpVersion
         )
     }

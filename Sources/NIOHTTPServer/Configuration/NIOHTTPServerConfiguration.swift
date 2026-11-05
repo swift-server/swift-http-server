@@ -299,7 +299,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         /// permits.
         ///
         /// - Precondition: Must be between 1 and 1,000,000,000 if non-`nil`.
-        public var newConnectionRateLimit: Int?
+        public var newConnectionsPerSecond: Int?
 
         /// The maximum number of connections that can be in the TLS handshake stage at once. `nil` means unlimited.
         ///
@@ -311,16 +311,17 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
         /// Whether any of the limits are set.
         var isEnabled: Bool {
-            self.maxConnections != nil || self.newConnectionRateLimit != nil || self.maxConcurrentTLSHandshakes != nil
+            self.maxConnections != nil || self.newConnectionsPerSecond != nil || self.maxConcurrentTLSHandshakes != nil
         }
 
         /// The default TCP connection limits.
         ///
         /// Uses the following default values:
         /// - ``maxConnections``: `nil` (no limit on the number of open connections).
-        /// - ``newConnectionRateLimit``: `nil` (no limit on the rate of new connections).
+        /// - ``newConnectionsPerSecond``: `nil` (no limit on the rate of new connections).
+        /// - ``maxConcurrentTLSHandshakes``: `nil` (no limit on the number of concurrent TLS handshakes)
         public static var defaults: Self {
-            Self(maxConnections: nil, newConnectionRateLimit: nil)
+            Self(maxConnections: nil, newConnectionsPerSecond: nil, maxConcurrentTLSHandshakes: nil)
         }
     }
 

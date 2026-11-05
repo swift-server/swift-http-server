@@ -147,7 +147,7 @@ struct ConnectionLimitHandlerTests {
         try channel.pipeline.syncOperations.addHandler(readCounter)
 
         // Set a rate limit of 2 new connections per second. This means the token `refillInterval` is 500ms.
-        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionRateLimit: 2))
+        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionsPerSecond: 2))
 
         for expectedReadCount in 1...2 {
             channel.read()
@@ -181,7 +181,7 @@ struct ConnectionLimitHandlerTests {
         try channel.pipeline.syncOperations.addHandler(readCounter)
 
         // Set a rate limit of 2 new connections per second. This means the token `refillInterval` is 500ms.
-        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionRateLimit: 2))
+        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionsPerSecond: 2))
 
         // Fire a `read()` call.
         channel.read()
@@ -266,7 +266,7 @@ struct ConnectionLimitHandlerTests {
         let channel = EmbeddedChannel()
         let readCounter = ReadCountingHandler()
         try channel.pipeline.syncOperations.addHandler(readCounter)
-        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionRateLimit: 1))
+        try channel.pipeline.syncOperations.addHandler(makeConnectionLimitHandler(newConnectionsPerSecond: 1))
 
         // Fire three `read()` calls.
         channel.read()
@@ -292,7 +292,7 @@ struct ConnectionLimitHandlerTests {
 
         // Set a rate limit of 1 new connection per second. This means the token `refillInterval` is also 1s.
         try channel.pipeline.syncOperations.addHandler(
-            makeConnectionLimitHandler(maxConnections: 1, newConnectionRateLimit: 1)
+            makeConnectionLimitHandler(maxConnections: 1, newConnectionsPerSecond: 1)
         )
 
         // The first connection should take the only token and exhaust the connection rate limit.
@@ -359,7 +359,7 @@ struct ConnectionLimitHandlerTests {
 
         // Set a rate limit of 1 new connection per second. This means the token `refillInterval` is also 1s.
         try channel.pipeline.syncOperations.addHandler(
-            makeConnectionLimitHandler(newConnectionRateLimit: 1, maxConcurrentTLSHandshakes: 1)
+            makeConnectionLimitHandler(newConnectionsPerSecond: 1, maxConcurrentTLSHandshakes: 1)
         )
 
         // The first connection takes the only token and the only handshake slot.
@@ -388,12 +388,12 @@ struct ConnectionLimitHandlerTests {
 /// Makes a handler that enforces the given limits.
 private func makeConnectionLimitHandler(
     maxConnections: Int? = nil,
-    newConnectionRateLimit: Int? = nil,
+    newConnectionsPerSecond: Int? = nil,
     maxConcurrentTLSHandshakes: Int? = nil
 ) -> ConnectionLimitHandler {
     ConnectionLimitHandler(
         maxConnections: maxConnections,
-        newConnectionRateLimit: newConnectionRateLimit,
+        newConnectionsPerSecond: newConnectionsPerSecond,
         maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes,
         logger: Logger(label: "ConnectionLimitHandlerTests")
     )

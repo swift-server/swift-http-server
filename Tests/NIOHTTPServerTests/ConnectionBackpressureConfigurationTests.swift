@@ -35,7 +35,7 @@ struct ConnectionBackpressureConfigurationTests {
         #expect(!NIOHTTPServerConfiguration.TCPConnectionLimits().isEnabled)
         #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConnections: 1).isEnabled)
         #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConcurrentTLSHandshakes: 1).isEnabled)
-        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(newConnectionRateLimit: 1).isEnabled)
+        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(newConnectionsPerSecond: 1).isEnabled)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -59,9 +59,9 @@ struct ConnectionBackpressureConfigurationTests {
             config.tcpConnectionLimits = .init(maxConnections: maxConnections)
             #expect(config.tcpConnectionLimits.maxConnections == maxConnections)
         }
-        for newConnectionRateLimit in [1, 1_000_000_000] {
-            config.tcpConnectionLimits = .init(newConnectionRateLimit: newConnectionRateLimit)
-            #expect(config.tcpConnectionLimits.newConnectionRateLimit == newConnectionRateLimit)
+        for newConnectionsPerSecond in [1, 1_000_000_000] {
+            config.tcpConnectionLimits = .init(newConnectionsPerSecond: newConnectionsPerSecond)
+            #expect(config.tcpConnectionLimits.newConnectionsPerSecond == newConnectionsPerSecond)
         }
     }
 
@@ -93,13 +93,13 @@ struct ConnectionBackpressureConfigurationTests {
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext
             )
-            config.tcpConnectionLimits = .init(newConnectionRateLimit: 1_000_000_001)
+            config.tcpConnectionLimits = .init(newConnectionsPerSecond: 1_000_000_001)
         }
 
         Self.expectStandardError(
             of: result,
             contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionRateLimit",
+                name: "tcpConnectionLimits.newConnectionsPerSecond",
                 requirement: "between 1 and 1,000,000,000"
             )
         )
@@ -181,13 +181,13 @@ struct ConnectionBackpressureSwiftConfigurationTests {
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
             "tcpConnectionLimits.maxConnections": 500,
-            "tcpConnectionLimits.newConnectionRateLimit": 250,
+            "tcpConnectionLimits.newConnectionsPerSecond": 250,
         ])
         let config = ConfigReader(provider: provider)
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
         #expect(serverConfig.tcpConnectionLimits.maxConnections == 500)
-        #expect(serverConfig.tcpConnectionLimits.newConnectionRateLimit == 250)
+        #expect(serverConfig.tcpConnectionLimits.newConnectionsPerSecond == 250)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -250,19 +250,19 @@ struct ConnectionBackpressureSwiftConfigurationTests {
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test func rejectsZeroNewConnectionRateLimit() throws {
+    @Test func rejectsZeroNewConnectionsPerSecondRateLimit() throws {
         let provider = InMemoryProvider(values: [
             "bindTarget.host": "127.0.0.1",
             "bindTarget.port": 8080,
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.newConnectionRateLimit": 0,
+            "tcpConnectionLimits.newConnectionsPerSecond": 0,
         ])
         let config = ConfigReader(provider: provider)
 
         #expect(
             throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionRateLimit",
+                name: "tcpConnectionLimits.newConnectionsPerSecond",
                 requirement: "between 1 and 1,000,000,000"
             )
         ) {
@@ -271,19 +271,19 @@ struct ConnectionBackpressureSwiftConfigurationTests {
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test func rejectsTooLargeNewConnectionRateLimit() throws {
+    @Test func rejectsTooLargeNewConnectionsPerSecondRateLimit() throws {
         let provider = InMemoryProvider(values: [
             "bindTarget.host": "127.0.0.1",
             "bindTarget.port": 8080,
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.newConnectionRateLimit": 1_000_000_001,
+            "tcpConnectionLimits.newConnectionsPerSecond": 1_000_000_001,
         ])
         let config = ConfigReader(provider: provider)
 
         #expect(
             throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionRateLimit",
+                name: "tcpConnectionLimits.newConnectionsPerSecond",
                 requirement: "between 1 and 1,000,000,000"
             )
         ) {

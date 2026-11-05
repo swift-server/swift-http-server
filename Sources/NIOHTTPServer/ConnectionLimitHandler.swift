@@ -17,10 +17,10 @@ import NIOCore
 
 /// A channel handler installed on the server (parent) channel that imposes limits on the following:
 /// 1. `maxConnections`: How many active connections there can be;
-/// 2. `newConnectionRateLimit`: How quickly new connections can be accepted;
+/// 2. `newConnectionsPerSecond`: How quickly new connections can be accepted;
 /// 3. `maxConcurrentTLSHandshakes`: How many connections can be in the TLS handshake stage.
 ///
-/// - When the `maxConnections` or `newConnectionRateLimit` limit is reached, this handler stops forwarding `read()`
+/// - When the `maxConnections` or `newConnectionsPerSecond` limit is reached, this handler stops forwarding `read()`
 ///   calls to prevent NIO from calling `accept()` on the listening socket and accepting more connection.
 ///
 ///   Note that a single `read()` call can potentially result in multiple connections being accepted (depending on the
@@ -44,18 +44,18 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
 
     /// - Parameters:
     ///   - maxConnections: How many accepted connections can be open at once. `nil` means unlimited.
-    ///   - newConnectionRateLimit: How many new connections can be accepted per second. `nil` means unlimited.
+    ///   - newConnectionsPerSecond: How many new connections can be accepted per second. `nil` means unlimited.
     ///   - maxConcurrentTLSHandshakes: How many connections can be in the TLS handshake stage at once. `nil` means unlimited.
     ///   - logger: The logger to use.
     init(
         maxConnections: Int? = nil,
-        newConnectionRateLimit: Int? = nil,
+        newConnectionsPerSecond: Int? = nil,
         maxConcurrentTLSHandshakes: Int? = nil,
         logger: Logger
     ) {
         self.stateMachine = ConnectionLimitStateMachine(
             maxConnections: maxConnections,
-            newConnectionRateLimit: newConnectionRateLimit,
+            newConnectionsPerSecond: newConnectionsPerSecond,
             maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes
         )
         self.logger = logger

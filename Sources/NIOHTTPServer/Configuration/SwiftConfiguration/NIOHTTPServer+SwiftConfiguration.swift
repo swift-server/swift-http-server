@@ -514,7 +514,7 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
     /// ## Configuration keys:
     /// - `maxConnections` (int, optional, default: nil): The maximum number of accepted connections that may be open
     ///   at once.
-    /// - `newConnectionRateLimit` (int, optional, default: nil): The maximum number of new connections accepted per
+    /// - `newConnectionsPerSecond` (int, optional, default: nil): The maximum number of new connections accepted per
     ///   second. Must be between 1 and 1,000,000,000.
     /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
     ///   performing a TLS handshake at once. When this limit is reached, new connections are immediately closed. Only
@@ -524,7 +524,7 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
     public init(config: ConfigSnapshotReader) {
         self.init(
             maxConnections: config.int(forKey: "maxConnections"),
-            newConnectionRateLimit: config.int(forKey: "newConnectionRateLimit"),
+            newConnectionsPerSecond: config.int(forKey: "newConnectionsPerSecond"),
             maxConcurrentTLSHandshakes: config.int(forKey: "maxConcurrentTLSHandshakes")
         )
     }
