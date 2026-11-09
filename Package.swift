@@ -47,6 +47,11 @@ var traits: Set<Trait> = [
         name: "UnstableHTTPDatagrams",
         description: "Enables support for reading and writing unreliable HTTP datagrams"
     ),
+    .trait(
+        name: "UnstableWebTransport",
+        description: "Enables support for WebTransport over HTTP/3",
+        enabledTraits: ["HTTP3", "UnstableHTTPDatagrams"]
+    ),
 ]
 
 let defaultTraits: Set<String> = ["Configuration"]
@@ -95,7 +100,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            .upToNextMinor(from: "0.2.0")
+            revision: "38efc31fd3743db3433e700701cd759e4d304db7"
         ),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.4.1"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
@@ -103,7 +108,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),
         .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.6.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
-        .package(url: "https://github.com/apple/swift-nio-http3.git", .upToNextMinor(from: "0.4.0")),
+        .package(url: "https://github.com/fpseverino/swift-nio-http3.git", branch: "webtransport-server"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
@@ -146,6 +151,20 @@ let package = Package(
                 .product(name: "Instrumentation", package: "swift-distributed-tracing"),
                 .product(name: "Logging", package: "swift-log"),
                 "NIOHTTPServer",
+            ],
+            swiftSettings: extraSettings
+        ),
+        .executableTarget(
+            name: "WebTransportExample",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOHTTP3", package: "swift-nio-http3", condition: .when(traits: ["HTTP3"])),
+                "NIOHTTPServer",
+            ],
+            resources: [
+                .copy("Certificates/http3.crt"),
+                .copy("Certificates/http3.key"),
+                .copy("Certificates/http3-cacert.pem"),
             ],
             swiftSettings: extraSettings
         ),
