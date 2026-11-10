@@ -470,54 +470,25 @@ struct HTTPKeepAliveHandlerTests {
                 requestBody.reserveCapacity(1024)
                 _ = try await reader.collect(into: &requestBody)
 
-                var buffer = UniqueArray(copying: "ok".utf8)
-                try await sender.sendAndFinish(
-                    .init(status: .ok, headerFields: [.contentLength: "2"]),
-                    buffer: &buffer
-                )
+                let testData = ByteBuffer.testData
+                var buffer = UniqueArray<UInt8>(copying: testData.readableBytesUInt8Span)
+                try await sender.sendAndFinish(.init(status: .ok), buffer: &buffer)
             }
         ) { _, inbound, outbound in
-            var request = HTTPRequest(
-                method: .get,
-                scheme: .makeScheme(for: http1Variant),
-                authority: "test",
-                path: "/"
-            )
+            var request = HTTPRequest.makeRequest(method: .get, for: http1Variant)
             request.headerFields[.connection] = "close"
             try await outbound.write(.head(request))
             try await outbound.write(.end(nil))
 
             var responseIterator = inbound.makeAsyncIterator()
-            let headPart = try await responseIterator.next()
-            guard case .head(let response) = headPart else {
-                Issue.record("Expected .head, got \(String(describing: headPart))")
-                return
-            }
-            #expect(response.status == .ok)
-            #expect(
-                response.headerFields[.connection] == "close",
-                "Expected Connection: close on the response, got headers: \(response.headerFields)"
+            var expectedResponse = HTTPResponse.makeResponse(status: .ok, for: http1Variant)
+            expectedResponse.headerFields[.connection] = "close"
+            try await TestHelpers.validateResponse(
+                &responseIterator,
+                expectedHead: [expectedResponse],
+                expectedBody: [.testData],
+                expectStreamEnd: true
             )
-
-            var sawEnd = false
-            while !sawEnd {
-                let part = try await responseIterator.next()
-                switch part {
-                case .body:
-                    continue
-                case .end:
-                    sawEnd = true
-                case .none:
-                    Issue.record("Stream ended before response .end")
-                    return
-                case .head:
-                    Issue.record("Unexpected second .head: \(String(describing: part))")
-                    return
-                }
-            }
-
-            let next = try await responseIterator.next()
-            #expect(next == nil, "Expected channel to be closed; got \(String(describing: next))")
         }
     }
 
@@ -529,22 +500,12 @@ struct HTTPKeepAliveHandlerTests {
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
         try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
 
-        try channel.writeInbound(
-            HTTPRequestPart.head(
-                .init(
-                    method: .get,
-                    scheme: "http",
-                    authority: "test",
-                    path: "/",
-                    headerFields: [.connection: "close"]
-                )
-            )
-        )
+        var request = HTTPRequest.makeRequest(method: .get, for: .plaintextHTTP1_1)
+        request.headerFields[.connection] = "close"
+        try channel.writeInbound(HTTPRequestPart.head(request))
         try channel.writeInbound(HTTPRequestPart.end(nil))
 
-        try channel.writeOutbound(
-            HTTPResponsePart.head(.init(status: .ok, headerFields: [.contentLength: "0"]))
-        )
+        try channel.writeOutbound(HTTPResponsePart.head(.makeResponse(status: .ok, for: .plaintextHTTP1_1)))
         try channel.writeOutbound(HTTPResponsePart.end(nil))
         channel.embeddedEventLoop.run()
 
@@ -572,13 +533,8 @@ struct HTTPKeepAliveHandlerTests {
         _ = try? channel.finish()
     }
 
-    /// Pipelining regression: only the last of three POSTs asks to close. The
-    /// server must answer all three; only the last response may carry
+    /// Only the last of three POSTs asks to close. The server must answer all three; only the last response may carry
     /// `Connection: close`, and the connection must close after that response.
-    ///
-    /// Writing response `.end` can synchronously deliver the next pipelined
-    /// request into `channelRead`. Closing must use the flag captured *before*
-    /// that write, or response 2 would close the connection and drop request 3.
     @available(anyAppleOS 27.0, *)
     @Test(
         "Pipelined POSTs: only the last Connection: close closes after that response",
@@ -601,12 +557,7 @@ struct HTTPKeepAliveHandlerTests {
             }
         ) { _, inbound, outbound in
             for i in 1...requestCount {
-                var request = HTTPRequest(
-                    method: .post,
-                    scheme: .makeScheme(for: http1Variant),
-                    authority: "test",
-                    path: "/\(i)"
-                )
+                var request = HTTPRequest.makeRequest(method: .post, path: "/\(i)", for: http1Variant)
                 if i == requestCount {
                     request.headerFields[.connection] = "close"
                 }
@@ -617,44 +568,17 @@ struct HTTPKeepAliveHandlerTests {
 
             var responseIterator = inbound.makeAsyncIterator()
             for i in 1...requestCount {
-                let headPart = try await responseIterator.next()
-                guard case .head(let response) = headPart else {
-                    Issue.record("Expected .head for request \(i), got \(String(describing: headPart))")
-                    return
-                }
-                #expect(response.status == .ok)
+                var expectedResponse = HTTPResponse.makeResponse(status: .ok, for: http1Variant)
                 if i == requestCount {
-                    #expect(
-                        response.headerFields[.connection] == "close",
-                        "Response \(i) should have Connection: close: \(response.headerFields)"
-                    )
-                } else {
-                    #expect(
-                        response.headerFields[.connection] != "close",
-                        "Response \(i) unexpectedly had Connection: close: \(response.headerFields)"
-                    )
+                    expectedResponse.headerFields[.connection] = "close"
                 }
-
-                var collectedBody = ByteBuffer()
-                while true {
-                    let part = try await responseIterator.next()
-                    if case .body(let buf) = part {
-                        collectedBody.writeImmutableBuffer(buf)
-                    } else if case .end = part {
-                        break
-                    } else {
-                        Issue.record("Unexpected part for request \(i): \(String(describing: part))")
-                        return
-                    }
-                }
-                #expect(collectedBody == ByteBuffer(string: "request-\(i)"))
+                try await TestHelpers.validateResponse(
+                    &responseIterator,
+                    expectedHead: [expectedResponse],
+                    expectedBody: [ByteBuffer(string: "request-\(i)")],
+                    expectStreamEnd: i == requestCount
+                )
             }
-
-            let next = try await responseIterator.next()
-            #expect(
-                next == nil,
-                "Expected channel to be closed after the last response; got \(String(describing: next))"
-            )
         }
     }
 
@@ -694,22 +618,12 @@ struct HTTPKeepAliveHandlerTests {
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
         try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
 
-        try channel.writeInbound(
-            HTTPRequestPart.head(
-                .init(
-                    method: .get,
-                    scheme: "http",
-                    authority: "test",
-                    path: "/",
-                    headerFields: headerFields
-                )
-            )
-        )
+        var requestHead = HTTPRequest.makeRequest(method: .get, for: .plaintextHTTP1_1)
+        requestHead.headerFields.append(contentsOf: headerFields)
+        try channel.writeInbound(HTTPRequestPart.head(requestHead))
         try channel.writeInbound(HTTPRequestPart.end(nil))
 
-        try channel.writeOutbound(
-            HTTPResponsePart.head(.init(status: .ok, headerFields: [.contentLength: "0"]))
-        )
+        try channel.writeOutbound(HTTPResponsePart.head(.init(status: .ok)))
         try channel.writeOutbound(HTTPResponsePart.end(nil))
         channel.embeddedEventLoop.run()
 
