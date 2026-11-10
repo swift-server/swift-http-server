@@ -121,10 +121,7 @@ struct ConnectionLifecycleTests {
     /// Connecting twice results in two `handleConnection` invocations, each with non-nil `remoteAddress` and
     /// `localAddress`.
     @available(anyAppleOS 27.0, *)
-    @Test(
-        "Per-connection invocation count",
-        arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
-    )
+    @Test("Per-connection invocation count", arguments: NIOHTTPServer.HTTPVersion.allCases)
     func testPerConnectionInvocation(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,

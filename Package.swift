@@ -49,7 +49,7 @@ var traits: Set<Trait> = [
     ),
 ]
 
-let defaultTraits: Set<String> = ["Configuration"]
+let defaultTraits: Set<String> = ["Configuration", "HTTP3", "UnstableHTTPDatagrams"]
 
 // Workaround to ensure that all traits are included in documentation. Swift Package Index adds SPI_GENERATE_DOCS
 // (https://github.com/SwiftPackageIndex/SwiftPackageIndex-Server/issues/2336) when building documentation, so only
@@ -103,7 +103,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),
         .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.6.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
-        .package(url: "https://github.com/apple/swift-nio-http3.git", .upToNextMinor(from: "0.4.0")),
+        // TODO: Update when merged.
+        .package(url: "https://github.com/aryan-25/swift-nio-http3.git", branch: "refactor-async-interface"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
