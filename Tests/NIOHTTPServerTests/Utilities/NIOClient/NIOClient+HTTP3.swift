@@ -71,7 +71,7 @@ struct TestHTTP3Client: Sendable {
                 inboundStreamInitializer: { streamChannel in
                     do {
                         let http3Handler = try streamChannel.parent!.pipeline.syncOperations.handler(
-                            type: HTTP3ConnectionHandler<QUICStreamCreator, HTTP3InboundStreamInitializer>.self
+                            type: HTTP3ConnectionHandler<QUICStreamCreator, HTTP3ClosureInboundStreamInitializer>.self
                         )
                         return http3Handler.inboundStreamReceived(streamChannel)
                     } catch {

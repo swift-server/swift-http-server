@@ -104,7 +104,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.6.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
         // TODO: Update when merged.
-        .package(url: "https://github.com/aryan-25/swift-nio-http3.git", revision: "963bac0d01e9fe01c1b6522db6e9823699921bf1"),
+        .package(url: "https://github.com/aryan-25/swift-nio-http3.git", revision: "3127ac25ef23ffc1f605cad9ce14e0598ed82973"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.44.0"),
