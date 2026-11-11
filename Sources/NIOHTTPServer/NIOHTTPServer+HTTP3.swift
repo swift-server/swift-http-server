@@ -18,7 +18,7 @@ import Logging
 import NIOCore
 import NIOEmbedded
 import NIOExtras
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC

@@ -27,7 +27,7 @@ import Testing
 #if HTTP3
 import HTTP3
 import NIOExtras
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOQUIC
 import NIOQUICHelpers
 #endif

@@ -33,7 +33,7 @@ import X509
 
 #if HTTP3
 import NIOQUIC
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 #endif
 
 /// A generic HTTP server that can handle incoming HTTP requests.

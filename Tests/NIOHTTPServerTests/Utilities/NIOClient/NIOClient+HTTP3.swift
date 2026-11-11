@@ -17,7 +17,7 @@
 import HTTP3
 import Logging
 import NIOCore
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOHTTPServer
 import NIOHTTPTypes
 import NIOHTTPTypesHTTP1

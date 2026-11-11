@@ -17,7 +17,7 @@ import NIOHTTP2
 import NIOHTTPTypes
 
 #if HTTP3
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOQUIC
 #endif
 
