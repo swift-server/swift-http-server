@@ -20,6 +20,53 @@ import NIOQUIC
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
+    /// Validates the limits defined in `tcpConnectionLimits` and compatibility against `supportedHTTPVersions`.
+    func validateConnectionLimits() throws {
+        let tcpConnectionLimits = self.tcpConnectionLimits
+        if tcpConnectionLimits.isEnabled {
+            guard self.supportedHTTPVersions.contains(.http1_1) || self.supportedHTTPVersions.contains(.http2) else {
+                throw NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2
+            }
+        }
+
+        if let maxConnections = tcpConnectionLimits.maxConnections, maxConnections <= 0 {
+            throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.maxConnections",
+                requirement: "greater than 0"
+            )
+        }
+
+        if let newConnectionsPerSecond = tcpConnectionLimits.newConnectionsPerSecond,
+            !(1...1_000_000_000).contains(newConnectionsPerSecond)
+        {
+            throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "tcpConnectionLimits.newConnectionsPerSecond",
+                requirement: "between 1 and 1,000,000,000"
+            )
+        }
+
+        if let maxConcurrentTLSHandshakes = tcpConnectionLimits.maxConcurrentTLSHandshakes {
+            guard maxConcurrentTLSHandshakes > 0 else {
+                throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                    name: "tcpConnectionLimits.maxConcurrentTLSHandshakes",
+                    requirement: "greater than 0"
+                )
+            }
+
+            if case .plaintext = self.transportSecurity.backing {
+                throw NIOHTTPServerConfigurationError.tlsHandshakeLimitRequiresTLS
+            }
+        }
+    }
+
+    func preconditionValidConnectionLimits() {
+        do {
+            try self.validateConnectionLimits()
+        } catch {
+            preconditionFailure("\(error)")
+        }
+    }
+
     /// Validates the compatibility of the `supportedHTTPVersions` and `transportSecurity` configurations, and stores
     /// the TLS resources required to set up the server channels.
     mutating func validateTransportConfiguration() throws {
@@ -28,6 +75,14 @@ extension NIOHTTPServerConfiguration {
         #endif
 
         self.sslContext = try self.makeSSLContext()
+    }
+
+    mutating func preconditionValidTransportConfiguration() {
+        do {
+            try self.validateTransportConfiguration()
+        } catch {
+            preconditionFailure("\(error)")
+        }
     }
 
     /// Creates the `NIOSSLContext` used by the secure upgrade channel(s), or `nil` if the configuration does not
