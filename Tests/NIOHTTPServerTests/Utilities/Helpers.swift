@@ -363,17 +363,15 @@ struct TestHelpers {
     }
     #endif  // HTTP3 && UnstableHTTPDatagrams
 
-    /// Reads from `responseStream` and asserts each part matches the expected head, body, and trailers in order.
+    /// Reads from `responseIterator` and asserts each part matches the expected head, body, and trailers in order.
     static func validateResponse(
-        _ responseStream: NIOAsyncChannelInboundStream<HTTPResponsePart>,
+        _ responseIterator: inout NIOAsyncChannelInboundStream<HTTPResponsePart>.AsyncIterator,
         expectedHead: [HTTPResponse],
         expectedBody: [ByteBuffer],
         expectedTrailers: HTTPFields? = nil,
         expectStreamEnd: Bool = true,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
-        var responseIterator = responseStream.makeAsyncIterator()
-
         for expectedHeadPart in expectedHead {
             let headResponsePart = try await responseIterator.next()
             try #require(headResponsePart == .head(expectedHeadPart), sourceLocation: sourceLocation)
@@ -394,6 +392,27 @@ struct TestHelpers {
                 sourceLocation: sourceLocation
             )
         }
+    }
+
+    /// Reads from `responseStream` and asserts each part matches the expected head, body, and trailers in order.
+    static func validateResponse(
+        _ responseStream: NIOAsyncChannelInboundStream<HTTPResponsePart>,
+        expectedHead: [HTTPResponse],
+        expectedBody: [ByteBuffer],
+        expectedTrailers: HTTPFields? = nil,
+        expectStreamEnd: Bool = true,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+        var responseIterator = responseStream.makeAsyncIterator()
+
+        try await Self.validateResponse(
+            &responseIterator,
+            expectedHead: expectedHead,
+            expectedBody: expectedBody,
+            expectedTrailers: expectedTrailers,
+            expectStreamEnd: expectStreamEnd,
+            sourceLocation: sourceLocation
+        )
     }
 
     /// Reads the full request body and trailers from `reader`, then sends a `200 OK` response echoing them back.
