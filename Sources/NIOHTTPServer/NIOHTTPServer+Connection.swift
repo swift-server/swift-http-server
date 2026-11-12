@@ -17,7 +17,7 @@ import NIOHTTP2
 import NIOHTTPTypes
 
 #if HTTP3
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOQUIC
 #endif
 
@@ -52,7 +52,7 @@ extension NIOHTTPServer {
             )
 
             #if HTTP3
-            case http3(connection: HTTP3ServerConnection<NIOHTTPServer.HTTP3Stream, NIOQUIC.QUICStreamCreator>)
+            case http3(connection: HTTP3ServerConnection<NIOHTTPServer.HTTP3Stream>)
             #endif
         }
 

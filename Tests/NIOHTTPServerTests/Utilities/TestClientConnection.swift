@@ -27,7 +27,7 @@ import Testing
 #if HTTP3
 import HTTP3
 import NIOExtras
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+import NIOHTTP3
 import NIOQUIC
 import NIOQUICHelpers
 #endif
@@ -48,7 +48,7 @@ struct TestClientConnection {
         case http3(
             quicChannel: any Channel,
             connectionChannel: any Channel,
-            connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+            connection: TestHTTP3ClientConnection
         )
         #endif
     }
@@ -244,40 +244,32 @@ extension TestClientConnection {
 
         #if HTTP3
         case (.http3, .some(let trustRootsPEMPath)):
-            let (quicChannel, connectionCreator) =
-                try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup).setupTestHTTP3Client(
-                    logger: configuration.logger,
-                    trustRootsPath: trustRootsPEMPath,
-                    quicConfiguration: configuration.quicConfiguration
-                        ?? .makeClientQUICConfig(caPath: trustRootsPEMPath),
-                    http3ConnectionSettings: configuration.http3ConnectionSettings,
-                    additionalConnectionChannelInitializer: configuration.additionalConnectionChannelInitializer
+            let client = try await DatagramBootstrap(group: .singletonMultiThreadedEventLoopGroup).makeTestHTTP3Client(
+                logger: configuration.logger,
+                trustRootsPath: trustRootsPEMPath,
+                quicConfiguration: configuration.quicConfiguration
+                    ?? .makeClientQUICConfig(caPath: trustRootsPEMPath),
+                http3ConnectionSettings: configuration.http3ConnectionSettings,
+                additionalConnectionChannelInitializer: configuration.additionalConnectionChannelInitializer
+            )
+
+            do {
+                let (connectionChannel, h3Connection) = try await client.connect(
+                    serverName: "127.0.0.1",
+                    remoteAddress: .init(ipAddress: serverAddress.host, port: serverAddress.port)
                 )
 
-            let multiplexer = HTTP3ClientConnectionMultiplexer<
-                TestHTTP3SingleConnectionCreator, NIOQUIC.QUICStreamCreator
-            >(
-                eventLoop: quicChannel.eventLoop,
-                createNewConnection: connectionCreator
-            )
-
-            let h3Connection = try await multiplexer.concurrencyView.createConnection(
-                serverName: "127.0.0.1",
-                remoteAddress: .init(ipAddress: serverAddress.host, port: serverAddress.port),
-                inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
-            )
-
-            let connectionChannel = try await quicChannel.eventLoop.flatSubmit {
-                connectionCreator.value.connectionChannelPromise.futureResult
-            }.get()
-
-            connection = TestClientConnection(
-                connectionProtocol: .http3(
-                    quicChannel: quicChannel,
-                    connectionChannel: connectionChannel,
-                    connection: h3Connection
+                connection = TestClientConnection(
+                    connectionProtocol: .http3(
+                        quicChannel: client.quicChannel,
+                        connectionChannel: connectionChannel,
+                        connection: h3Connection
+                    )
                 )
-            )
+            } catch {
+                try? await client.quicChannel.close()
+                throw error
+            }
         #endif
 
         default:
