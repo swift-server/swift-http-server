@@ -455,7 +455,7 @@ struct HTTPKeepAliveHandlerTests {
         "Request Connection: close closes the connection after the response ends",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
     )
-    func testRequestConnectionCloseClosesAfterResponse(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+    func requestConnectionCloseClosesAfterResponse(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: http1Variant,
             clientLogger: self.clientLogger,
@@ -495,7 +495,7 @@ struct HTTPKeepAliveHandlerTests {
     /// Embedded-channel counterpart: a fully received request whose head carries
     /// `Connection: close` must amend the response head and close after `.end`.
     @available(anyAppleOS 27.0, *)
-    @Test func testRequestConnectionCloseClosesEmbeddedChannelAfterResponseEnd() throws {
+    @Test func requestConnectionCloseClosesEmbeddedChannelAfterResponseEnd() throws {
         let channel = EmbeddedChannel()
         try channel.connect(to: try .init(ipAddress: "127.0.0.1", port: 0)).wait()
         try channel.pipeline.syncOperations.addHandler(HTTPKeepAliveHandler())
@@ -540,7 +540,7 @@ struct HTTPKeepAliveHandlerTests {
         "Pipelined POSTs: only the last Connection: close closes after that response",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1]
     )
-    func testPipelinedPostsOnlyLastConnectionClose(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
+    func pipelinedPostsOnlyLastConnectionClose(http1Variant: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: http1Variant,
             clientLogger: self.clientLogger,
@@ -594,7 +594,7 @@ struct HTTPKeepAliveHandlerTests {
             "Close",
         ]
     )
-    func testConnectionCloseTokenForms(connectionValue: String) throws {
+    func connectionCloseTokenForms(connectionValue: String) throws {
         var headerFields = HTTPFields()
         headerFields[.connection] = connectionValue
         try self.assertEmbeddedChannelClosesForConnectionFields(headerFields)
@@ -603,7 +603,7 @@ struct HTTPKeepAliveHandlerTests {
     /// Multiple `Connection` fields must be scanned independently so a `close`
     /// token on a later field is not missed.
     @available(anyAppleOS 27.0, *)
-    @Test func testConnectionCloseAcrossMultipleConnectionFields() throws {
+    @Test func connectionCloseAcrossMultipleConnectionFields() throws {
         try self.assertEmbeddedChannelClosesForConnectionFields(
             HTTPFields([
                 .init(name: .connection, value: "keep-alive"),
