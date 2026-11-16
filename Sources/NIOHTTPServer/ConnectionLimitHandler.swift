@@ -68,13 +68,13 @@ final class ConnectionLimitHandler: ChannelDuplexHandler {
         case .admit:
             let loopBoundSelf = NIOLoopBound(self, eventLoop: context.eventLoop)
             let loopBoundContext = NIOLoopBound(context, eventLoop: context.eventLoop)
-            let eventLoop = context.eventLoop
+            let listeningChannelEventLoop = context.eventLoop
             childChannel.closeFuture.whenComplete { _ in
-                eventLoop.execute {
+                listeningChannelEventLoop.execute {
                     let `self` = loopBoundSelf.value
                     let context = loopBoundContext.value
 
-                    let readAction = `self`.stateMachine.connectionClosed(now: eventLoop.now)
+                    let readAction = `self`.stateMachine.connectionClosed(now: listeningChannelEventLoop.now)
                     `self`.handleReadAction(readAction, context: context)
                 }
             }
