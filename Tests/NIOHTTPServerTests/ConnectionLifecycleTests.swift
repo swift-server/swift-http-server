@@ -225,12 +225,10 @@ struct ConnectionLifecycleTests {
             try #require(try await iterator.next() == .head(.makeResponse(status: .ok, for: httpVersion)))
             try #require(try await iterator.next() == .end(nil))
 
-            await withKnownIssue("The server closes the connection when the handler doesn't read the request") {
-                try await outbound.write(.testHead(method: .get, path: "/b", for: httpVersion))
-                try await outbound.write(.end(nil))
-                #expect(try await iterator.next() == .head(.makeResponse(status: .ok, for: httpVersion)))
-                #expect(try await iterator.next() == .end(nil))
-            }
+            try await outbound.write(.testHead(method: .get, path: "/b", for: httpVersion))
+            try await outbound.write(.end(nil))
+            #expect(try await iterator.next() == .head(.makeResponse(status: .ok, for: httpVersion)))
+            #expect(try await iterator.next() == .end(nil))
         }
     }
 
