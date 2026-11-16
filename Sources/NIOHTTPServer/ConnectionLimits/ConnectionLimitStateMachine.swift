@@ -269,9 +269,9 @@ struct ConnectionLimitStateMachine: ~Copyable {
         // admitted once the limit comes down.
         switch consume self.readState {
         case .idle(var limits):
-            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
-            // unfortunately need to close this connection now.
             if limits.tlsHandshakeLimit?.hasCapacity == false {
+                // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
+                // unfortunately need to close this connection now.
                 self = .init(readState: .idle(limits))
                 return .reject(.handshakeLimitReached)
             }
@@ -282,8 +282,6 @@ struct ConnectionLimitStateMachine: ~Copyable {
             self = .init(readState: .idle(limits))
 
         case .waitingForCapacity(var limits):
-            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
-            // unfortunately need to close this connection now.
             if limits.tlsHandshakeLimit?.hasCapacity == false {
                 self = .init(readState: .waitingForCapacity(limits))
                 return .reject(.handshakeLimitReached)
@@ -295,8 +293,6 @@ struct ConnectionLimitStateMachine: ~Copyable {
             self = .init(readState: .waitingForCapacity(limits))
 
         case .waitingForToken(var limits):
-            // We have hit the limit on how many connections are allowed to be in the TLS handshaking state. We
-            // unfortunately need to close this connection now.
             if limits.tlsHandshakeLimit?.hasCapacity == false {
                 self = .init(readState: .waitingForToken(limits))
                 return .reject(.handshakeLimitReached)

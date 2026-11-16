@@ -28,7 +28,7 @@ import NIOCore
 ///   limits, but there is logic in place to hold further `read()` calls until we fall below the threshold again.
 ///
 /// - When the `maxConcurrentTLSHandshakes` limit is reached, new connections are closed as soon as they are accepted.
-///   An admitted connection's handshake slot is freed when it fires ``TLSHandshakeFinished`` on the server channel.
+///   An admitted connection's handshake slot is freed when ``TLSHandshakeFinished`` is fired on the server channel.
 final class ConnectionLimitHandler: ChannelDuplexHandler {
     typealias InboundIn = Channel
     typealias InboundOut = Channel
