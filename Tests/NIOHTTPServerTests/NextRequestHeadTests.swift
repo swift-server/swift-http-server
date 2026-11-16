@@ -57,9 +57,7 @@ struct NextRequestHeadTests {
         var iterator = stream.makeAsyncIterator()
         let head = try await iterator.nextRequestHead(logger: Self.logger)
 
-        withKnownIssue("Leftover body bytes are not bounded yet") {
-            #expect(head == nil)
-        }
+        #expect(head == nil)
     }
 }
 
