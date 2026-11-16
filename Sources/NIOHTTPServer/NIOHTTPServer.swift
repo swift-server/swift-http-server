@@ -574,6 +574,9 @@ extension NIOHTTP2Handler.Configuration {
 
 @available(anyAppleOS 27.0, *)
 extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
+    /// The most leftover request body bytes ``nextRequestHead(logger:)`` discards to keep an HTTP/1.1 connection alive.
+    static var maxDiscardedBodyBytes: Int { 256 * 1024 }
+
     /// Reads the next request head from the iterator. Returns `nil` if the connection is done or an unexpected part is
     /// received.
     ///
