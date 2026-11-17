@@ -44,6 +44,19 @@ extension NIOHTTPServerConfiguration {
                 requirement: "between 1 and 1,000,000,000"
             )
         }
+
+        if let maxConcurrentTLSHandshakes = tcpConnectionLimits.maxConcurrentTLSHandshakes {
+            guard maxConcurrentTLSHandshakes > 0 else {
+                throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                    name: "tcpConnectionLimits.maxConcurrentTLSHandshakes",
+                    requirement: "greater than 0"
+                )
+            }
+
+            if case .plaintext = self.transportSecurity.backing {
+                throw NIOHTTPServerConfigurationError.tlsHandshakeLimitRequiresTLS
+            }
+        }
     }
 
     func preconditionValidConnectionLimits() {

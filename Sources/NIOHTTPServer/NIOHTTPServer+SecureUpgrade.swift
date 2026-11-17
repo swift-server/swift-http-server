@@ -333,7 +333,29 @@ extension NIOHTTPServer {
             )
             let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: configuration.http2Configuration)
 
-            try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
+            let isHandshakeLimitEnabled = self.configuration.tcpConnectionLimits.maxConcurrentTLSHandshakes != nil
+
+            do {
+                try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])
+            } catch {
+                if isHandshakeLimitEnabled {
+                    // A handshake slot was taken when this connection was accepted. Since we failed to set up this
+                    // connection channel, let's release the handshake slot.
+                    channel.parent?.pipeline.fireUserInboundEventTriggered(
+                        ConnectionLimitHandler.TLSHandshakeFinished()
+                    )
+                }
+
+                throw error
+            }
+
+            if isHandshakeLimitEnabled {
+                alpnHandler.protocolNegotiationResult.assumeIsolated().whenComplete { _ in
+                    channel.parent?.pipeline.fireUserInboundEventTriggered(
+                        ConnectionLimitHandler.TLSHandshakeFinished()
+                    )
+                }
+            }
 
             return alpnHandler.protocolNegotiationResult
         }
@@ -370,7 +392,8 @@ extension NIOHTTPServer {
 
             case (.negotiated, _), (.fallback, _):
                 // The negotiated result was an unsupported protocol, or ALPN negotiation failed / never took place.
-                return channel.close().flatMap { channel.eventLoop.makeFailedFuture(NIOHTTP2Errors.invalidALPNToken()) }
+                channel.close(promise: nil)
+                return channel.eventLoop.makeFailedFuture(NIOHTTP2Errors.invalidALPNToken())
             }
         }
     }

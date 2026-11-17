@@ -24,6 +24,7 @@ enum NIOHTTPServerConfigurationError: Error, Equatable, CustomStringConvertible 
     case mTLSNotCurrentlySupportedOverHTTP3
     case datagramSocketGroupCountOutOfRange(requested: Int, available: Int)
     case tcpConnectionLimitsRequireHTTP1OrHTTP2
+    case tlsHandshakeLimitRequiresTLS
     case invalidConnectionLimit(name: String, requirement: String)
 
     var description: String {
@@ -54,6 +55,9 @@ enum NIOHTTPServerConfigurationError: Error, Equatable, CustomStringConvertible 
 
         case .tcpConnectionLimitsRequireHTTP1OrHTTP2:
             "Invalid configuration: `tcpConnectionLimits` can only be set when HTTP/1.1 or HTTP/2 is supported."
+
+        case .tlsHandshakeLimitRequiresTLS:
+            "Invalid configuration: `tcpConnectionLimits.maxConcurrentTLSHandshakes` can only be set when `transportSecurity` is TLS or mTLS."
 
         case .invalidConnectionLimit(let name, let requirement):
             "Invalid configuration: `\(name)` must be \(requirement)."
