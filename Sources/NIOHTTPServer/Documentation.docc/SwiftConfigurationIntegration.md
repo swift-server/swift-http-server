@@ -134,17 +134,23 @@ Limits for TCP connections (HTTP/1.1 and HTTP/2) and QUIC connections (HTTP/3) a
   may be served by several event loop threads, but they all count towards the same limits. For example, if
   `maxConnections` is set to 10,000, it allows at most 10,000 open connections per bind target, in total across all
   threads.
-- `http.http3.quicConfiguration.connectionLimits` apply **separately on each thread**. Each UDP socket serving HTTP/3
+- `http.http3.quicConfiguration.connectionLimits` applies **separately on each thread**. Each UDP socket serving HTTP/3
   is bound to its own event loop thread and enforces the limits on its own connections only. Therefore, a bind target
   served by *N* UDP sockets admits up to *N* times each limit. By default, each bind target is served by a single UDP
-  socket, but it is possible for multiple UDP sockets to be bound per bind target if a datagram socket group factory is
-  set.
+  socket, but multiple sockets can be bound (per bind target) if a datagram socket group factory is set.
 
-When a TCP limit is reached, the listener stops accepting new connections (or, for `maxConcurrentTLSHandshakes`,
-closes them as soon as they are accepted). When a QUIC limit is reached, new connection attempts are dropped.
+For TCP, when a limit is reached, the listener stops accepting new connections (or, for `maxConcurrentTLSHandshakes`,
+closes them as soon as they are accepted). For QUIC, new connection attempts are dropped when a limit is reached.
 
 `tcpConnectionLimits` are unused when `http.versions` contains neither `"http1_1"` nor `"http2"`. The QUIC connection
 limits, like the rest of `http.http3`, are only read when `http.versions` contains `"http3"`.
+
+By default, each TCP listener is limited to 100,000 open connections and 10,000 new connections per second, and QUIC
+connections are limited to 10,000 open connections and 1,000 new connections per second on each thread. Limits for the
+maximum number of concurrent TLS handshakes are disabled by default.
+
+If an entry for a limit is omitted, the default value is used. Each limit can be disabled individually by setting it to
+`0`, and setting every limit to `0` imposes no limits at all. For example:
 
 ```json
 {
@@ -153,8 +159,8 @@ limits, like the rest of `http.http3`, are only read when `http.versions` contai
         "http3": {
             "quicConfiguration": {
                 "connectionLimits": {
-                    "maxConnections": 2500,             // On each thread serving HTTP/3.
-                    "maxConcurrentTLSHandshakes": 100
+                    "maxConnections": 2500,             // Per bind target, on each thread serving HTTP/3.
+                    "newConnectionsPerSecond": 0        // Disabled.
                 }
             }
         }
@@ -162,37 +168,7 @@ limits, like the rest of `http.http3`, are only read when `http.versions` contai
     "tcpConnectionLimits": {
         "maxConnections": 20000,                        // Per bind target, across all threads together.
         "maxConcurrentTLSHandshakes": 500
-    },
-}
-```
-
-By default, each TCP listener is limited to 100,000 open connections and 10,000 new connections per second, and QUIC
-connections are limited to 10,000 open connections and 1,000 new connections per second on each thread. Limits for the
-maximum number of concurrent TLS handshakes are disabled by default.
-
-Each limit can be disabled individually by setting it to `0`. If an entry for a limit is omitted, the default value is
-used. Setting every limit to `0` imposes no limits at all. For example, the following configuration imposes no QUIC
-connection limits, and only limits concurrent TLS handshakes on TCP connections:
-
-```json
-{
-    "http": {
-        "versions": ["http2", "http3"],
-        "http3": {
-            "quicConfiguration": {
-                "connectionLimits": {
-                    "maxConnections": 0,
-                    "newConnectionsPerSecond": 0,
-                    "maxConcurrentTLSHandshakes": 0
-                }
-            }
-        }
-    },
-    "tcpConnectionLimits": {
-        "maxConnections": 0,
-        "newConnectionsPerSecond": 0,
-        "maxConcurrentTLSHandshakes": 500
-    },
+    }
 }
 ```
 
