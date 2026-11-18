@@ -32,12 +32,13 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func requestsSucceedUnderConnectionLimit(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        let limits = try NIOHTTPServerConfiguration.ConnectionLimits(maxConnections: 2)
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.tcpConnectionLimits = .init(maxConnections: 2)
+            configuration.tcpConnectionLimits = limits
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 
@@ -114,7 +115,7 @@ struct ConnectionBackpressureEndToEndTests {
     @available(anyAppleOS 27.0, *)
     private func expectAllConnectionsComplete(
         numConnections: Int,
-        limits: NIOHTTPServerConfiguration.TCPConnectionLimits,
+        limits: NIOHTTPServerConfiguration.ConnectionLimits,
         httpVersion: NIOHTTPServer.HTTPVersion
     ) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
@@ -167,15 +168,16 @@ struct ConnectionBackpressureEndToEndTests {
 
     @available(anyAppleOS 27.0, *)
     @Test(
-        "No connection limit by default",
+        "No connection limits when tcpConnectionLimits is nil",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
-    func noConnectionLimitByDefault(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+    func noConnectionLimitsWhenNil(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
+            configuration.tcpConnectionLimits = nil
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 

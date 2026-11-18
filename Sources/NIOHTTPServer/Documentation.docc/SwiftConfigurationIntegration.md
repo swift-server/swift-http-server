@@ -72,6 +72,10 @@ its respective key prefix.
 | `http.http3.quicConfiguration.qlog`              | `path`                                    | `string`            | Optional                                                                                                                      | nil            |
 |                                                  | `topic`                                   | `string`            | Optional                                                                                                                      | nil            |
 |                                                  | `description`                             | `string`            | Optional                                                                                                                      | nil            |
+| `http.http3.quicConfiguration.connectionLimits`  | `maxConnections`                          | `int`               | Optional                                                                                                                      | 10000          |
+|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 1 and 1,000,000,000)                                                                                        | 1000           |
+|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional                                                                                                                      | nil            |
+|                                                  | `enabled`                                 | `bool`              | Optional (`false` imposes no limits)                                                                                          | true           |
 | `http.http3.datagramConfiguration`               | `datagramsEnabled`                        | `bool`              | Optional                                                                                                                      | true           |
 |                                                  | `maxDatagramFrameSize`                    | `int` (bytes)       | Optional                                                                                                                      | 65535          |
 |                                                  | `maxBufferedDatagramBytes`                | `int` (bytes)       | Optional                                                                                                                      | 16384          |
@@ -91,9 +95,10 @@ its respective key prefix.
 |                                                  | `certificateVerificationMode`             | `string`            | Required for `"mTLS"`, permitted values: `"optionalVerification"`, `"noHostnameVerification"`                                 | -              |
 | `backpressureStrategy`                           | `lowWatermark`                            | `int`               | Optional                                                                                                                      | 2              |
 |                                                  | `highWatermark`                           | `int`               | Optional                                                                                                                      | 10             |
-| `tcpConnectionLimits`                            | `maxConnections`                          | `int`               | Optional                                                                                                                      | nil            |
-|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional                                                                                                                      | nil            |
-|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional                                                                                                                      | nil            |
+| `tcpConnectionLimits`                            | `maxConnections`                          | `int`               | Optional                                                                                                                      | 100000         |
+|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 1 and 1,000,000,000)                                                                                        | 10000          |
+|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional (only valid with `"tls"` or `"mTLS"`)                                                                                | nil            |
+|                                                  | `enabled`                                 | `bool`              | Optional (`false` imposes no limits)                                                                                          | true           |
 | `connectionTimeouts`                             | `idle`                                    | `int`               | Optional                                                                                                                      | nil            |
 |                                                  | `readHeader`                              | `int`               | Optional                                                                                                                      | nil            |
 |                                                  | `readBody`                                | `int`               | Optional                                                                                                                      | nil            |
@@ -121,6 +126,73 @@ additional fields:
 - `"systemDefaults"`: The operating system's default trust store will be used. There are no other keys to provide.
 - `"customCertificateVerificationCallback"`: The custom verification callback must be provided when calling
   ``NIOHTTPServerConfiguration/init(config:customCertificateVerificationCallback:)``.
+
+#### Connection limits
+
+TCP connections (HTTP/1.1 and HTTP/2) and QUIC connections (HTTP/3) are limited separately, under
+`tcpConnectionLimits` and `http.http3.quicConfiguration.connectionLimits`, because the two sets of limits apply at
+different scopes:
+
+- `tcpConnectionLimits` apply to **all threads together**. Each TCP listener (one per bind target) counts all of its
+  connections, whichever event loop thread serves them. A `maxConnections` of 10,000 allows at most 10,000 open
+  connections per bind target.
+- `http.http3.quicConfiguration.connectionLimits` apply **separately on each thread**. Each UDP socket serving HTTP/3
+  is bound to its own event loop thread and enforces the limits on its own connections only. A bind target served by
+  *N* UDP sockets therefore admits up to *N* times each limit. For example, with a `maxConnections` of 10,000 and 8 UDP
+  sockets, a bind target may have up to 80,000 open connections. By default, each bind target is served by a single
+  UDP socket; multiple UDP sockets per bind target can only be bound when a datagram socket group factory is set on the
+  resulting configuration.
+
+When a TCP limit is reached, the listener stops accepting new connections (or, for `maxConcurrentTLSHandshakes`,
+closes them as soon as they are accepted). When a QUIC limit is reached, new connection attempts are dropped.
+
+`tcpConnectionLimits` are unused when `http.versions` contains neither `"http1_1"` nor `"http2"`. The QUIC connection
+limits, like the rest of `http.http3`, are only read when `http.versions` contains `"http3"`.
+
+```json
+{
+    "http": {
+        "versions": ["http2", "http3"],
+        "http3": {
+            "quicConfiguration": {
+                "connectionLimits": {
+                    "maxConnections": 2500,             // On each thread serving HTTP/3.
+                    "maxConcurrentTLSHandshakes": 100
+                }
+            }
+        }
+    },
+    "tcpConnectionLimits": {
+        "maxConnections": 20000,                        // Per bind target, across all threads together.
+        "maxConcurrentTLSHandshakes": 500
+    },
+}
+```
+
+By default, each TCP listener is limited to 100,000 open connections and 10,000 new connections per second, and QUIC
+connections are limited to 10,000 open connections and 1,000 new connections per second on each thread. Neither limits
+concurrent TLS handshakes by default.
+
+To impose no limits at all, set `enabled` to `false`, without any of the other keys:
+
+```json
+{
+    "http": {
+        "versions": ["http2", "http3"],
+        "http3": {
+            "quicConfiguration": {
+                "connectionLimits": {
+                    "enabled": false
+                }
+            }
+        }
+    },
+    "tcpConnectionLimits": {
+        "enabled": false
+    },
+    // ...rest of the configuration
+}
+```
 
 #### Traits
 
@@ -163,8 +235,8 @@ key were omitted.
         "highWatermark": 10                 // default: 10
     },
     "tcpConnectionLimits": {
-        "maxConnections": 1000,             // default: nil (unlimited)
-        "newConnectionsPerSecond": 500      // default: nil (unlimited)
+        "maxConnections": 1000,             // default: 100000
+        "newConnectionsPerSecond": 500,     // default: 10000
         "maxConcurrentTLSHandshakes": 100   // default: nil (unlimited)
     },
     "connectionTimeouts": {

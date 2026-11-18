@@ -23,7 +23,7 @@ enum NIOHTTPServerConfigurationError: Error, Equatable, CustomStringConvertible 
     // swift-nio-quic doesn't currently support mTLS. See https://github.com/apple/swift-nio-quic/issues/5.
     case mTLSNotCurrentlySupportedOverHTTP3
     case datagramSocketGroupCountOutOfRange(requested: Int, available: Int)
-    case tcpConnectionLimitsRequireHTTP1OrHTTP2
+    case noConnectionLimitsSpecified(name: String)
     case tlsHandshakeLimitRequiresTLS
     case invalidConnectionLimit(name: String, requirement: String)
 
@@ -53,8 +53,8 @@ enum NIOHTTPServerConfigurationError: Error, Equatable, CustomStringConvertible 
         case .datagramSocketGroupCountOutOfRange(let requested, let available):
             "Invalid configuration: the datagram socket group asked for \(requested) sockets, but \(available) event loops are available."
 
-        case .tcpConnectionLimitsRequireHTTP1OrHTTP2:
-            "Invalid configuration: `tcpConnectionLimits` can only be set when HTTP/1.1 or HTTP/2 is supported."
+        case .noConnectionLimitsSpecified(let name):
+            "Invalid configuration: every limit in `\(name)` is nil. To impose no connection limits, use `nil` instead of a `ConnectionLimits` value."
 
         case .tlsHandshakeLimitRequiresTLS:
             "Invalid configuration: `tcpConnectionLimits.maxConcurrentTLSHandshakes` can only be set when `transportSecurity` is TLS or mTLS."

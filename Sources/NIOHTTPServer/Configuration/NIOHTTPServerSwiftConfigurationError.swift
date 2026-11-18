@@ -15,13 +15,14 @@
 #if Configuration
 
 /// A configuration error arising from an invalid ``NIOHTTPServerConfiguration`` specified via `swift-configuration`.
-enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
+enum NIOHTTPServerSwiftConfigurationError: Error, Equatable, CustomStringConvertible {
     case customVerificationCallbackAndTrustRootsProvided
     case customVerificationCallbackProvidedWhenNotUsingMTLS
     case trustRootsSourceAndVerificationCallbackMismatch
     case singularAndPluralBindTargetsProvided
     case bindTargetsHostsAndPortsLengthMismatch
     case multipleQUICInitialPacketSizeKeysProvided
+    case connectionLimitsDisabledButLimitsProvided(scope: String)
 
     var description: String {
         switch self {
@@ -42,6 +43,9 @@ enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
 
         case .multipleQUICInitialPacketSizeKeysProvided:
             "Invalid configuration: both 'initialPacketSize.fixed' and 'initialPacketSize.matchingClientInitialUpTo' were provided. Provide only one."
+
+        case .connectionLimitsDisabledButLimitsProvided(let scope):
+            "Invalid configuration: '\(scope).enabled' is false, but limits were also provided under '\(scope)'. Remove the limits, or set 'enabled' to true."
         }
     }
 }
