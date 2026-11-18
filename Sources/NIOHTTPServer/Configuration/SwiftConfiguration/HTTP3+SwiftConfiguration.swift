@@ -88,7 +88,7 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     ///   `0` to impose no QUIC connection limits.
     ///   - `maxConnections` (int, optional, default: 10,000): The maximum number of open connections on each thread.
     ///   - `newConnectionsPerSecond` (int, optional, default: 1,000): The maximum number of new connections accepted
-    ///     per second on each thread. Must be between 0 and 1,000,000,000.
+    ///     per second on each thread. Must be between 0 (unlimited) and 1,000,000,000.
     ///   - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
     ///     performing a TLS handshake at once on each thread.
     ///

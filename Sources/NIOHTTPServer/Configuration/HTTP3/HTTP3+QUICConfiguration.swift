@@ -203,8 +203,8 @@ extension NIOHTTPServerConfiguration.HTTP3 {
 
         /// Limits on the connections an HTTP/3 listening socket admits. `nil` means no limits.
         ///
-        /// Defaults to 10,000 open connections and 1,000 new connections per second, with no limit on concurrent TLS
-        /// handshakes.
+        /// Defaults to ``NIOHTTPServerConfiguration/ConnectionLimits/quicDefaults``: 10,000 open connections and 1,000
+        /// new connections per second, with no limit on concurrent TLS handshakes.
         ///
         /// - Important: Unlike ``NIOHTTPServerConfiguration/tcpConnectionLimits``, these limits apply separately on
         ///   each thread that serves HTTP/3 (see ``NIOHTTPServerConfiguration/ConnectionLimits``).

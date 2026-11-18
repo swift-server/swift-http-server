@@ -54,7 +54,7 @@ extension NIOHTTPServerConfiguration {
     ///   connection limits.
     ///   - `maxConnections` (int, optional, default: 100,000): The maximum number of open connections.
     ///   - `newConnectionsPerSecond` (int, optional, default: 10,000): The maximum number of new connections accepted
-    ///     per second. Must be between 0 and 1,000,000,000.
+    ///     per second. Must be between 0 (unlimited) and 1,000,000,000.
     ///   - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
     ///     performing a TLS handshake at once. Values other than `0` are only valid with TLS or mTLS.
     ///
@@ -522,9 +522,9 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.ConnectionLimits {
     /// Initialize a ``NIOHTTPServerConfiguration/ConnectionLimits`` value from a config reader. Returns `nil` if no
-    /// limit remains, because every limit is `0` or omitted with no default.
+    /// limits are specified.
     ///
-    /// An omitted key takes its value from `defaults`, and `0` means that limit is unlimited.
+    /// An omitted key takes its value from `defaults`. `0` means that limit is unlimited.
     ///
     /// ## Configuration keys:
     /// - `maxConnections` (int, optional, default: from `defaults`): The maximum number of open connections. `0`
