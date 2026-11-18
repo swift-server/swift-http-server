@@ -139,6 +139,78 @@ struct ConnectionBackpressureConfigurationTests {
         }
     }
 
+    @available(anyAppleOS 27.0, *)
+    @Test("Connection limits can be changed to valid values")
+    func connectionLimitsChangedToValidValues() throws {
+        var limits = try NIOHTTPServerConfiguration.ConnectionLimits(maxConnections: 10)
+        limits.maxConnections = 20
+        limits.newConnectionsPerSecond = 5
+        limits.maxConcurrentTLSHandshakes = 1
+        // Removing a limit is fine while another limit is still set.
+        limits.maxConnections = nil
+        #expect(limits == (try .init(newConnectionsPerSecond: 5, maxConcurrentTLSHandshakes: 1)))
+
+        // Limits can also be changed in place on the server configuration.
+        var config = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        config.tcpConnectionLimits?.maxConnections = 20
+        #expect(config.tcpConnectionLimits?.maxConnections == 20)
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        "Changing a connection limit to an invalid value is a precondition failure",
+        arguments: [
+            (
+                "maxConnections", 0,
+                NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                    name: "ConnectionLimits.maxConnections",
+                    requirement: "greater than 0"
+                )
+            ),
+            (
+                "newConnectionsPerSecond", 1_000_000_001,
+                .invalidConnectionLimit(
+                    name: "ConnectionLimits.newConnectionsPerSecond",
+                    requirement: "between 1 and 1,000,000,000"
+                )
+            ),
+            (
+                "maxConcurrentTLSHandshakes", 0,
+                .invalidConnectionLimit(
+                    name: "ConnectionLimits.maxConcurrentTLSHandshakes",
+                    requirement: "greater than 0"
+                )
+            ),
+            // `maxConnections` is the only limit set, so removing it leaves no limits.
+            ("maxConnections", nil, .noConnectionLimitsSpecified(name: "ConnectionLimits")),
+        ] as [(String, Int?, NIOHTTPServerConfigurationError)]
+    )
+    func invalidConnectionLimitChangePreconditionFailure(
+        limit: String,
+        value: Int?,
+        expectedError: NIOHTTPServerConfigurationError
+    ) async {
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            [limit = limit as String, value = value as Int?] in
+            var limits = try NIOHTTPServerConfiguration.ConnectionLimits(maxConnections: 10)
+            switch limit {
+            case "maxConnections":
+                limits.maxConnections = value
+            case "newConnectionsPerSecond":
+                limits.newConnectionsPerSecond = value
+            default:
+                limits.maxConcurrentTLSHandshakes = value
+            }
+            _ = limits
+        }
+
+        Self.expectStandardError(of: result, contains: expectedError)
+    }
+
     #if HTTP3
     @available(anyAppleOS 27.0, *)
     @Test("TCP connection limits are accepted, and unused, when only HTTP/3 is supported")
