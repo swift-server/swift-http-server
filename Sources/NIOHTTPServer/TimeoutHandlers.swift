@@ -27,7 +27,7 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
     typealias OutboundOut = HTTPResponsePart
 
     private let timeout: TimeAmount
-    private var scheduledTimeout: Scheduled<Void>?
+    private var scheduledTimeout: NIOScheduledCallback?
 
     init(timeout: TimeAmount) {
         self.timeout = timeout
@@ -74,9 +74,11 @@ final class ConnectionIdleTimeoutHandler: ChannelDuplexHandler, RemovableChannel
 
     private func scheduleTimeout(context: ChannelHandlerContext) {
         self.scheduledTimeout?.cancel()
-        self.scheduledTimeout = context.eventLoop.assumeIsolated().scheduleTask(in: self.timeout) {
-            context.close(promise: nil)
-        }
+        // Scheduling only fails if the event loop is shutting down, in which case the channel is closed anyway.
+        self.scheduledTimeout = try? context.eventLoop.assumeIsolated().scheduleCallback(
+            in: self.timeout,
+            handler: ChannelCloseHandler(context: context)
+        )
     }
 }
 
@@ -100,7 +102,7 @@ final class RequestTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler
 
     private let readHeaderTimeout: TimeAmount?
     private let readBodyTimeout: TimeAmount?
-    private var scheduledTimeout: Scheduled<Void>?
+    private var scheduledTimeout: NIOScheduledCallback?
 
     private let expectMultipleRequests: Bool
 
@@ -191,8 +193,19 @@ final class RequestTimeoutHandler: ChannelDuplexHandler, RemovableChannelHandler
 
     private func scheduleTimeout(_ timeout: TimeAmount, context: ChannelHandlerContext) {
         self.scheduledTimeout?.cancel()
-        self.scheduledTimeout = context.eventLoop.assumeIsolated().scheduleTask(in: timeout) {
-            context.close(promise: nil)
-        }
+        // Scheduling only fails if the event loop is shutting down, in which case the channel is closed anyway.
+        self.scheduledTimeout = try? context.eventLoop.assumeIsolated().scheduleCallback(
+            in: timeout,
+            handler: ChannelCloseHandler(context: context)
+        )
+    }
+}
+
+/// Closes the channel when a timeout scheduled by ``ConnectionIdleTimeoutHandler`` or ``RequestTimeoutHandler`` fires.
+private struct ChannelCloseHandler: NIOScheduledCallbackHandler {
+    let context: ChannelHandlerContext
+
+    func handleScheduledCallback(eventLoop: some EventLoop) {
+        self.context.close(promise: nil)
     }
 }
