@@ -50,14 +50,13 @@ extension NIOHTTPServerConfiguration {
     /// - **`"tcpConnectionLimits"`**: Limits on the connections each TCP listener accepts, applied across all threads
     ///   together (see ``ConnectionLimits``). Unused when neither HTTP/1.1 nor HTTP/2 is supported. HTTP/3 connection
     ///   limits are read from `http.http3.quicConfiguration.connectionLimits`, because they apply separately on each
-    ///   thread that serves HTTP/3.
+    ///   thread that serves HTTP/3. Set a limit to `0` to make it unlimited; set every limit to `0` to impose no TCP
+    ///   connection limits.
     ///   - `maxConnections` (int, optional, default: 100,000): The maximum number of open connections.
     ///   - `newConnectionsPerSecond` (int, optional, default: 10,000): The maximum number of new connections accepted
-    ///     per second. Must be between 1 and 1,000,000,000.
+    ///     per second. Must be between 0 and 1,000,000,000.
     ///   - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
-    ///     performing a TLS handshake at once. Only valid with TLS or mTLS.
-    ///   - `enabled` (bool, optional, default: true): Set to `false` to impose no TCP connection limits. Can't be
-    ///     combined with the other keys.
+    ///     performing a TLS handshake at once. Values other than `0` are only valid with TLS or mTLS.
     ///
     /// - **`"connectionTimeouts"`**: The idle, header read, and body read timeouts applied to connections (see
     ///   ``ConnectionTimeouts/init(config:)``).
@@ -522,43 +521,86 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.ConnectionLimits {
-    /// Initialize a ``NIOHTTPServerConfiguration/ConnectionLimits`` value from a config reader. Returns `nil` if
-    /// `enabled` is `false`.
+    /// Initialize a ``NIOHTTPServerConfiguration/ConnectionLimits`` value from a config reader. Returns `nil` if no
+    /// limit remains, because every limit is `0` or omitted with no default.
+    ///
+    /// An omitted key takes its value from `defaults`, and `0` means that limit is unlimited.
     ///
     /// ## Configuration keys:
-    /// - `maxConnections` (int, optional, default: from `defaults`): The maximum number of open connections.
+    /// - `maxConnections` (int, optional, default: from `defaults`): The maximum number of open connections. `0`
+    ///   means unlimited.
     /// - `newConnectionsPerSecond` (int, optional, default: from `defaults`): The maximum number of new connections
-    ///   accepted per second.
+    ///   accepted per second. Must be between 0 and 1,000,000,000. `0` means unlimited.
     /// - `maxConcurrentTLSHandshakes` (int, optional, default: from `defaults`): The maximum number of connections that
-    ///   may be performing a TLS handshake at once.
-    /// - `enabled` (bool, optional, default: true): Whether to impose connection limits. Can't be `false` when any of
-    ///   the other keys is provided.
+    ///   may be performing a TLS handshake at once. `0` means unlimited.
     ///
     /// - Parameters:
     ///   - config: The configuration reader.
     ///   - defaults: The limits to use for omitted keys.
     ///   - name: The name of the limits in the error thrown if a limit is out of range, e.g. `"tcpConnectionLimits"`.
     ///
-    /// - Throws: If `enabled` is `false` but limits are provided, or if any limit is out of range.
+    /// - Throws: If any limit is negative, or if `newConnectionsPerSecond` is greater than 1,000,000,000.
     init?(config: ConfigSnapshotReader, defaults: Self, name: String) throws {
-        let maxConnections = config.int(forKey: "maxConnections")
-        let newConnectionsPerSecond = config.int(forKey: "newConnectionsPerSecond")
-        let maxConcurrentTLSHandshakes = config.int(forKey: "maxConcurrentTLSHandshakes")
+        let maxConnections = try Self.readLimit(
+            "maxConnections",
+            from: config,
+            default: defaults.maxConnections,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: name
+        )
+        let newConnectionsPerSecond = try Self.readLimit(
+            "newConnectionsPerSecond",
+            from: config,
+            default: defaults.newConnectionsPerSecond,
+            validRange: 0...1_000_000_000,
+            requirement: "between 0 (unlimited) and 1,000,000,000",
+            name: name
+        )
+        let maxConcurrentTLSHandshakes = try Self.readLimit(
+            "maxConcurrentTLSHandshakes",
+            from: config,
+            default: defaults.maxConcurrentTLSHandshakes,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: name
+        )
 
-        guard config.bool(forKey: "enabled", default: true) else {
-            if maxConnections != nil || newConnectionsPerSecond != nil || maxConcurrentTLSHandshakes != nil {
-                throw NIOHTTPServerSwiftConfigurationError.connectionLimitsDisabledButLimitsProvided(scope: name)
-            }
-
+        guard maxConnections != nil || newConnectionsPerSecond != nil || maxConcurrentTLSHandshakes != nil else {
             return nil
         }
 
         try self.init(
-            maxConnections: maxConnections ?? defaults.maxConnections,
-            newConnectionsPerSecond: newConnectionsPerSecond ?? defaults.newConnectionsPerSecond,
-            maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes ?? defaults.maxConcurrentTLSHandshakes,
+            maxConnections: maxConnections,
+            newConnectionsPerSecond: newConnectionsPerSecond,
+            maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes,
             name: name
         )
+    }
+
+    /// Reads a single limit. Returns `defaultValue` if `key` is omitted, and `nil` (unlimited) if it is `0`.
+    ///
+    /// - Throws: If the value is outside `validRange`.
+    private static func readLimit(
+        _ key: String,
+        from config: ConfigSnapshotReader,
+        default defaultValue: Int?,
+        validRange: ClosedRange<Int>,
+        requirement: String,
+        name: String
+    ) throws -> Int? {
+        guard let value = config.int(forKey: ConfigKey(key)) else {
+            return defaultValue
+        }
+
+        guard validRange.contains(value) else {
+            throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "\(name).\(key)",
+                requirement: requirement
+            )
+        }
+
+        return value == 0 ? nil : value
     }
 }
 

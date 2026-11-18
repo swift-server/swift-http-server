@@ -22,7 +22,6 @@ enum NIOHTTPServerSwiftConfigurationError: Error, Equatable, CustomStringConvert
     case singularAndPluralBindTargetsProvided
     case bindTargetsHostsAndPortsLengthMismatch
     case multipleQUICInitialPacketSizeKeysProvided
-    case connectionLimitsDisabledButLimitsProvided(scope: String)
 
     var description: String {
         switch self {
@@ -43,9 +42,6 @@ enum NIOHTTPServerSwiftConfigurationError: Error, Equatable, CustomStringConvert
 
         case .multipleQUICInitialPacketSizeKeysProvided:
             "Invalid configuration: both 'initialPacketSize.fixed' and 'initialPacketSize.matchingClientInitialUpTo' were provided. Provide only one."
-
-        case .connectionLimitsDisabledButLimitsProvided(let scope):
-            "Invalid configuration: '\(scope).enabled' is false, but limits were also provided under '\(scope)'. Remove the limits, or set 'enabled' to true."
         }
     }
 }
