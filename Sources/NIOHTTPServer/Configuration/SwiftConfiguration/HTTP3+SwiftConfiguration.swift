@@ -83,20 +83,11 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
     ///    Key Log format. When omitted, keys are not logged.
     /// - `qlog` (optional, default: nil): qlog output configuration. When present, its `path`, `topic`, and
     ///   `description` are required; when omitted, qlog output is disabled.
-    /// - `connectionLimits` (optional): Limits on the connections admitted on each thread that serves HTTP/3 (see
-    ///   ``NIOHTTPServerConfiguration/ConnectionLimits``). Set a limit to `0` to make it unlimited; set every limit to
-    ///   `0` to impose no QUIC connection limits.
-    ///   - `maxConnections` (int, optional, default: 10,000): The maximum number of open connections on each thread.
-    ///   - `newConnectionsPerSecond` (int, optional, default: 1,000): The maximum number of new connections accepted
-    ///     per second on each thread. Must be between 0 (unlimited) and 1,000,000,000.
-    ///   - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
-    ///     performing a TLS handshake at once on each thread.
     ///
     /// - Throws:
     ///   - If `keyExchangeGroup` is specified with an invalid value, or;
     ///   - When `qlog` is partially specified, or;
-    ///   - When both `initialPacketSize` keys are specified, or;
-    ///   - When a `connectionLimits` limit is out of range.
+    ///   - When both `initialPacketSize` keys are specified.
     ///
     /// - SeeAlso: ``NIOHTTPServerConfiguration/HTTP3/QUICConfiguration``.
     ///
@@ -137,11 +128,6 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
             sendRetry: config.bool(forKey: "sendRetry", default: false),
             keyLogPath: config.string(forKey: "keyLogPath"),
             qLogConfiguration: try QLogConfiguration(config: config.scoped(to: "qlog")),
-            connectionLimits: try NIOHTTPServerConfiguration.ConnectionLimits(
-                config: config.scoped(to: "connectionLimits"),
-                defaults: .quicDefaults,
-                name: "http3.quicConfiguration.connectionLimits"
-            )
         )
     }
 }

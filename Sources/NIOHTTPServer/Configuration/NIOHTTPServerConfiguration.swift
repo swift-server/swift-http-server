@@ -282,167 +282,6 @@ public struct NIOHTTPServerConfiguration: Sendable {
         public static var defaults: Self { .init() }
     }
 
-    /// Limits on the connections the server admits.
-    public struct ConnectionLimits: Sendable, Hashable {
-        /// The maximum number of connections that may be open at once, including connections still completing their
-        /// handshake. `nil` means unlimited.
-        ///
-        /// When this limit is reached, a TCP listener stops accepting new connections until existing connections
-        /// close, and a QUIC listener drops new connection attempts.
-        ///
-        /// - Precondition: Must be greater than 0 if non-`nil`. At least one limit must be non-`nil`.
-        public var maxConnections: Int? {
-            didSet {
-                self.preconditionValidLimits()
-            }
-        }
-
-        /// The maximum number of new connections accepted per second. A burst of up to this many is accepted at once;
-        /// after that, capacity refills at this rate. `nil` means unlimited.
-        ///
-        /// When the rate is exhausted, a TCP listener holds back `accept()` calls on its listening socket, and a QUIC
-        /// listener drops new connection attempts, until the rate limiter permits.
-        ///
-        /// - Precondition: Must be between 1 and 1,000,000,000 if non-`nil`. At least one limit must be non-`nil`.
-        public var newConnectionsPerSecond: Int? {
-            didSet {
-                self.preconditionValidLimits()
-            }
-        }
-
-        /// The maximum number of connections that can be in the TLS handshake stage at once. `nil` means unlimited.
-        ///
-        /// When this limit is reached, a TCP listener closes new connections as soon as they are accepted, and a QUIC
-        /// listener drops new connection attempts.
-        ///
-        /// - Note: In ``NIOHTTPServerConfiguration/tcpConnectionLimits``, this limit can only be set when
-        ///   ``NIOHTTPServerConfiguration/transportSecurity`` is TLS or mTLS.
-        ///
-        /// - Precondition: Must be greater than 0 if non-`nil`. At least one limit must be non-`nil`.
-        public var maxConcurrentTLSHandshakes: Int? {
-            didSet {
-                self.preconditionValidLimits()
-            }
-        }
-
-        /// Creates limits on the number of open connections, the rate of new connections, and the number of
-        /// concurrent TLS handshakes.
-        ///
-        /// - Parameters:
-        ///   - maxConnections: The maximum number of connections that may be open at once.
-        ///   - newConnectionsPerSecond: The maximum number of new connections accepted per second.
-        ///   - maxConcurrentTLSHandshakes: The maximum number of connections that can be in the TLS handshake stage at
-        ///     once.
-        ///   - name: The name of the limits in the error thrown if they are invalid.
-        ///
-        /// - Throws: If every limit is `nil`, or if any limit is out of range.
-        init(
-            maxConnections: Int? = nil,
-            newConnectionsPerSecond: Int? = nil,
-            maxConcurrentTLSHandshakes: Int? = nil,
-            name: String = "ConnectionLimits"
-        ) throws {
-            try Self.validate(
-                maxConnections: maxConnections,
-                newConnectionsPerSecond: newConnectionsPerSecond,
-                maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes,
-                name: name
-            )
-
-            self.init(
-                validatedMaxConnections: maxConnections,
-                validatedNewConnectionsPerSecond: newConnectionsPerSecond,
-                validatedMaxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes
-            )
-        }
-
-        /// Creates a ``ConnectionLimits`` value from limits that are known to be valid.
-        private init(
-            validatedMaxConnections maxConnections: Int?,
-            validatedNewConnectionsPerSecond newConnectionsPerSecond: Int?,
-            validatedMaxConcurrentTLSHandshakes maxConcurrentTLSHandshakes: Int?
-        ) {
-            self.maxConnections = maxConnections
-            self.newConnectionsPerSecond = newConnectionsPerSecond
-            self.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
-        }
-
-        /// Validates the limits.
-        ///
-        /// - Throws: If every limit is `nil`, or if any limit is out of range.
-        private static func validate(
-            maxConnections: Int?,
-            newConnectionsPerSecond: Int?,
-            maxConcurrentTLSHandshakes: Int?,
-            name: String
-        ) throws {
-            if maxConnections == nil, newConnectionsPerSecond == nil, maxConcurrentTLSHandshakes == nil {
-                throw NIOHTTPServerConfigurationError.noConnectionLimitsSpecified(name: name)
-            }
-
-            if let maxConnections, maxConnections <= 0 {
-                throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                    name: "\(name).maxConnections",
-                    requirement: "greater than 0"
-                )
-            }
-
-            if let newConnectionsPerSecond, !(1...1_000_000_000).contains(newConnectionsPerSecond) {
-                throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                    name: "\(name).newConnectionsPerSecond",
-                    requirement: "between 1 and 1,000,000,000"
-                )
-            }
-
-            if let maxConcurrentTLSHandshakes, maxConcurrentTLSHandshakes <= 0 {
-                throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                    name: "\(name).maxConcurrentTLSHandshakes",
-                    requirement: "greater than 0"
-                )
-            }
-        }
-
-        /// Validates the limits, and triggers a `preconditionFailure` if they are invalid.
-        private func preconditionValidLimits() {
-            do {
-                try Self.validate(
-                    maxConnections: self.maxConnections,
-                    newConnectionsPerSecond: self.newConnectionsPerSecond,
-                    maxConcurrentTLSHandshakes: self.maxConcurrentTLSHandshakes,
-                    name: "ConnectionLimits"
-                )
-            } catch {
-                preconditionFailure("\(error)")
-            }
-        }
-
-        /// The default limits for TCP connections:
-        /// - 100,000 open connections
-        /// - 10,000 new connections per second
-        /// - No limit on the number of concurrent TLS handshakes in progress.
-        public static var tcpDefaults: Self {
-            Self(
-                validatedMaxConnections: 100_000,
-                validatedNewConnectionsPerSecond: 10_000,
-                validatedMaxConcurrentTLSHandshakes: nil
-            )
-        }
-
-        #if HTTP3
-        /// The default limits for QUIC connections:
-        /// - 10,000 open connections
-        /// - 1,000 new connections per second
-        /// - No limit on the number of concurrent TLS handshakes in progress.
-        public static var quicDefaults: Self {
-            Self(
-                validatedMaxConnections: 10_000,
-                validatedNewConnectionsPerSecond: 1_000,
-                validatedMaxConcurrentTLSHandshakes: nil
-            )
-        }
-        #endif
-    }
-
     /// Configuration options for graceful shutdown behavior.
     public struct GracefulShutdownConfiguration: Sendable, Hashable {
         /// The maximum amount of time that the connection has to close gracefully before being forcefully closed.
@@ -480,13 +319,13 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// TLS configuration for the server.
     ///
-    /// - Precondition: Must be compatible with ``supportedHTTPVersions`` and ``tcpConnectionLimits``:
+    /// - Precondition: Must be compatible with ``supportedHTTPVersions`` and ``connectionLimits``:
     ///   - `transportSecurity == .mTLS` is not supported when `supportedHTTPVersions` contains `.http3`.
     ///   - Raw Public Key credentials are only supported when `supportedHTTPVersions == [.http3]`.
     ///   - When `supportedHTTPVersions` contains `.http2` and `.http3`, TLS credentials must be provided as PEM files
     ///     on disk. Other credential sources are not supported.
     ///   - `transportSecurity` can only be set to `.plaintext` when `supportedHTTPVersions == [.http1_1]`.
-    ///   - `transportSecurity` cannot be set to `.plaintext` when `tcpConnectionLimits.maxConcurrentTLSHandshakes` is
+    ///   - `transportSecurity` cannot be set to `.plaintext` when `connectionLimits.tcp.maxConcurrentTLSHandshakes` is
     ///     set.
     public var transportSecurity: TransportSecurity {
         didSet {
@@ -516,19 +355,13 @@ public struct NIOHTTPServerConfiguration: Sendable {
     /// Backpressure strategy to use in the server.
     public var backpressureStrategy: BackPressureStrategy
 
-    /// Connection limits imposed by the TCP listening socket, for HTTP/1.1 and HTTP/2. `nil` means no limits.
+    /// Limits on the number of connections and in-progress TLS handshakes. `nil` means no limits.
     ///
-    /// Defaults to ``ConnectionLimits/tcpDefaults``: 100,000 open connections and 10,000 new connections per second,
-    /// with no limit on concurrent TLS handshakes. These limits are unused when ``supportedHTTPVersions`` contains
-    /// neither HTTP/1.1 nor HTTP/2.
+    /// Defaults to ``ConnectionLimits/defaults``.
     ///
-    /// - Note: These limits apply to each TCP listener across all threads together (see ``ConnectionLimits``). HTTP/3
-    ///   connection limits are configured separately, in ``HTTP3/QUICConfiguration/connectionLimits``, because they
-    ///   apply separately on each thread that serves HTTP/3.
-    ///
-    /// - Precondition: ``ConnectionLimits/maxConcurrentTLSHandshakes`` can only be set when ``transportSecurity`` is
-    ///   TLS or mTLS.
-    public var tcpConnectionLimits: ConnectionLimits? {
+    /// - Precondition: ``TCPConnectionLimits/maxConcurrentTLSHandshakes`` can only be set when ``transportSecurity``
+    ///   is TLS or mTLS.
+    public var connectionLimits: ConnectionLimits? {
         didSet {
             self.preconditionValidConnectionLimits()
         }
@@ -560,7 +393,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Create a new configuration with multiple bind targets.
     ///
-    /// Other configuration properties (``backpressureStrategy``, ``tcpConnectionLimits``, ``connectionTimeouts``,
+    /// Other configuration properties (``backpressureStrategy``, ``connectionLimits``, ``connectionTimeouts``,
     /// ``gracefulShutdown``) are initialized to their defaults and can be set on the resulting value before passing it
     /// to ``NIOHTTPServer``.
     ///
@@ -585,7 +418,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
         self.supportedHTTPVersions = supportedHTTPVersions
         self.transportSecurity = transportSecurity
         self.backpressureStrategy = .defaults
-        self.tcpConnectionLimits = .tcpDefaults
+        self.connectionLimits = .defaults
         self.connectionTimeouts = .defaults
         self.gracefulShutdown = .defaults
 
@@ -595,7 +428,7 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Create a new configuration with a single bind target.
     ///
-    /// Other configuration properties (``backpressureStrategy``, ``tcpConnectionLimits``, ``connectionTimeouts``,
+    /// Other configuration properties (``backpressureStrategy``, ``connectionLimits``, ``connectionTimeouts``,
     /// ``gracefulShutdown``) are initialized to their defaults and can be set on the resulting value before passing it
     /// to ``NIOHTTPServer``.
     ///

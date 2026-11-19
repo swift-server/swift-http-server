@@ -20,9 +20,9 @@ import NIOQUIC
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration {
-    /// Validates the compatibility of `tcpConnectionLimits` against `transportSecurity`.
+    /// Validates the compatibility of `connectionLimits` against `transportSecurity`.
     func validateConnectionLimits() throws {
-        if self.tcpConnectionLimits?.maxConcurrentTLSHandshakes != nil,
+        if self.connectionLimits?.tcp?.maxConcurrentTLSHandshakes != nil,
             case .plaintext = self.transportSecurity.backing
         {
             throw NIOHTTPServerConfigurationError.tlsHandshakeLimitRequiresTLS

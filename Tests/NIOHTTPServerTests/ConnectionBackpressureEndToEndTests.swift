@@ -32,13 +32,14 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func requestsSucceedUnderConnectionLimit(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
-        let limits = try NIOHTTPServerConfiguration.ConnectionLimits(maxConnections: 2)
         let (server, clientConfiguration) = try TestHelpers.makeServerAndClientConfiguration(
             for: httpVersion,
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.tcpConnectionLimits = limits
+            var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
+            limits.tcp?.maxConnections = 2
+            configuration.connectionLimits = limits
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 
@@ -87,12 +88,13 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func moreConnectionsThanLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
+        var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+        tcpLimits.maxConnections = 2
+        limits.tcp = tcpLimits
+
         // Open 20 connections at once with maxConnections: 2.
-        try await self.expectAllConnectionsComplete(
-            numConnections: 20,
-            limits: .init(maxConnections: 2),
-            httpVersion: httpVersion
-        )
+        try await self.expectAllConnectionsComplete(numConnections: 20, limits: limits, httpVersion: httpVersion)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -101,13 +103,14 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func moreConnectionsThanRateLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
+        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
+        var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+        tcpLimits.newConnectionsPerSecond = 20
+        limits.tcp = tcpLimits
+
         // Open 30 connections at once with a rate of 20 per second. All should eventually complete, as the connections
         // beyond the burst wait in the backlog until the rate limiter has a token for them.
-        try await self.expectAllConnectionsComplete(
-            numConnections: 30,
-            limits: .init(newConnectionsPerSecond: 20),
-            httpVersion: httpVersion
-        )
+        try await self.expectAllConnectionsComplete(numConnections: 30, limits: limits, httpVersion: httpVersion)
     }
 
     /// Opens `numConnections` concurrent connections to a server with `limits`, and checks that every one of them gets a
@@ -123,7 +126,7 @@ struct ConnectionBackpressureEndToEndTests {
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.tcpConnectionLimits = limits
+            configuration.connectionLimits = limits
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 
@@ -168,7 +171,7 @@ struct ConnectionBackpressureEndToEndTests {
 
     @available(anyAppleOS 27.0, *)
     @Test(
-        "No connection limits when tcpConnectionLimits is nil",
+        "No connection limits when connectionLimits is nil",
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func noConnectionLimitsWhenNil(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
@@ -177,7 +180,7 @@ struct ConnectionBackpressureEndToEndTests {
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
-            configuration.tcpConnectionLimits = nil
+            configuration.connectionLimits = nil
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
 

@@ -333,7 +333,7 @@ extension NIOHTTPServer {
             )
             let alpnHandler = self.makeALPNHandler(channel: channel, http2Config: configuration.http2Configuration)
 
-            let isHandshakeLimitEnabled = self.configuration.tcpConnectionLimits?.maxConcurrentTLSHandshakes != nil
+            let isHandshakeLimitEnabled = self.configuration.connectionLimits?.tcp?.maxConcurrentTLSHandshakes != nil
 
             do {
                 try channel.pipeline.syncOperations.addHandlers([sslHandler, alpnHandler])

@@ -201,15 +201,6 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// debugging and analysis.
         public var qLogConfiguration: QLogConfiguration?
 
-        /// Limits on the connections an HTTP/3 listening socket admits. `nil` means no limits.
-        ///
-        /// Defaults to ``NIOHTTPServerConfiguration/ConnectionLimits/quicDefaults``: 10,000 open connections and 1,000
-        /// new connections per second, with no limit on concurrent TLS handshakes.
-        ///
-        /// - Important: Unlike ``NIOHTTPServerConfiguration/tcpConnectionLimits``, these limits apply separately on
-        ///   each thread that serves HTTP/3 (see ``NIOHTTPServerConfiguration/ConnectionLimits``).
-        public var connectionLimits: NIOHTTPServerConfiguration.ConnectionLimits?
-
         /// Builds the datagram socket group for each HTTP/3 bind target, or `nil` to bind a single socket per
         /// bind target.
         ///
@@ -236,8 +227,6 @@ extension NIOHTTPServerConfiguration.HTTP3 {
         /// - `sendRetry`: `false`.
         /// - `keyLogPath`: `nil` (TLS session keys are not logged).
         /// - `qLogConfiguration`: `nil` (qlog is not enabled).
-        /// - `connectionLimits`: 10,000 open connections and 1,000 new connections per second on each thread, with no
-        ///   limit on concurrent TLS handshakes.
         public static var defaults: Self {
             Self(
                 // SwiftTLS currently just ignores the `serverName` sent in the ClientHello. This default configuration
@@ -255,8 +244,7 @@ extension NIOHTTPServerConfiguration.HTTP3 {
                 keepAliveInterval: nil,
                 sendRetry: false,
                 keyLogPath: nil,
-                qLogConfiguration: nil,
-                connectionLimits: .quicDefaults
+                qLogConfiguration: nil
             )
         }
     }
@@ -372,8 +360,9 @@ extension NIOQUIC.QUICConfiguration {
 
 @available(anyAppleOS 27.0, *)
 extension NIOQUIC.QUICConnectionLimits {
-    /// Creates a `NIOQUIC.QUICConnectionLimits` instance from a `NIOHTTPServerConfiguration.ConnectionLimits` instance.
-    init(_ limits: NIOHTTPServerConfiguration.ConnectionLimits?) {
+    /// Creates a `NIOQUIC.QUICConnectionLimits` instance from a `NIOHTTPServerConfiguration.QUICConnectionLimits`
+    /// instance.
+    init(_ limits: NIOHTTPServerConfiguration.QUICConnectionLimits?) {
         guard let limits else {
             self = .unlimited
             return
