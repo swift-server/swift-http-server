@@ -55,6 +55,8 @@ extension NIOHTTPServer {
 
         /// The HTTP/3 connection object, for iterating its inbound request streams.
         var connection: HTTP3ServerConnection<HTTP3Stream>
+
+        var streamCreator: NIOQUIC.QUICStreamCreator
     }
 
     func serveHTTP3<Handler: NIOHTTPServerConnectionHandler>(
@@ -90,7 +92,7 @@ extension NIOHTTPServer {
         let connection = Connection(
             server: self,
             context: context,
-            httpProtocol: .http3(connection: http3Connection.connection)
+            httpProtocol: .http3(connection: http3Connection.connection, streamCreator: http3Connection.streamCreator)
         )
 
         do {
@@ -440,10 +442,41 @@ extension NIOHTTPServer {
                         connectionChannel: connectionChannel,
                         streamCreator: streamCreator
                     )
-                    connectionsContinuation.yield(HTTP3Connection(channel: connectionChannel, connection: connection))
+                    #endif
+                    connectionsContinuation.yield(
+                        HTTP3Connection(
+                            channel: connectionChannel,
+                            connection: connection,
+                            streamCreator: streamCreator
+                        )
+                    )
                 }
             },
             inboundStreamInitializer: { streamChannel in
+                #if UnstableWebTransport
+                streamChannel.getOption(.quicStreamID).flatMap { quicStreamID in
+                    switch QUICStreamID(rawValue: quicStreamID).type {
+                    case .clientInitiatedBidirectional:
+                        streamChannel.eventLoop.makeCompletedFuture {
+                            try streamChannel.pipeline.syncOperations.addHandler(
+                                WebTransportIncomingBidirectionalStreamsChannelHandler(
+                                    multiplexer: webTransportIncomingStreamsMultiplexer
+                                )
+                            )
+                        }
+                    case .serverInitiatedUnidirectional, .serverInitiatedBidirectional, .clientInitiatedUnidirectional:
+                        streamChannel.parent!.pipeline.handler(
+                            type: HTTP3ConnectionHandler<
+                                NIOQUIC.QUICStreamCreator,
+                                HTTP3AsyncInboundStreamInitializer<HTTP3Stream>
+                            >.self
+                        )
+                        .flatMap { http3Handler in
+                            http3Handler.inboundStreamReceived(streamChannel)
+                        }
+                    }
+                }
+                #else
                 do {
                     let http3Handler = try streamChannel.parent!.pipeline.syncOperations.handler(
                         type: HTTP3ConnectionHandler<
@@ -455,6 +488,7 @@ extension NIOHTTPServer {
                 } catch {
                     return streamChannel.eventLoop.makeFailedFuture(error)
                 }
+                #endif
             },
             noMoreConnections: {
                 connectionsContinuation.finish()
@@ -481,7 +515,7 @@ extension NIOHTTPServer {
         connectionChannel: any Channel,
         streamCreator: NIOQUIC.QUICStreamCreator,
         webTransportIncomingStreamsMultiplexer: WebTransportIncomingStreamsMultiplexer
-    ) throws -> HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
+    ) throws -> HTTP3ServerConnection<HTTP3Stream> {
         try self.setupHTTP3Connection(
             http3Configuration: http3Configuration,
             connectionChannel: connectionChannel,
@@ -496,7 +530,7 @@ extension NIOHTTPServer {
         http3Configuration: NIOHTTPServerConfiguration.HTTP3,
         connectionChannel: any Channel,
         streamCreator: NIOQUIC.QUICStreamCreator
-    ) throws -> HTTP3ServerConnection<HTTP3Stream, NIOQUIC.QUICStreamCreator> {
+    ) throws -> HTTP3ServerConnection<HTTP3Stream> {
         try self.setupHTTP3Connection(
             http3Configuration: http3Configuration,
             connectionChannel: connectionChannel,
@@ -527,56 +561,6 @@ extension NIOHTTPServer {
         let connectionManager = HTTP3ConnectionManager(eventLoop: connectionEventLoop, logger: self.logger)
         #endif
 
-        let connection = HTTP3ServerConnection(connectionHandler: loopBoundHandler) { streamInitializerParameters in
-            let streamChannel = streamInitializerParameters.channel
-
-            return streamChannel.eventLoop.makeCompletedFuture {
-                #if UnstableHTTPDatagrams
-                guard let datagramConfiguration = http3Configuration.datagramConfiguration,
-                    let negotiationPromise = datagramsNegotiatedPromise
-                else {
-                    let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
-                    return HTTP3Stream(channel: stream.channel, clientClosed: stream.clientClosed)
-                }
-
-                // Create the unreliable stream only when we know the peer supports receiving datagrams.
-                let datagramStreamFuture = negotiationPromise.futureResult.map { _ in
-                    let datagramStream = HTTP3UnreliableDatagramStream(
-                        streamID: streamInitializerParameters.streamID,
-                        connectionChannel: connectionChannel,
-                        maxBufferedDatagrams: datagramConfiguration.maxBufferedStreamDatagrams
-                    )
-                    loopBoundManager.value.register(datagramStream: datagramStream)
-
-                    return datagramStream
-                }
-
-                datagramStreamFuture.and(streamChannel.closeFuture).whenComplete { _ in
-                    loopBoundManager.value.deregister(streamID: streamInitializerParameters.streamID)
-                }
-
-                let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
-                #if UnstableWebTransport
-                return HTTP3Stream(
-                    channel: stream.channel,
-                    clientClosed: stream.clientClosed,
-                    datagramStreamFuture: datagramStreamFuture,
-                    webTransportIncomingStreamsMultiplexer: options.webTransportIncomingStreamsMultiplexer
-                )
-                #else
-                return HTTP3Stream(
-                    channel: stream.channel,
-                    clientClosed: stream.clientClosed,
-                    datagramStreamFuture: datagramStreamFuture
-                )
-                #endif
-                #else
-                let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
-                return HTTP3Stream(channel: stream.channel, clientClosed: stream.clientClosed)
-                #endif
-            }
-        }
-
         var h3ServerConfig = HTTP3ServerConfiguration(http3Configuration)
         h3ServerConfig.rttProvider = {
             guard let syncOptions = connectionChannel.syncOptions else {
@@ -594,36 +578,11 @@ extension NIOHTTPServer {
         }
 
         #if UnstableWebTransport
-        let http3Handler = HTTP3ConnectionHandler.server(
-            eventLoop: connectionChannel.eventLoop,
-            configuration: h3ServerConfig,
-            settings: try HTTP3Settings(
-                http3Configuration.connectionSettings,
-                supportsWebTransport: http3Configuration.datagramConfiguration != nil
-            ),
-            streamCreator: streamCreator,
-            logger: self.logger,
-            connection: connection,
-            internalInboundStreamInitializer: { streamChannel, _, streamType in
-                streamChannel.eventLoop.makeCompletedFuture {
-                    switch streamType {
-                    case .control:
-                        break
-                    case .unknown(let raw) where raw == 0x54:
-                        try streamChannel.pipeline.syncOperations.addHandler(
-                            WebTransportIncomingUnidirectionalStreamsChannelHandler(
-                                multiplexer: options.webTransportIncomingStreamsMultiplexer
-                            )
-                        )
-                        break
-                    case .push, .qpackEncoder, .qpackDecoder, .unknown:
-                        break
-                    }
-                }
-            }
+        let h3Settings = try HTTP3Settings(
+            http3Configuration.connectionSettings,
+            supportsWebTransport: http3Configuration.datagramConfiguration != nil
         )
-        #else
-        #if UnstableHTTPDatagrams
+        #elseif UnstableHTTPDatagrams
         let h3Settings = HTTP3Settings(
             http3Configuration.connectionSettings,
             supportsDatagrams: http3Configuration.datagramConfiguration != nil
@@ -666,20 +625,44 @@ extension NIOHTTPServer {
                     }
 
                     let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
+                    #if UnstableWebTransport
+                    return HTTP3Stream(
+                        channel: stream.channel,
+                        clientClosed: stream.clientClosed,
+                        datagramStreamFuture: datagramStreamFuture,
+                        webTransportIncomingStreamsMultiplexer: options.webTransportIncomingStreamsMultiplexer
+                    )
+                    #else
                     return HTTP3Stream(
                         channel: stream.channel,
                         clientClosed: stream.clientClosed,
                         datagramStreamFuture: datagramStreamFuture
                     )
+                    #endif
                     #else
                     let stream = try self.setupHTTP3Stream(streamChannel: streamChannel)
                     return HTTP3Stream(channel: stream.channel, clientClosed: stream.clientClosed)
                     #endif
                 }
+            },
+            internalInboundStreamInitializer: { streamChannel, _, streamType in
+                streamChannel.eventLoop.makeCompletedFuture {
+                    switch streamType {
+                    case .control:
+                        break
+                    case .unknown(let raw) where raw == 0x54:
+                        try streamChannel.pipeline.syncOperations.addHandler(
+                            WebTransportIncomingUnidirectionalStreamsChannelHandler(
+                                multiplexer: options.webTransportIncomingStreamsMultiplexer
+                            )
+                        )
+                        break
+                    case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                        break
+                    }
+                }
             }
         )
-        #endif
-        loopBoundHandler.value = http3Handler
 
         #if UnstableHTTPDatagrams
         try connectionChannel.pipeline.syncOperations.addHandler(loopBoundManager.value)

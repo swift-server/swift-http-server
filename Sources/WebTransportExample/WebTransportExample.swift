@@ -52,7 +52,7 @@ struct WebTransportExample {
             // The example uses the `serve` method that exposes the connection, not the "default" one
             try await server.serve { connection, requestContext in
                 // The QUIC stream creator can be accessed from the connection to create WebTransport streams
-                guard let webTransportStreamCreator = try await connection.webTransportStreamCreator else {
+                guard let webTransportStreamCreator = connection.webTransportStreamCreator else {
                     fatalError("QUIC stream creator is not available")
                 }
 

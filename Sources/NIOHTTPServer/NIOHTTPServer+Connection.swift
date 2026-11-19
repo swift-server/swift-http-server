@@ -52,7 +52,10 @@ extension NIOHTTPServer {
             )
 
             #if HTTP3
-            case http3(connection: HTTP3ServerConnection<NIOHTTPServer.HTTP3Stream>)
+            case http3(
+                connection: HTTP3ServerConnection<NIOHTTPServer.HTTP3Stream>,
+                streamCreator: NIOQUIC.QUICStreamCreator
+            )
             #endif
         }
 
@@ -107,7 +110,7 @@ extension NIOHTTPServer {
                 )
 
             #if HTTP3
-            case .http3(let connection):
+            case .http3(let connection, _):
                 await server.handleHTTP3Connection(connection: connection, handler: handler, context: context)
             #endif
             }

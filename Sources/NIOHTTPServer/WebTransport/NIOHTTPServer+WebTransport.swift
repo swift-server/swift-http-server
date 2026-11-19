@@ -23,20 +23,15 @@ import NIOQUICHelpers
 extension NIOHTTPServer.Connection {
     /// If the connection is using HTTP/3, returns the associated QUIC stream creator. Otherwise, returns `nil`.
     var quicStreamCreator: NIOQUIC.QUICStreamCreator? {
-        get async throws {
-            guard case .http3(let connection) = self.httpProtocol else { return nil }
-            return try await connection.streamCreator.get()
-        }
+        guard case .http3(_, let streamCreator) = self.httpProtocol else { return nil }
+        return streamCreator
     }
 
     /// If the connection is using HTTP/3,
     /// returns a ``NIOHTTPServer/Connection/WebTransportStreamCreator`` built with the connection's QUIC stream creator.
     /// Otherwise, returns `nil`.
     public var webTransportStreamCreator: WebTransportStreamCreator? {
-        get async throws {
-            guard let quicStreamCreator = try await self.quicStreamCreator else { return nil }
-            return WebTransportStreamCreator(quicStreamCreator: quicStreamCreator)
-        }
+        self.quicStreamCreator.map { WebTransportStreamCreator(quicStreamCreator: $0) }
     }
 
     /// Use this to open WebTransport streams on the HTTP/3 connection.

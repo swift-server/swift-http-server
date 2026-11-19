@@ -87,17 +87,22 @@ final class WebTransportIncomingBidirectionalStreamsChannelHandler: ChannelInbou
             let sessionID = buffer.readEncodedInteger(as: UInt64.self, strategy: .quic)
         else {
             guard #available(anyAppleOS 27, *) else { fatalError("WebTransport requires anyAppleOS 27 or later") }
-            context.channel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
-                .assumeIsolated()
-                .whenComplete { result in
-                    switch result {
-                    case .success(let http3Handler):
-                        _ = http3Handler.inboundStreamReceived(context.channel)
-                    case .failure(let error):
-                        context.fireErrorCaught(error)
-                        return
-                    }
+            context.channel.parent!.pipeline.handler(
+                type: HTTP3ConnectionHandler<
+                    NIOQUIC.QUICStreamCreator,
+                    HTTP3AsyncInboundStreamInitializer<NIOHTTPServer.HTTP3Stream>
+                >.self
+            )
+            .assumeIsolated()
+            .whenComplete { result in
+                switch result {
+                case .success(let http3Handler):
+                    _ = http3Handler.inboundStreamReceived(context.channel)
+                case .failure(let error):
+                    context.fireErrorCaught(error)
+                    return
                 }
+            }
 
             context.fireChannelRead(data)
             return
