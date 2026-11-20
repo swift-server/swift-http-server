@@ -91,12 +91,12 @@ its respective key prefix.
 |                                                  | `certificateVerificationMode`             | `string`            | Required for `"mTLS"`, permitted values: `"optionalVerification"`, `"noHostnameVerification"`                                 | -              |
 | `backpressureStrategy`                           | `lowWatermark`                            | `int`               | Optional                                                                                                                      | 2              |
 |                                                  | `highWatermark`                           | `int`               | Optional                                                                                                                      | 10             |
-| `connectionLimits.tcp`                           | `maxConnections`                          | `int`               | Optional (`0` means unlimited)                                                                                                | 100000         |
-|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 0 and 1,000,000,000; `0` means unlimited)                                                                   | 10000          |
-|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional (`0` means unlimited; other values only valid with `"tls"` or `"mTLS"`)                                              | nil            |
-| `connectionLimits.quic`                          | `maxConnections`                          | `int`               | Optional (`0` means unlimited)                                                                                                | 10000          |
-|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 0 and 1,000,000,000; `0` means unlimited)                                                                   | 1000           |
-|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional (`0` means unlimited)                                                                                                | nil            |
+| `connectionLimits.tcp`                           | `maxConnections`                          | `int`               | Optional (set to `0` to disable)                                                                                              | 100000         |
+|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 0 and 1,000,000,000; set to `0` to disable)                                                                 | 10000          |
+|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional (set to `0` to disable; other values only valid with `"tls"` or `"mTLS"`)                                            | nil            |
+| `connectionLimits.quic`                          | `maxConnections`                          | `int`               | Optional (set to `0` to disable)                                                                                              | 10000          |
+|                                                  | `newConnectionsPerSecond`                 | `int`               | Optional (between 0 and 1,000,000,000; set to `0` to disable)                                                                 | 1000           |
+|                                                  | `maxConcurrentTLSHandshakes`              | `int`               | Optional (set to `0` to disable)                                                                                              | nil            |
 | `connectionTimeouts`                             | `idle`                                    | `int`               | Optional                                                                                                                      | nil            |
 |                                                  | `readHeader`                              | `int`               | Optional                                                                                                                      | nil            |
 |                                                  | `readBody`                                | `int`               | Optional                                                                                                                      | nil            |
@@ -127,23 +127,21 @@ additional fields:
 
 #### Connection limits
 
-Limits for TCP connections (HTTP/1.1 and HTTP/2) and QUIC connections (HTTP/3) are defined under separate keys, namely
-`connectionLimits.tcp` and `connectionLimits.quic`:
+Limits for TCP and QUIC connections are defined under separate keys, namely `connectionLimits.tcp` and
+`connectionLimits.quic`:
 
-- `connectionLimits.tcp` applies over **all threads together**. Each bind target has one TCP listener. Its connections
-  may be served by several event loop threads, but they all count towards the same limits. For example, if
+- `connectionLimits.tcp` applies over **all threads together**. Each bind target has exactly one TCP listener. Its
+  connections may be served by several event loop threads, but they all count towards the same limits. For example, if
   `maxConnections` is set to 10,000, it allows at most 10,000 open connections per bind target, in total across all
   threads.
 - `connectionLimits.quic` applies **separately on each thread**. Each UDP socket serving HTTP/3 is bound to its own
   event loop thread and enforces the limits on its own connections only. Therefore, a bind target served by *N* UDP
-  sockets admits up to *N* times each limit. By default, each bind target is served by a single UDP socket, but
+  sockets admits up to *N* times each limit. Note that each bind target is served by a single UDP socket by default, but
   multiple sockets can be bound (per bind target) if a datagram socket group factory is set.
 
-For TCP, when a limit is reached, the listener stops accepting new connections (or, for `maxConcurrentTLSHandshakes`,
-closes them as soon as they are accepted). For QUIC, new connection attempts are dropped when a limit is reached.
-
-`connectionLimits.tcp` is unused when `http.versions` contains neither `"http1_1"` nor `"http2"`, and
-`connectionLimits.quic` is unused when `http.versions` doesn't contain `"http3"`.
+For TCP, when a limit is reached, the listener socket stops accepting new connections (or, for
+`maxConcurrentTLSHandshakes`, closes them as soon as they are accepted). For QUIC, new connection attempts are dropped
+when a limit is reached.
 
 By default, each TCP listener is limited to 100,000 open connections and 10,000 new connections per second, and QUIC
 connections are limited to 10,000 open connections and 1,000 new connections per second on each thread. Limits for the
@@ -169,6 +167,9 @@ If an entry for a limit is omitted, the default value is used. Each limit can be
     }
 }
 ```
+
+Note that `connectionLimits.tcp` is not used when `http.versions` contains neither `"http1_1"` nor `"http2"`. Similarly,
+`connectionLimits.quic` is not used when `http.versions` doesn't contain `"http3"`.
 
 #### Traits
 

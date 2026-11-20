@@ -357,10 +357,8 @@ public struct NIOHTTPServerConfiguration: Sendable {
 
     /// Limits on the number of connections and in-progress TLS handshakes. `nil` means no limits.
     ///
-    /// Defaults to ``ConnectionLimits/defaults``.
-    ///
-    /// - Precondition: ``TCPConnectionLimits/maxConcurrentTLSHandshakes`` can only be set when ``transportSecurity``
-    ///   is TLS or mTLS.
+    /// - Precondition: ``TCPConnectionLimits/maxConcurrentTLSHandshakes`` can only be set when ``transportSecurity`` is
+    ///   TLS or mTLS.
     public var connectionLimits: ConnectionLimits? {
         didSet {
             self.preconditionValidConnectionLimits()

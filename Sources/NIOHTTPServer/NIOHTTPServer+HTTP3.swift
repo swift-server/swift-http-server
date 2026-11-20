@@ -288,7 +288,6 @@ extension NIOHTTPServer {
                     }
                     let connectionStream = try self.setupQUICChannel(
                         channel: channel,
-                        connectionLimits: self.configuration.connectionLimits?.quic,
                         configuration: configuration,
                         socket: socket
                     )
@@ -359,7 +358,6 @@ extension NIOHTTPServer {
     /// event loop, so a connection's whole lifetime stays on one loop.
     func setupQUICChannel(
         channel: any Channel,
-        connectionLimits: NIOHTTPServerConfiguration.QUICConnectionLimits?,
         configuration: ListenerConfiguration.HTTP3,
         socket: HTTP3ListenerSocket
     ) throws -> AsyncStream<HTTP3Connection> {
@@ -388,7 +386,7 @@ extension NIOHTTPServer {
         let quicHandler = QUICHandler(
             channel: channel,
             quicConfiguration: quicConfiguration,
-            connectionLimits: QUICConnectionLimits(connectionLimits),
+            connectionLimits: QUICConnectionLimits(self.configuration.connectionLimits?.quic),
             // TODO: mTLS is not yet supported by NIOQUIC so we don't specify a value for `asyncVerifier`.
             asyncVerifier: nil,
             authenticator: configuration.quicAuthenticator,

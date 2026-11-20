@@ -127,7 +127,7 @@ extension NIOHTTPServerConfiguration.HTTP3.QUICConfiguration {
             keepAliveInterval: config.int(forKey: "keepAliveInterval").map { .seconds($0) },
             sendRetry: config.bool(forKey: "sendRetry", default: false),
             keyLogPath: config.string(forKey: "keyLogPath"),
-            qLogConfiguration: try QLogConfiguration(config: config.scoped(to: "qlog")),
+            qLogConfiguration: try QLogConfiguration(config: config.scoped(to: "qlog"))
         )
     }
 }

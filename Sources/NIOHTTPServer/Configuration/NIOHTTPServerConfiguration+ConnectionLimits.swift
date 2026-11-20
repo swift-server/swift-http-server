@@ -16,8 +16,19 @@
 extension NIOHTTPServerConfiguration {
     /// Limits on the connections the server admits.
     ///
-    /// - Note: TCP connection limits apply across all threads together. HTTP/3 connection limits apply **separately on
-    ///   each thread** that serves HTTP/3.
+    /// - Note: TCP and QUIC limits are tracked differently, because of how each protocol receives new connections:
+    ///   - For TCP, we set up exactly one listener socket per bind target. The listener socket sees every incoming
+    ///     connection and distributes it across the server's event loops. Therefore, the limits can be enforced across
+    ///     all threads together. For example, setting ``TCPConnectionLimits/maxConnections`` to 10,000 means that
+    ///     10,000 TCP connections can be open at any time, per bind target.
+    ///
+    ///   - For QUIC, there is no dedicated listener socket for just accepting connections. Each UDP socket receives
+    ///     datagrams directly and serves its connections on its own thread. Therefore, the limits apply **separately on
+    ///     each UDP socket** serving a bind target. By default, a bind target is served by exactly one UDP socket, so
+    ///     the limits apply identically like TCP. However, if the `datagramSocketGroupFactory` configuration is set and
+    ///     the socket group's `socketCount` is greater than 1, multiple UDP sockets serve each bind target. For
+    ///     example, with 8 UDP sockets per bind target, setting ``QUICConnectionLimits/maxConnections`` to 10,000 means
+    ///     that 80,000 QUIC connections can be open at any time, per bind target.
     public struct ConnectionLimits: Sendable, Hashable {
         /// Limits on the TCP connections the server admits.
         ///
@@ -84,6 +95,11 @@ extension NIOHTTPServerConfiguration {
             didSet {
                 self.preconditionValidLimits()
             }
+        }
+
+        /// Whether any of the limits are set.
+        var isEnabled: Bool {
+            self.maxConnections != nil || self.newConnectionsPerSecond != nil || self.maxConcurrentTLSHandshakes != nil
         }
 
         /// Creates limits on the number of open connections, the rate of new connections, and the number of concurrent
@@ -219,6 +235,11 @@ extension NIOHTTPServerConfiguration {
             }
         }
 
+        /// Whether any of the limits are set.
+        var isEnabled: Bool {
+            self.maxConnections != nil || self.newConnectionsPerSecond != nil || self.maxConcurrentTLSHandshakes != nil
+        }
+
         /// Creates limits on the number of open connections, the rate of new connections, and the number of concurrent
         /// TLS handshakes in progress.
         ///
@@ -305,6 +326,9 @@ extension NIOHTTPServerConfiguration {
         /// - 10,000 open connections
         /// - 1,000 new connections per second
         /// - No limit on the number of concurrent TLS handshakes in progress.
+        ///
+        /// - Note: The default limits are lower here compared to ``TCPConnectionLimits/defaults``, as these limits
+        ///   apply individually on each UDP socket created per bind target. See the note in ``ConnectionLimits``.
         public static var defaults: Self {
             Self(
                 validatedMaxConnections: 10_000,

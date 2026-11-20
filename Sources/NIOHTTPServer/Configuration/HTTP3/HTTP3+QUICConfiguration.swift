@@ -360,10 +360,8 @@ extension NIOQUIC.QUICConfiguration {
 
 @available(anyAppleOS 27.0, *)
 extension NIOQUIC.QUICConnectionLimits {
-    /// Creates a `NIOQUIC.QUICConnectionLimits` instance from a `NIOHTTPServerConfiguration.QUICConnectionLimits`
-    /// instance.
     init(_ limits: NIOHTTPServerConfiguration.QUICConnectionLimits?) {
-        guard let limits else {
+        guard let limits, limits.isEnabled else {
             self = .unlimited
             return
         }

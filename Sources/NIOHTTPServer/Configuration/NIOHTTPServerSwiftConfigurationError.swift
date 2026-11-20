@@ -15,7 +15,7 @@
 #if Configuration
 
 /// A configuration error arising from an invalid ``NIOHTTPServerConfiguration`` specified via `swift-configuration`.
-enum NIOHTTPServerSwiftConfigurationError: Error, Equatable, CustomStringConvertible {
+enum NIOHTTPServerSwiftConfigurationError: Error, CustomStringConvertible {
     case customVerificationCallbackAndTrustRootsProvided
     case customVerificationCallbackProvidedWhenNotUsingMTLS
     case trustRootsSourceAndVerificationCallbackMismatch

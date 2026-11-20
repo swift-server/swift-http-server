@@ -545,11 +545,13 @@ extension NIOHTTPServerConfiguration.ConnectionLimits {
         guard tcp != nil || quic != nil else {
             return nil
         }
+
         self.init(tcp: tcp, quic: quic)
         #else
         guard tcp != nil else {
             return nil
         }
+
         self.init(tcp: tcp)
         #endif  // HTTP3
     }
@@ -585,15 +587,14 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
     /// Initialize a ``NIOHTTPServerConfiguration/TCPConnectionLimits`` value from a config reader. Returns `nil` if no
     /// limits are specified.
     ///
-    /// An omitted key takes its value from ``defaults``. `0` means that limit is unlimited.
+    /// If the key is omitted, a default value is used. Specify `0` as the value to disable the limit.
     ///
     /// ## Configuration keys:
-    /// - `maxConnections` (int, optional, default: from ``defaults``): The maximum number of open connections. `0`
-    ///   means unlimited.
-    /// - `newConnectionsPerSecond` (int, optional, default: from ``defaults``): The maximum number of new connections
-    ///   accepted per second. Must be between 0 and 1,000,000,000. `0` means unlimited.
-    /// - `maxConcurrentTLSHandshakes` (int, optional, default: from ``defaults``): The maximum number of connections
-    ///   that can be in the TLS handshake stage at once. `0` means unlimited.
+    /// - `maxConnections` (int, optional, default: 100,000): The maximum number of open connections.
+    /// - `newConnectionsPerSecond` (int, optional, default: 10,000): The maximum number of new connections accepted per
+    ///   second. Must be between 0 and 1,000,000,000.
+    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be in
+    ///   the TLS handshake stage at once.
     ///
     /// - Parameters:
     ///   - config: The configuration reader.
@@ -625,7 +626,8 @@ extension NIOHTTPServerConfiguration.TCPConnectionLimits {
             name: "connectionLimits.tcp"
         )
 
-        guard maxConnections != nil || newConnectionsPerSecond != nil || maxConcurrentTLSHandshakes != nil else {
+        if maxConnections == nil, newConnectionsPerSecond == nil, maxConcurrentTLSHandshakes == nil {
+            // No limits were specified.
             return nil
         }
 
@@ -643,15 +645,14 @@ extension NIOHTTPServerConfiguration.QUICConnectionLimits {
     /// Initialize a ``NIOHTTPServerConfiguration/QUICConnectionLimits`` value from a config reader. Returns `nil` if no
     /// limits are specified.
     ///
-    /// An omitted key takes its value from ``defaults``. `0` means that limit is unlimited.
+    /// If the key is omitted, a default value is used. Specify `0` as the value to disable the limit.
     ///
     /// ## Configuration keys:
-    /// - `maxConnections` (int, optional, default: from ``defaults``): The maximum number of open connections. `0`
-    ///   means unlimited.
-    /// - `newConnectionsPerSecond` (int, optional, default: from ``defaults``): The maximum number of new connections
-    ///   accepted per second. Must be between 0 and 1,000,000,000. `0` means unlimited.
-    /// - `maxConcurrentTLSHandshakes` (int, optional, default: from ``defaults``): The maximum number of connections
-    ///   that can be in the TLS handshake stage at once. `0` means unlimited.
+    /// - `maxConnections` (int, optional, default: 10,000): The maximum number of open connections.
+    /// - `newConnectionsPerSecond` (int, optional, default: 1,000): The maximum number of new connections accepted per
+    ///   second. Must be between 0 and 1,000,000,000.
+    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be in
+    ///   the TLS handshake stage at once.
     ///
     /// - Parameters:
     ///   - config: The configuration reader.
@@ -683,7 +684,7 @@ extension NIOHTTPServerConfiguration.QUICConnectionLimits {
             name: "connectionLimits.quic"
         )
 
-        guard maxConnections != nil || newConnectionsPerSecond != nil || maxConcurrentTLSHandshakes != nil else {
+        if maxConnections == nil, newConnectionsPerSecond == nil, maxConcurrentTLSHandshakes == nil {
             return nil
         }
 

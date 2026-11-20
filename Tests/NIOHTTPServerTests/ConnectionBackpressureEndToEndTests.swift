@@ -37,8 +37,11 @@ struct ConnectionBackpressureEndToEndTests {
             clientLogger: self.clientLogger,
             serverLogger: self.serverLogger
         ) { configuration in
+            var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+            tcpLimits.maxConnections = 2
             var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
-            limits.tcp?.maxConnections = 2
+            limits.tcp = tcpLimits
+
             configuration.connectionLimits = limits
             configuration.connectionTimeouts = .init(idle: nil, readHeader: nil, readBody: nil)
         }
@@ -88,9 +91,9 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func moreConnectionsThanLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
-        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
         var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
         tcpLimits.maxConnections = 2
+        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
         limits.tcp = tcpLimits
 
         // Open 20 connections at once with maxConnections: 2.
@@ -103,9 +106,9 @@ struct ConnectionBackpressureEndToEndTests {
         arguments: [NIOHTTPServer.HTTPVersion.plaintextHTTP1_1, .http1_1, .http2]
     )
     func moreConnectionsThanRateLimitAllComplete(httpVersion: NIOHTTPServer.HTTPVersion) async throws {
-        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
         var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
         tcpLimits.newConnectionsPerSecond = 20
+        var limits = NIOHTTPServerConfiguration.ConnectionLimits.defaults
         limits.tcp = tcpLimits
 
         // Open 30 connections at once with a rate of 20 per second. All should eventually complete, as the connections

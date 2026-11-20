@@ -610,7 +610,7 @@ struct HTTPRequestChannelAndCancellationSignal: Sendable {
 extension ServerBootstrap {
     /// Makes a `ServerBootstrap` alongside the `ServerQuiescingHelper` used to later shut that listener down gracefully.
     ///
-    /// - Note: A `ConnectionLimitHandler` is only installed when `connectionLimits` is non-`nil`.
+    /// - Note: A `ConnectionLimitHandler` is only installed when `connectionLimits` sets at least one limit.
     static func makeTCPBootstrap(
         listeningSocketGroup: any EventLoopGroup,
         acceptedConnectionsGroup: any EventLoopGroup,
@@ -627,7 +627,7 @@ extension ServerBootstrap {
                         serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                     )
 
-                    if let connectionLimits {
+                    if let connectionLimits, connectionLimits.isEnabled {
                         try channel.pipeline.syncOperations.addHandler(
                             ConnectionLimitHandler(
                                 maxConnections: connectionLimits.maxConnections,
