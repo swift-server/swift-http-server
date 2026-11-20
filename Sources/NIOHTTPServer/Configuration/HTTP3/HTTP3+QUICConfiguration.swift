@@ -359,6 +359,22 @@ extension NIOQUIC.QUICConfiguration {
 }
 
 @available(anyAppleOS 27.0, *)
+extension NIOQUIC.QUICConnectionLimits {
+    init(_ limits: NIOHTTPServerConfiguration.QUICConnectionLimits?) {
+        guard let limits, limits.isEnabled else {
+            self = .unlimited
+            return
+        }
+
+        self = .perHandler(
+            activeLimit: limits.maxConnections,
+            handshakeLimit: limits.maxConcurrentTLSHandshakes,
+            newConnectionRateLimit: limits.newConnectionsPerSecond
+        )
+    }
+}
+
+@available(anyAppleOS 27.0, *)
 extension NIOQUIC.Authenticator {
     /// Creates an `Authenticator` instance from X.509 TLS credentials.
     ///
