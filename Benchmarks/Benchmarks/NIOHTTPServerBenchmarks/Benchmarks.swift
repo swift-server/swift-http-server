@@ -35,6 +35,22 @@ let benchmarks: @Sendable () -> Void = {
             }
         }
     }
+
+    Benchmark("HTTP3_connection") { benchmark in
+        try await withHTTP3ClientServer { client in
+            try await client.withConnection { connection in
+                try await connection.get()
+            }
+
+            benchmark.startMeasurement()
+            for _ in benchmark.scaledIterations {
+                try await client.withConnection { connection in
+                    try await connection.get()
+                }
+            }
+            benchmark.stopMeasurement()
+        }
+    }
 }
 
 private func withHTTP3ClientServer(_ body: (HTTP3BenchmarkClient) async throws -> Void) async throws {
