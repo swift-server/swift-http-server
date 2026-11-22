@@ -97,7 +97,7 @@ extension NIOHTTPServer {
             }
 
             let trailerFields: HTTPFields??
-            self.buffer.removeAll(keepingCapacity: true)
+            self.buffer.removeAll()
             switch requestPart {
             case .head:
                 fatalError()
