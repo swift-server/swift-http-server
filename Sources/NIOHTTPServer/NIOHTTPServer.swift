@@ -614,7 +614,7 @@ extension ServerBootstrap {
     static func makeTCPBootstrap(
         listeningSocketGroup: any EventLoopGroup,
         acceptedConnectionsGroup: any EventLoopGroup,
-        connectionLimits: NIOHTTPServerConfiguration.TCPConnectionLimits,
+        connectionLimits: NIOHTTPServerConfiguration.TCPConnectionLimits?,
         logger: Logger
     ) -> (ServerBootstrap, ServerQuiescingHelper) {
         let serverQuiescingHelper = ServerQuiescingHelper(group: listeningSocketGroup)
@@ -627,7 +627,7 @@ extension ServerBootstrap {
                         serverQuiescingHelper.makeServerChannelHandler(channel: channel)
                     )
 
-                    if connectionLimits.isEnabled {
+                    if let connectionLimits, connectionLimits.isEnabled {
                         try channel.pipeline.syncOperations.addHandler(
                             ConnectionLimitHandler(
                                 maxConnections: connectionLimits.maxConnections,
@@ -672,7 +672,7 @@ extension NIOHTTPServer {
         let (bootstrap, serverQuiescingHelper) = ServerBootstrap.makeTCPBootstrap(
             listeningSocketGroup: listeningSocketGroup,
             acceptedConnectionsGroup: acceptedConnectionsGroup,
-            connectionLimits: self.configuration.tcpConnectionLimits,
+            connectionLimits: self.configuration.connectionLimits?.tcp,
             logger: self.logger
         )
 

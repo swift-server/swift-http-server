@@ -47,8 +47,23 @@ extension NIOHTTPServerConfiguration {
     ///
     /// - **`"backpressureStrategy"`**: The backpressure strategy (see ``BackPressureStrategy/init(config:)``).
     ///
-    /// - **`"tcpConnectionLimits"`**: Limits on the connections each TCP listener accepts (see
-    ///   ``TCPConnectionLimits/init(config:)``). Only valid when HTTP/1.1 or HTTP/2 is supported.
+    /// - **`"connectionLimits"`**: Limits on the connections the server admits (see ``ConnectionLimits``). Set a limit
+    ///   to `0` to make it unlimited; set every limit under `"tcp"` or `"quic"` to `0` to impose no limits on those
+    ///   connections.
+    ///   - `"tcp"`: Limits on the connections each TCP listener accepts, applied across all threads together. Unused
+    ///     when neither HTTP/1.1 nor HTTP/2 is supported.
+    ///     - `maxConnections` (int, optional, default: 100,000): The maximum number of open connections.
+    ///     - `newConnectionsPerSecond` (int, optional, default: 10,000): The maximum number of new connections
+    ///       accepted per second. Must be between 0 (unlimited) and 1,000,000,000.
+    ///     - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be
+    ///       in the TLS handshake stage at once. Values other than `0` are only valid with TLS or mTLS.
+    ///   - `"quic"`: Limits on the QUIC connections admitted, applied separately on each thread that serves HTTP/3.
+    ///     Unused when HTTP/3 is not supported.
+    ///     - `maxConnections` (int, optional, default: 10,000): The maximum number of open connections on each thread.
+    ///     - `newConnectionsPerSecond` (int, optional, default: 1,000): The maximum number of new connections accepted
+    ///       per second on each thread. Must be between 0 (unlimited) and 1,000,000,000.
+    ///     - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be
+    ///       in the TLS handshake stage at once on each thread.
     ///
     /// - **`"connectionTimeouts"`**: The idle, header read, and body read timeouts applied to connections (see
     ///   ``ConnectionTimeouts/init(config:)``).
@@ -71,7 +86,8 @@ extension NIOHTTPServerConfiguration {
     ///     - Throws `NIOHTTPServerSwiftConfigurationError/bindTargetsHostsAndPortsLengthMismatch` if
     ///       `bindTargets.hosts` and `bindTargets.ports` have different lengths.
     ///     - Throws `NIOHTTPServerConfigurationError` if the connection limits are invalid: if a limit is out of range,
-    ///       or if a limit that doesn't apply to the supported HTTP versions is set.
+    ///       or if `connectionLimits.tcp.maxConcurrentTLSHandshakes` is set when `transportSecurity.mode` is
+    ///       `"plaintext"`.
     public init(
         config: ConfigReader,
         customCertificateVerificationCallback: (
@@ -89,7 +105,7 @@ extension NIOHTTPServerConfiguration {
             )
         )
         self.backpressureStrategy = .init(config: snapshot.scoped(to: "backpressureStrategy"))
-        self.tcpConnectionLimits = .init(config: snapshot.scoped(to: "tcpConnectionLimits"))
+        self.connectionLimits = try ConnectionLimits(config: snapshot.scoped(to: "connectionLimits"))
         self.connectionTimeouts = .init(config: snapshot.scoped(to: "connectionTimeouts"))
         self.gracefulShutdown = .init(config: snapshot.scoped(to: "gracefulShutdown"))
 
@@ -508,27 +524,178 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
 }
 
 @available(anyAppleOS 27.0, *)
-extension NIOHTTPServerConfiguration.TCPConnectionLimits {
-    /// Initialize TCP connection limits from a config reader.
+extension NIOHTTPServerConfiguration.ConnectionLimits {
+    /// Initialize a ``NIOHTTPServerConfiguration/ConnectionLimits`` value from a config reader. Returns `nil` if neither
+    /// TCP nor QUIC connection limits are imposed.
     ///
     /// ## Configuration keys:
-    /// - `maxConnections` (int, optional, default: nil): The maximum number of accepted connections that may be open
-    ///   at once.
-    /// - `newConnectionsPerSecond` (int, optional, default: nil): The maximum number of new connections accepted per
-    ///   second. Must be between 1 and 1,000,000,000.
-    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that may be
-    ///   performing a TLS handshake at once. When this limit is reached, new connections are immediately closed. Only
-    ///   valid with TLS or mTLS.
+    /// - `tcp` (optional): The TCP connection limits (see `TCPConnectionLimits.init(config:)`).
+    /// - `quic` (optional): The QUIC connection limits (see `QUICConnectionLimits.init(config:)`). Only read when the
+    ///   package is built with the `HTTP3` trait.
     ///
-    /// - Parameter config: The configuration reader.
-    public init(config: ConfigSnapshotReader) {
-        self.init(
-            maxConnections: config.int(forKey: "maxConnections"),
-            newConnectionsPerSecond: config.int(forKey: "newConnectionsPerSecond"),
-            maxConcurrentTLSHandshakes: config.int(forKey: "maxConcurrentTLSHandshakes")
+    /// - Parameters:
+    ///   - config: The configuration reader.
+    ///
+    /// - Throws: If any limit is out of range.
+    init?(config: ConfigSnapshotReader) throws {
+        let tcp = try NIOHTTPServerConfiguration.TCPConnectionLimits(config: config.scoped(to: "tcp"))
+
+        #if HTTP3
+        let quic = try NIOHTTPServerConfiguration.QUICConnectionLimits(config: config.scoped(to: "quic"))
+        guard tcp != nil || quic != nil else {
+            return nil
+        }
+
+        self.init(tcp: tcp, quic: quic)
+        #else
+        guard tcp != nil else {
+            return nil
+        }
+
+        self.init(tcp: tcp)
+        #endif  // HTTP3
+    }
+
+    /// Reads a single limit. Returns `defaultValue` if `key` is omitted, and `nil` (unlimited) if it is `0`.
+    ///
+    /// - Throws: If the value is outside `validRange`.
+    fileprivate static func readLimit(
+        _ key: String,
+        from config: ConfigSnapshotReader,
+        default defaultValue: Int?,
+        validRange: ClosedRange<Int>,
+        requirement: String,
+        name: String
+    ) throws -> Int? {
+        guard let value = config.int(forKey: ConfigKey(key)) else {
+            return defaultValue
+        }
+
+        guard validRange.contains(value) else {
+            throw NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "\(name).\(key)",
+                requirement: requirement
+            )
+        }
+
+        return value == 0 ? nil : value
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServerConfiguration.TCPConnectionLimits {
+    /// Initialize a ``NIOHTTPServerConfiguration/TCPConnectionLimits`` value from a config reader. Returns `nil` if no
+    /// limits are specified.
+    ///
+    /// If the key is omitted, a default value is used. Specify `0` as the value to disable the limit.
+    ///
+    /// ## Configuration keys:
+    /// - `maxConnections` (int, optional, default: 100,000): The maximum number of open connections.
+    /// - `newConnectionsPerSecond` (int, optional, default: 10,000): The maximum number of new connections accepted per
+    ///   second. Must be between 0 and 1,000,000,000.
+    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be in
+    ///   the TLS handshake stage at once.
+    ///
+    /// - Parameters:
+    ///   - config: The configuration reader.
+    ///
+    /// - Throws: If any limit is negative, or if `newConnectionsPerSecond` is greater than 1,000,000,000.
+    init?(config: ConfigSnapshotReader) throws {
+        let maxConnections = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "maxConnections",
+            from: config,
+            default: Self.defaults.maxConnections,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: "connectionLimits.tcp"
+        )
+        let newConnectionsPerSecond = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "newConnectionsPerSecond",
+            from: config,
+            default: Self.defaults.newConnectionsPerSecond,
+            validRange: 0...1_000_000_000,
+            requirement: "between 0 (unlimited) and 1,000,000,000",
+            name: "connectionLimits.tcp"
+        )
+        let maxConcurrentTLSHandshakes = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "maxConcurrentTLSHandshakes",
+            from: config,
+            default: Self.defaults.maxConcurrentTLSHandshakes,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: "connectionLimits.tcp"
+        )
+
+        if maxConnections == nil, newConnectionsPerSecond == nil, maxConcurrentTLSHandshakes == nil {
+            // No limits were specified.
+            return nil
+        }
+
+        try self.init(
+            maxConnections: maxConnections,
+            newConnectionsPerSecond: newConnectionsPerSecond,
+            maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes
         )
     }
 }
+
+#if HTTP3
+@available(anyAppleOS 27.0, *)
+extension NIOHTTPServerConfiguration.QUICConnectionLimits {
+    /// Initialize a ``NIOHTTPServerConfiguration/QUICConnectionLimits`` value from a config reader. Returns `nil` if no
+    /// limits are specified.
+    ///
+    /// If the key is omitted, a default value is used. Specify `0` as the value to disable the limit.
+    ///
+    /// ## Configuration keys:
+    /// - `maxConnections` (int, optional, default: 10,000): The maximum number of open connections.
+    /// - `newConnectionsPerSecond` (int, optional, default: 1,000): The maximum number of new connections accepted per
+    ///   second. Must be between 0 and 1,000,000,000.
+    /// - `maxConcurrentTLSHandshakes` (int, optional, default: nil): The maximum number of connections that can be in
+    ///   the TLS handshake stage at once.
+    ///
+    /// - Parameters:
+    ///   - config: The configuration reader.
+    ///
+    /// - Throws: If any limit is negative, or if `newConnectionsPerSecond` is greater than 1,000,000,000.
+    init?(config: ConfigSnapshotReader) throws {
+        let maxConnections = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "maxConnections",
+            from: config,
+            default: Self.defaults.maxConnections,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: "connectionLimits.quic"
+        )
+        let newConnectionsPerSecond = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "newConnectionsPerSecond",
+            from: config,
+            default: Self.defaults.newConnectionsPerSecond,
+            validRange: 0...1_000_000_000,
+            requirement: "between 0 (unlimited) and 1,000,000,000",
+            name: "connectionLimits.quic"
+        )
+        let maxConcurrentTLSHandshakes = try NIOHTTPServerConfiguration.ConnectionLimits.readLimit(
+            "maxConcurrentTLSHandshakes",
+            from: config,
+            default: Self.defaults.maxConcurrentTLSHandshakes,
+            validRange: 0...Int.max,
+            requirement: "0 (unlimited) or greater",
+            name: "connectionLimits.quic"
+        )
+
+        if maxConnections == nil, newConnectionsPerSecond == nil, maxConcurrentTLSHandshakes == nil {
+            return nil
+        }
+
+        try self.init(
+            maxConnections: maxConnections,
+            newConnectionsPerSecond: newConnectionsPerSecond,
+            maxConcurrentTLSHandshakes: maxConcurrentTLSHandshakes
+        )
+    }
+}
+#endif  // HTTP3
 
 @available(anyAppleOS 27.0, *)
 extension NIOHTTPServerConfiguration.GracefulShutdownConfiguration {

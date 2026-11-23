@@ -386,6 +386,7 @@ extension NIOHTTPServer {
         let quicHandler = QUICHandler(
             channel: channel,
             quicConfiguration: quicConfiguration,
+            connectionLimits: QUICConnectionLimits(self.configuration.connectionLimits?.quic),
             // TODO: mTLS is not yet supported by NIOQUIC so we don't specify a value for `asyncVerifier`.
             asyncVerifier: nil,
             authenticator: configuration.quicAuthenticator,

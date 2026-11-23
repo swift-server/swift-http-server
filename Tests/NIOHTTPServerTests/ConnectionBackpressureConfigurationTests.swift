@@ -19,23 +19,28 @@ import Testing
 @Suite("Connection Backpressure Configuration")
 struct ConnectionBackpressureConfigurationTests {
     @available(anyAppleOS 27.0, *)
-    @Test("tcpConnectionLimits has no limits by default")
-    func tcpConnectionLimitsUnlimitedByDefault() throws {
+    @Test func connectionLimitsDefaults() throws {
         let config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
             transportSecurity: .plaintext
         )
-        #expect(config.tcpConnectionLimits == .defaults)
+        #expect(config.connectionLimits == .defaults)
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test("TCPConnectionLimits is enabled as soon as one limit is set")
-    func tcpConnectionLimitsIsEnabled() {
-        #expect(!NIOHTTPServerConfiguration.TCPConnectionLimits().isEnabled)
-        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConnections: 1).isEnabled)
-        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(maxConcurrentTLSHandshakes: 1).isEnabled)
-        #expect(NIOHTTPServerConfiguration.TCPConnectionLimits(newConnectionsPerSecond: 1).isEnabled)
+    @Test func connectionLimitsIsEnabled() throws {
+        #expect(try !NIOHTTPServerConfiguration.TCPConnectionLimits().isEnabled)
+        #expect(try NIOHTTPServerConfiguration.TCPConnectionLimits(maxConnections: 1).isEnabled)
+        #expect(try NIOHTTPServerConfiguration.TCPConnectionLimits(newConnectionsPerSecond: 1).isEnabled)
+        #expect(try NIOHTTPServerConfiguration.TCPConnectionLimits(maxConcurrentTLSHandshakes: 1).isEnabled)
+
+        #if HTTP3
+        #expect(try !NIOHTTPServerConfiguration.QUICConnectionLimits().isEnabled)
+        #expect(try NIOHTTPServerConfiguration.QUICConnectionLimits(maxConnections: 1).isEnabled)
+        #expect(try NIOHTTPServerConfiguration.QUICConnectionLimits(newConnectionsPerSecond: 1).isEnabled)
+        #expect(try NIOHTTPServerConfiguration.QUICConnectionLimits(maxConcurrentTLSHandshakes: 1).isEnabled)
+        #endif
     }
 
     @available(anyAppleOS 27.0, *)
@@ -48,92 +53,124 @@ struct ConnectionBackpressureConfigurationTests {
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test("Valid TCP connection limits are accepted on a plaintext HTTP/1.1 configuration")
-    func validTCPConnectionLimitsAccepted() throws {
+    @Test(
+        arguments: [
+            (1, 1, 1),
+            (100, 1_000_000_000, 100),
+            (nil, nil, 1),
+            // Every limit can be `nil`.
+            (nil, nil, nil),
+        ] as [(Int?, Int?, Int?)]
+    )
+    func validConnectionLimitsAccepted(
+        maxConnections: Int?,
+        newConnectionsPerSecond: Int?,
+        maxConcurrentTLSHandshakes: Int?
+    ) throws {
+        var tcpLimits = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+        tcpLimits.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
+        tcpLimits.maxConnections = maxConnections
+        tcpLimits.newConnectionsPerSecond = newConnectionsPerSecond
+
+        #expect(tcpLimits.maxConnections == maxConnections)
+        #expect(tcpLimits.newConnectionsPerSecond == newConnectionsPerSecond)
+        #expect(tcpLimits.maxConcurrentTLSHandshakes == maxConcurrentTLSHandshakes)
+
+        #if HTTP3
+        var quicLimits = NIOHTTPServerConfiguration.QUICConnectionLimits.defaults
+        quicLimits.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
+        quicLimits.maxConnections = maxConnections
+        quicLimits.newConnectionsPerSecond = newConnectionsPerSecond
+
+        #expect(quicLimits.maxConnections == maxConnections)
+        #expect(quicLimits.newConnectionsPerSecond == newConnectionsPerSecond)
+        #expect(quicLimits.maxConcurrentTLSHandshakes == maxConcurrentTLSHandshakes)
+        #endif
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test(
+        arguments: ConnectionLimitsTransport.allCases,
+        [
+            (0, nil, nil, "maxConnections", "greater than 0"),
+            (-1, nil, nil, "maxConnections", "greater than 0"),
+            (nil, 0, nil, "newConnectionsPerSecond", "between 1 and 1,000,000,000"),
+            (nil, 1_000_000_001, nil, "newConnectionsPerSecond", "between 1 and 1,000,000,000"),
+            (nil, nil, 0, "maxConcurrentTLSHandshakes", "greater than 0"),
+        ] as [(Int?, Int?, Int?, String, String)]
+    )
+    func outOfRangeConnectionLimitsRejected(
+        transport: ConnectionLimitsTransport,
+        limits: (Int?, Int?, Int?, String, String)
+    ) async {
+        let (maxConnections, newConnectionsPerSecond, maxConcurrentTLSHandshakes, invalidLimit, requirement) = limits
+        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
+            [
+                transport = transport as ConnectionLimitsTransport,
+                maxConnections = maxConnections as Int?,
+                newConnectionsPerSecond = newConnectionsPerSecond as Int?,
+                maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes as Int?
+            ] in
+
+            switch transport {
+            case .tcp:
+                var config = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+                config.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
+                config.maxConnections = maxConnections
+                config.newConnectionsPerSecond = newConnectionsPerSecond
+
+            #if HTTP3
+            case .quic:
+                var config = NIOHTTPServerConfiguration.QUICConnectionLimits.defaults
+                config.maxConcurrentTLSHandshakes = maxConcurrentTLSHandshakes
+                config.maxConnections = maxConnections
+                config.newConnectionsPerSecond = newConnectionsPerSecond
+            #endif
+            }
+        }
+        Self.expectStandardError(
+            of: result,
+            contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
+                name: "connectionLimits.\(transport.rawValue).\(invalidLimit)",
+                requirement: requirement
+            )
+        )
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test("Connection limits can be changed to valid values")
+    func connectionLimitsChangedToValidValues() throws {
         var config = try NIOHTTPServerConfiguration(
             bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
             supportedHTTPVersions: [.http1_1],
             transportSecurity: .plaintext
         )
-        for maxConnections in [1, 100] {
-            config.tcpConnectionLimits = .init(maxConnections: maxConnections)
-            #expect(config.tcpConnectionLimits.maxConnections == maxConnections)
-        }
-        for newConnectionsPerSecond in [1, 1_000_000_000] {
-            config.tcpConnectionLimits = .init(newConnectionsPerSecond: newConnectionsPerSecond)
-            #expect(config.tcpConnectionLimits.newConnectionsPerSecond == newConnectionsPerSecond)
-        }
+        config.connectionLimits?.tcp?.maxConnections = 20
+        #expect(config.connectionLimits?.tcp?.maxConnections == 20)
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test func zeroMaxConnectionsPreconditionFailure() async {
+    @Test("Setting a TCP TLS handshake limit with plaintext is a precondition failure")
+    func tlsHandshakeLimitWithPlaintextPreconditionFailure() async {
         let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
             var config = try NIOHTTPServerConfiguration(
                 bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
                 supportedHTTPVersions: [.http1_1],
                 transportSecurity: .plaintext
             )
-            config.tcpConnectionLimits = .init(maxConnections: 0)
+            config.connectionLimits?.tcp?.maxConcurrentTLSHandshakes = 5
         }
 
-        Self.expectStandardError(
-            of: result,
-            contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.maxConnections",
-                requirement: "greater than 0"
-            )
-        )
-    }
-
-    @available(anyAppleOS 27.0, *)
-    @Test func tooLargeRateLimitPreconditionFailure() async {
-        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
-            var config = try NIOHTTPServerConfiguration(
-                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
-            config.tcpConnectionLimits = .init(newConnectionsPerSecond: 1_000_000_001)
-        }
-
-        Self.expectStandardError(
-            of: result,
-            contains: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionsPerSecond",
-                requirement: "between 1 and 1,000,000,000"
-            )
-        )
+        Self.expectStandardError(of: result, contains: .tlsHandshakeLimitRequiresTLS)
     }
 
     #if HTTP3
     @available(anyAppleOS 27.0, *)
-    @Test func tcpConnectionLimitsOnHTTP3OnlyAreRejected() async {
-        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
-            var (config, _) = try TestHelpers.makeTLSServerConfiguration(supportedHTTPVersions: [.http3])
-            config.tcpConnectionLimits = .init(maxConnections: 10)
-        }
-
-        Self.expectStandardError(
-            of: result,
-            contains: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2
-        )
-    }
-
-    @available(anyAppleOS 27.0, *)
-    @Test func switchingToHTTP3OnlyWithTCPConnectionLimitsIsRejected() async {
-        let result = await #expect(processExitsWith: .failure, observing: [\.standardErrorContent]) {
-            var (config, _) = try TestHelpers.makeTLSServerConfiguration(
-                supportedHTTPVersions: [.http1_1, .http2, .http3]
-            )
-            config.tcpConnectionLimits = .init(maxConnections: 10)
-            // We already set a TCP connection limit. Moving to just supporting HTTP/3 should fail.
-            config.supportedHTTPVersions = [.http3]
-        }
-
-        Self.expectStandardError(
-            of: result,
-            contains: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2
-        )
+    @Test func quicConnectionLimitsDefaults() {
+        let limits = NIOHTTPServerConfiguration.QUICConnectionLimits.defaults
+        #expect(limits.maxConnections == 10_000)
+        #expect(limits.newConnectionsPerSecond == 1_000)
+        #expect(limits.maxConcurrentTLSHandshakes == nil)
     }
     #endif
 
@@ -167,6 +204,13 @@ struct ConnectionBackpressureConfigurationTests {
     }
 }
 
+enum ConnectionLimitsTransport: String, CaseIterable, Codable {
+    case tcp
+    #if HTTP3
+    case quic
+    #endif
+}
+
 #if Configuration
 import Configuration
 
@@ -180,14 +224,71 @@ struct ConnectionBackpressureSwiftConfigurationTests {
             "bindTarget.port": 8080,
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.maxConnections": 500,
-            "tcpConnectionLimits.newConnectionsPerSecond": 250,
+            "connectionLimits.tcp.maxConnections": 500,
+            "connectionLimits.tcp.newConnectionsPerSecond": 250,
         ])
         let config = ConfigReader(provider: provider)
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-        #expect(serverConfig.tcpConnectionLimits.maxConnections == 500)
-        #expect(serverConfig.tcpConnectionLimits.newConnectionsPerSecond == 250)
+        #expect(serverConfig.connectionLimits?.tcp?.maxConnections == 500)
+        #expect(serverConfig.connectionLimits?.tcp?.newConnectionsPerSecond == 250)
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func zeroConnectionLimitMapsToNoLimit() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "connectionLimits.tcp.newConnectionsPerSecond": 0,
+            "connectionLimits.quic.newConnectionsPerSecond": 0,
+        ])
+        let serverConfig = try NIOHTTPServerConfiguration(config: ConfigReader(provider: provider))
+
+        var expectedTCPConfig = NIOHTTPServerConfiguration.TCPConnectionLimits.defaults
+        expectedTCPConfig.newConnectionsPerSecond = nil
+        #expect(serverConfig.connectionLimits?.tcp == expectedTCPConfig)
+
+        #if HTTP3
+        var expectedQUICConfig = NIOHTTPServerConfiguration.QUICConnectionLimits.defaults
+        expectedQUICConfig.newConnectionsPerSecond = nil
+        #expect(serverConfig.connectionLimits?.quic == expectedQUICConfig)
+        #endif
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func rejectsTLSHandshakeLimitWithPlaintext() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "connectionLimits.tcp.maxConcurrentTLSHandshakes": 5,
+        ])
+
+        #expect(throws: NIOHTTPServerConfigurationError.tlsHandshakeLimitRequiresTLS) {
+            _ = try NIOHTTPServerConfiguration(config: ConfigReader(provider: provider))
+        }
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func allZeroConnectionLimitsImposeNoLimits() throws {
+        let provider = InMemoryProvider(values: [
+            "bindTarget.host": "127.0.0.1",
+            "bindTarget.port": 8080,
+            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
+            "transportSecurity.mode": "plaintext",
+            "connectionLimits.tcp.maxConnections": 0,
+            "connectionLimits.tcp.newConnectionsPerSecond": 0,
+            "connectionLimits.tcp.maxConcurrentTLSHandshakes": 0,
+            "connectionLimits.quic.maxConnections": 0,
+            "connectionLimits.quic.newConnectionsPerSecond": 0,
+            "connectionLimits.quic.maxConcurrentTLSHandshakes": 0,
+        ])
+        let serverConfig = try NIOHTTPServerConfiguration(config: ConfigReader(provider: provider))
+
+        #expect(serverConfig.connectionLimits == nil)
     }
 
     @available(anyAppleOS 27.0, *)
@@ -222,69 +323,37 @@ struct ConnectionBackpressureSwiftConfigurationTests {
         let config = ConfigReader(provider: provider)
         let serverConfig = try NIOHTTPServerConfiguration(config: config)
 
-        #expect(serverConfig.tcpConnectionLimits == .defaults)
+        #expect(serverConfig.connectionLimits == .defaults)
         #expect(serverConfig.connectionTimeouts.idle == nil)
         #expect(serverConfig.connectionTimeouts.readHeader == nil)
         #expect(serverConfig.connectionTimeouts.readBody == nil)
     }
 
     @available(anyAppleOS 27.0, *)
-    @Test func rejectsZeroMaxConnections() throws {
+    @Test(
+        arguments: ConnectionLimitsTransport.allCases,
+        [
+            ("maxConnections", -1, "0 (unlimited) or greater"),
+            ("newConnectionsPerSecond", -1, "between 0 (unlimited) and 1,000,000,000"),
+            ("newConnectionsPerSecond", 1_000_000_001, "between 0 (unlimited) and 1,000,000,000"),
+            ("maxConcurrentTLSHandshakes", -1, "0 (unlimited) or greater"),
+        ]
+    )
+    func rejectsOutOfRangeConnectionLimits(transport: ConnectionLimitsTransport, limit: (String, Int, String)) throws {
+        let (key, value, requirement) = limit
         let provider = InMemoryProvider(values: [
             "bindTarget.host": "127.0.0.1",
             "bindTarget.port": 8080,
             "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
             "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.maxConnections": 0,
+            AbsoluteConfigKey(["connectionLimits", transport.rawValue, key]): .init(.int(value), isSecret: false),
         ])
         let config = ConfigReader(provider: provider)
 
         #expect(
             throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.maxConnections",
-                requirement: "greater than 0"
-            )
-        ) {
-            _ = try NIOHTTPServerConfiguration(config: config)
-        }
-    }
-
-    @available(anyAppleOS 27.0, *)
-    @Test func rejectsZeroNewConnectionsPerSecondRateLimit() throws {
-        let provider = InMemoryProvider(values: [
-            "bindTarget.host": "127.0.0.1",
-            "bindTarget.port": 8080,
-            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
-            "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.newConnectionsPerSecond": 0,
-        ])
-        let config = ConfigReader(provider: provider)
-
-        #expect(
-            throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionsPerSecond",
-                requirement: "between 1 and 1,000,000,000"
-            )
-        ) {
-            _ = try NIOHTTPServerConfiguration(config: config)
-        }
-    }
-
-    @available(anyAppleOS 27.0, *)
-    @Test func rejectsTooLargeNewConnectionsPerSecondRateLimit() throws {
-        let provider = InMemoryProvider(values: [
-            "bindTarget.host": "127.0.0.1",
-            "bindTarget.port": 8080,
-            "http.versions": .init(.stringArray(["http1_1"]), isSecret: false),
-            "transportSecurity.mode": "plaintext",
-            "tcpConnectionLimits.newConnectionsPerSecond": 1_000_000_001,
-        ])
-        let config = ConfigReader(provider: provider)
-
-        #expect(
-            throws: NIOHTTPServerConfigurationError.invalidConnectionLimit(
-                name: "tcpConnectionLimits.newConnectionsPerSecond",
-                requirement: "between 1 and 1,000,000,000"
+                name: "connectionLimits.\(transport.rawValue).\(key)",
+                requirement: requirement
             )
         ) {
             _ = try NIOHTTPServerConfiguration(config: config)
@@ -293,24 +362,62 @@ struct ConnectionBackpressureSwiftConfigurationTests {
 
     #if HTTP3
     @available(anyAppleOS 27.0, *)
-    @Test func rejectsTCPConnectionLimitsOnHTTP3Only() throws {
+    @Test func parsesQUICConnectionLimits() throws {
+        let config = try Self.makeHTTP3ConfigReader(additionalValues: [
+            "connectionLimits.quic.maxConnections": 500,
+            "connectionLimits.quic.maxConcurrentTLSHandshakes": 50,
+        ])
+        let serverConfig = try NIOHTTPServerConfiguration(config: config)
+        let limits = try #require(serverConfig.connectionLimits?.quic)
+
+        #expect(limits.maxConnections == 500)
+        #expect(limits.maxConcurrentTLSHandshakes == 50)
+        // The default value is used when the key is omitted.
+        #expect(limits.newConnectionsPerSecond == 1_000)
+    }
+
+    @available(anyAppleOS 27.0, *)
+    @Test func zeroQUICConnectionLimitsImposeNoLimits() throws {
+        // `maxConcurrentTLSHandshakes` is omitted, and defaults to no limit.
+        let config = try Self.makeHTTP3ConfigReader(additionalValues: [
+            "connectionLimits.quic.maxConnections": 0,
+            "connectionLimits.quic.newConnectionsPerSecond": 0,
+        ])
+        let serverConfig = try NIOHTTPServerConfiguration(config: config)
+
+        let limits = try #require(serverConfig.connectionLimits)
+        #expect(limits.quic == nil)
+        #expect(limits.tcp == .defaults)
+    }
+
+    /// Makes a config reader for a TLS server that only supports HTTP/3, with `additionalValues` added.
+    @available(anyAppleOS 27.0, *)
+    private static func makeHTTP3ConfigReader(
+        additionalValues: [AbsoluteConfigKey: ConfigValue] = [:]
+    ) throws -> ConfigReader {
+        try Self.makeTLSConfigReader(versions: ["http3"], additionalValues: additionalValues)
+    }
+    #endif
+
+    /// Makes a config reader for a TLS server that supports `versions`, with `additionalValues` added.
+    @available(anyAppleOS 27.0, *)
+    private static func makeTLSConfigReader(
+        versions: [String],
+        additionalValues: [AbsoluteConfigKey: ConfigValue] = [:]
+    ) throws -> ConfigReader {
         let (leafPath, _, keyPath) = try TestCA.makeSelfSignedChain().writeToDisk()
-        let provider = InMemoryProvider(values: [
+        let values: [AbsoluteConfigKey: ConfigValue] = [
             "bindTarget.host": "127.0.0.1",
             "bindTarget.port": 8080,
-            "http.versions": .init(.stringArray(["http3"]), isSecret: false),
+            "http.versions": .init(.stringArray(versions), isSecret: false),
             "transportSecurity.mode": "tls",
             "transportSecurity.credentialSource": "file",
             "transportSecurity.certificateChainPEMPath": .init(.string(leafPath), isSecret: false),
             "transportSecurity.privateKeyPEMPath": .init(.string(keyPath), isSecret: true),
-            "tcpConnectionLimits.maxConnections": 10,
-        ])
-        let config = ConfigReader(provider: provider)
-
-        #expect(throws: NIOHTTPServerConfigurationError.tcpConnectionLimitsRequireHTTP1OrHTTP2) {
-            _ = try NIOHTTPServerConfiguration(config: config)
-        }
+        ]
+        return ConfigReader(
+            provider: InMemoryProvider(values: values.merging(additionalValues, uniquingKeysWith: { $1 }))
+        )
     }
-    #endif
 }
 #endif  // Configuration
