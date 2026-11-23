@@ -10,51 +10,29 @@ on:
 jobs:
   soundness:
     name: Soundness
-    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.15
+    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.19
     with:
       api_breakage_check_container_image: "swift:6.4-resolute"
       format_check_container_image: "swift:6.4-resolute"
       license_header_check_project_name: "Swift HTTP Server"
       linux_pre_build_command: "export SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA=1 ENABLE_ALL_TRAITS=1"
 
-  unit-tests:
-    name: Unit tests
-    uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
+  tests:
+    name: Tests
+    uses: swiftlang/github-workflows/.github/workflows/package_test.yml@f977e5189c1fcc23abb681efa9f066e8b28ba14f  # main, for https://github.com/swiftlang/github-workflows/pull/362
     with:
-      # Project is only 6.4+
-      linux_6_0_enabled: false
-      linux_6_1_enabled: false
-      linux_6_2_enabled: false
-      linux_6_3_enabled: false
-      linux_6_4_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error"
-      linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error"
+      linux_command: |
+        Debug-Test: swift test
+        Release-Build: swift build -c release
+      linux_version_overrides: |
+        default: --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable
+        nightly-release: --explicit-target-dependency-import-check error
+        nightly-main: --explicit-target-dependency-import-check error
       linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
-
-  cxx-interop:
-    name: Cxx interop
-    uses: apple/swift-nio/.github/workflows/cxx_interop.yml@main
-    with:
-      # Project is only 6.4+
-      linux_6_0_enabled: false
-      linux_6_1_enabled: false
-      linux_6_2_enabled: false
-      linux_6_3_enabled: false
-      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
-
-  static-sdk:
-    name: Static SDK
-    uses: apple/swift-nio/.github/workflows/static_sdk.yml@main
-    with:
-      env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
-
-  release-builds:
-    name: Release builds
-    uses: apple/swift-nio/.github/workflows/release_builds.yml@main
-    with:
-      # Project is only 6.4+
-      linux_6_0_enabled: false
-      linux_6_1_enabled: false
-      linux_6_2_enabled: false
-      linux_6_3_enabled: false
-      linux_env_vars: '{"SWIFT_CERTIFICATES_ALLOW_SWIFT_CRYPTO_BETA":"1", "ENABLE_ALL_TRAITS":"1"}'
+      enable_macos: false
+      enable_macos_swiftly: false
+      enable_windows: false
+      enable_wasm_sdk_build: false
+      enable_embedded_wasm_sdk_build: false
+      enable_android_sdk_build: false
+      enable_freebsd: false
