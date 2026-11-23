@@ -95,13 +95,13 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/apple/swift-http-api-proposal.git",
-            .upToNextMinor(from: "0.2.0")
+            .upToNextMinor(from: "0.3.0")
         ),
         .package(url: "https://github.com/apple/swift-distributed-tracing.git", from: "1.4.1"),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.19.3"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.6.0")),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.8.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
         .package(url: "https://github.com/apple/swift-nio-http3.git", .upToNextMinor(from: "0.5.0")),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
