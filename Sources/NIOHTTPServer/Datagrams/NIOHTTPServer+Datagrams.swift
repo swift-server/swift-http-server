@@ -45,6 +45,7 @@ extension NIOHTTPServer {
         ) async throws(EitherError<ReadFailure, Failure>) -> Return {
             let payload = await self.iterator.next(isolation: #isolation)
 
+            // `removeAll` preserves the buffer's capacity.
             self.buffer.removeAll()
             let finalElement: Void?
             if let payload {
