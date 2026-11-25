@@ -574,17 +574,29 @@ extension NIOHTTP2Handler.Configuration {
 
 @available(anyAppleOS 27.0, *)
 extension NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator {
-    /// Reads the next request head from the iterator. Returns `nil` if the connection is done or an unexpected part is
-    /// received.
+    /// The most leftover request body bytes ``nextRequestHead(logger:)`` discards to keep an HTTP/1.1 connection alive.
+    static var maxDiscardedBodyBytes: Int { 256 * 1024 }
+
+    /// Reads the next request head from the iterator. Returns `nil` if the connection is done, or if the previous
+    /// request left more than ``maxDiscardedBodyBytes`` of unread body.
     ///
     /// Skips over leftover `.body` and `.end` parts from a previous request that the handler didn't fully consume.
     mutating func nextRequestHead(logger: Logger) async throws -> HTTPRequest? {
+        var discardedBodyBytes = 0
         while true {
             switch try await self.next(isolation: #isolation) {
             case .head(let request):
                 return request
-            case .body, .end:
-                // Leftover parts from a previous request. Skip and look for the next head.
+            case .body(let body):
+                discardedBodyBytes += body.readableBytes
+                if discardedBodyBytes > Self.maxDiscardedBodyBytes {
+                    logger.debug(
+                        "unread request body over discard limit, closing connection",
+                        metadata: [LoggingKeys.discardedBytes: "\(discardedBodyBytes)"]
+                    )
+                    return nil
+                }
+            case .end:
                 continue
             case .none:
                 logger.trace("No more request parts on connection")

@@ -15,4 +15,5 @@
 enum LoggingKeys {
     static var `protocol`: String { "protocol" }
     static var remoteAddress: String { "remoteAddress" }
+    static var discardedBytes: String { "discarded_bytes" }
 }

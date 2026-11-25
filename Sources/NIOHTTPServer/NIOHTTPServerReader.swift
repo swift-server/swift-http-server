@@ -24,6 +24,10 @@ extension NIOHTTPServer {
 
         /// The reader's state.
         enum State: ~Copyable {
+            /// We haven't read yet, and the iterator is still parked in the exchange state. A handler that never reads
+            /// leaves it there, so the HTTP/1.1 request loop can recover it and reuse the connection.
+            case notStarted(NIOHTTPServer.ExchangeState.RequestHandle)
+
             /// We are reading request body part(s) and waiting for the request `.end`.
             case reading(Reading)
 
@@ -66,6 +70,13 @@ extension NIOHTTPServer {
             exchangeState: consuming NIOHTTPServer.ExchangeState.RequestHandle
         ) {
             self.state = .reading(.init(iterator: iterator, exchangeState: exchangeState))
+            self.buffer = UniqueArray<UInt8>()
+        }
+
+        /// Initializes a new request body reader that takes the iterator parked in the exchange state on its first
+        /// read.
+        init(takingParkedIteratorFrom exchangeState: consuming NIOHTTPServer.ExchangeState.RequestHandle) {
+            self.state = .notStarted(exchangeState)
             self.buffer = UniqueArray<UInt8>()
         }
 
@@ -132,6 +143,15 @@ extension NIOHTTPServer.Reader.State {
     ///    Once in the failed state, every subsequent call rethrows the same error.
     mutating func nextRequestPart(isolation actor: isolated (any Actor)?) async throws -> HTTPRequestPart {
         switch consume self {
+        case .notStarted(let exchangeState):
+            guard let iterator = exchangeState.takeParkedIterator() else {
+                self = .failed(RequestBodyReadError.streamEnded)
+                throw RequestBodyReadError.streamEnded
+            }
+
+            self = .reading(.init(iterator: iterator, exchangeState: exchangeState))
+            return try await self.nextRequestPart(isolation: actor)
+
         case .reading(var reading):
             let requestPart: HTTPRequestPart?
             do {

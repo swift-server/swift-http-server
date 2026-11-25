@@ -29,8 +29,8 @@ extension NIOHTTPServer {
             /// Whether the response has been sent.
             var finishedWriting: Bool = false
 
-            /// The request iterator, for HTTP/1.1 connection reuse. Stored here at the start of the request, and
-            /// expected to be moved back once the request `.end` part has been read from the reader.
+            /// The request iterator, for HTTP/1.1 connection reuse. Parked here at the start of the request, taken by
+            /// the reader on its first read, and moved back once the reader has seen the request `.end` part.
             var iterator: Disconnected<NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator?> = .init(value: nil)
         }
 
@@ -48,13 +48,21 @@ extension NIOHTTPServer {
 
         /// Takes the iterator the reader, and resets the state so the next request on the connection can reuse it.
         ///
-        /// - Returns: The iterator, or `nil` if the reader didn't see the request `.end` part, or the iterator has
-        ///   already been taken. If `nil`, the connection cannot be reused for another request.
+        /// - Returns: The iterator, or `nil` if the reader started reading but didn't see the request `.end` part, or
+        ///   the iterator has already been taken. If `nil`, the connection cannot be reused for another request.
         func takeIterator() -> sending NIOAsyncChannelInboundStream<HTTPRequestPart>.AsyncIterator? {
             self.storage.withLock {
                 $0.finishedReading = false
                 $0.finishedWriting = false
                 return $0.iterator.swap(newValue: nil)
+            }
+        }
+
+        /// Parks the request iterator until the reader's first read, or until the request loop recovers it.
+        func parkIterator(_ iterator: consuming sending Reader.Iterator) {
+            nonisolated(unsafe) let iterator: Reader.Iterator? = iterator
+            self.storage.withLock { storage in
+                _ = unsafe storage.iterator.swap(newValue: iterator)
             }
         }
 
@@ -73,6 +81,12 @@ extension NIOHTTPServer {
             /// A handle for an HTTP/2 or HTTP/3 stream.
             static func singleUse(state: ExchangeState) -> RequestHandle {
                 RequestHandle(state: state, reuseIterator: false)
+            }
+
+            /// Takes the iterator parked by ``ExchangeState/parkIterator(_:)``. Unlike ``ExchangeState/takeIterator()``,
+            /// this leaves the exchange flags alone: the response may already have been sent.
+            func takeParkedIterator() -> sending Reader.Iterator? {
+                self.state.storage.withLock { $0.iterator.swap(newValue: nil) }
             }
 
             /// Records that the reader seen the request `.end` part. For HTTP/1.1, the iterator is moved back into the
@@ -151,7 +165,11 @@ extension NIOHTTPServer {
             }
 
             assert(!self.state.finishedReading && !self.state.finishedWriting, "Exchange state wasn't reset")
-            return Reader(iterator: iterator, exchangeState: .reusable(state: self.state))
+
+            // Park the iterator rather than handing it to the reader, so that `recoverIterator()` still gets it back if
+            // the handler never reads.
+            self.state.parkIterator(iterator)
+            return Reader(takingParkedIteratorFrom: .reusable(state: self.state))
         }
 
         /// Makes the response sender for the next exchange on the connection.
